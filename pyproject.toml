@@ -1,0 +1,31 @@
+[project]
+name = "anogen"
+version = "0.1.0"
+description = "Shell-steering diffusion and GenIAS for ESA-ADB telemetry."
+requires-python = ">=3.12"
+dependencies = [
+    "numpy>=2.0",
+    "pandas>=2.2",
+    "scipy>=1.13",
+    "scikit-learn>=1.5",
+    "pyyaml>=6.0",
+    "tqdm>=4.66",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+neural = ["torch>=2.3", "matplotlib>=3.8"]
+
+[project.scripts]
+anogen = "anogen.cli:main"
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

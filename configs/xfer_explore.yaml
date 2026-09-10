@@ -1,0 +1,10 @@
+# Extra transfer panels after the first M2 / extra-M1 pair.
+# Isolated tree results/xfer/. Does not touch results/shell_s* or S6.
+phase: xfer
+seed: 0
+allow_test_telemetry: false
+
+xfer:
+  datasets:
+    - configs/xfer_mission2_s1b.yaml
+    - configs/xfer_mission2_s5.yaml

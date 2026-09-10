@@ -1,0 +1,10 @@
+# Parent: run both transfer datasets. Isolated tree results/xfer/.
+# Does not touch results/shell_s* or S6.
+phase: xfer
+seed: 0
+allow_test_telemetry: false
+
+xfer:
+  datasets:
+    - configs/xfer_mission2.yaml
+    - configs/xfer_mission1_extra.yaml

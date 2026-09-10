@@ -1,0 +1,88 @@
+# Mission 2: six pretest-richest analog channels from the G1 47-ch panel.
+# Retrain compact. Isolated results/xfer/mission2/. Not locked S4.
+phase: xfer
+seed: 0
+allow_test_telemetry: false
+
+causaldiscovery_root: /mnt/extras/SSD/AI/CausalDiscovery
+data_root: data/ESA-Mission2
+bin_seconds: 60
+
+splits:
+  path_train_end: "2001-07-01"
+  official_train_end: "2001-10-01"
+
+channels:
+  - channel_9
+  - channel_13
+  - channel_14
+  - channel_15
+  - channel_18
+  - channel_20
+
+xfer:
+  name: mission2
+  panel:
+    kind: slice
+    src: results/stage_g1/panel.npz
+    src_meta: results/stage_g1/panel_meta.json
+
+shell:
+  W: 512
+  N_generate: 128
+  n_folds: 3
+  n_nominal_per_channel: 1024
+  max_crops_per_event: 8
+  guard_bins: 16
+  min_anomaly_windows: 3
+  min_fs_windows: 8
+  train_includes_rares: true
+  rare_upsample: 1
+  tau:
+    unguided_target: 0.10
+  win:
+    occupancy_min: 0.8
+    diversity_ratio_min: 0.5
+    must_beat: [genias, posthoc]
+  scaler:
+    kind: minmax
+    feature_range: [0.0, 1.0]
+  diffusion:
+    backbone: tsdiff
+    hidden: 64
+    n_layers: 6
+    d_state: 64
+    n_times: 200
+    steps: 4000
+    batch_size: 128
+    lr: 2.0e-4
+    val_frac: 0.1
+    ddim_steps: 20
+    unguided_nu: 1.0
+    n_sample: 64
+  steer:
+    enc_hidden: 32
+    emb: 32
+    enc_steps: 400
+    enc_lr: 1.0e-3
+    n_ref: 512
+    q: 0.99
+    delta_scale: 0.25
+    nu: 0.2
+    lambda: 0.3
+    c_max: 1.0
+    n_sample: 64
+  tune:
+    n_ref_label: 256
+  enc_ablation:
+    time_emb: 8
+    steps_recon: 400
+    batch_size: 64
+  genias:
+    hidden: 48
+    latent: 16
+    steps: 2500
+    batch_size: 128
+    psi: 2.0
+    psi_extra: [1.0]
+    patch_tau: 0.2

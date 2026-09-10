@@ -1,0 +1,123 @@
+# Steered diffusion + GenIAS and post-hoc references. No SCM or PCMCI+.
+phase: s0
+seed: 0
+output_dir: results/shell_s0
+allow_test_telemetry: false
+
+causaldiscovery_root: /mnt/extras/SSD/AI/CausalDiscovery
+panel_npz: results/mission1/panel_light.npz
+data_root: data/ESA-Mission1
+bin_seconds: 30
+
+splits:
+  path_train_end: "2006-10-01"
+  official_train_end: "2007-01-01"
+
+channels:
+  - channel_41
+  - channel_42
+  - channel_43
+  - channel_44
+  - channel_45
+  - channel_46
+
+shell:
+  W: 512
+  N_generate: 256
+  n_folds: 3
+  n_nominal_per_channel: 4096
+  max_crops_per_event: 8
+  guard_bins: 16
+  min_anomaly_windows: 5
+  min_fs_windows: 8
+  train_includes_rares: true
+  rare_upsample: 1
+  tau:
+    unguided_target: 0.10
+  win:
+    occupancy_min: 0.8
+    diversity_ratio_min: 0.5
+    must_beat: [genias, posthoc]
+  scaler:
+    kind: minmax
+    feature_range: [0.0, 1.0]
+  diffusion:
+    backbone: tsdiff
+    hidden: 64
+    n_layers: 6
+    d_state: 64
+    n_times: 200
+    steps: 20000
+    batch_size: 128
+    lr: 2.0e-4
+    val_frac: 0.1
+    ddim_steps: 20
+    unguided_nu: 1.0
+    n_sample: 256
+  steer:
+    enc_hidden: 32
+    emb: 32
+    enc_steps: 400
+    enc_lr: 1.0e-3
+    n_ref: 512
+    q: 0.99
+    delta_scale: 0.25
+    nu: 0.2
+    lambda: 0.3
+    c_max: 1.0
+    n_sample: 128
+  tune:
+    n_cond: 192
+    n_ref_label: 256
+    bsz: 64
+    regen_n: 512
+  kindproto:
+    n: 128
+    ddim_steps_long: 200
+  kindmix:
+    n: 256
+  kindmix_htune:
+    n: 128
+  enc_ablation:
+    time_emb: 8
+    steps_recon: 800
+    steps_supcon: 1200
+    batch_size: 64
+    per_class: 32
+    temperature: 0.1
+    n_steer: 192
+
+  genias:
+    hidden: 48
+    latent: 16
+    steps: 15000
+    batch_size: 128
+    psi: 2.0
+    psi_extra: [1.0, 1.5]
+    patch_tau: 0.2
+  adapter:
+    hidden: 64
+    steps: 800
+    batch_size: 32
+    lr: 1.0e-3
+    anom_frac: 0.5
+    clf_hidden: 32
+    clf_steps: 400
+    lambda_shell: 0.15
+    lambda_cls: 0.8
+    rare_hard_neg: true
+
+s0_dir: results/shell_s0
+s1_dir: results/shell_s1
+s2_dir: results/shell_s2
+s3_dir: results/shell_s3
+s4_dir: results/shell_s4
+s5_dir: results/shell_s5
+tune_dir: results/shell_tune
+enc_dir: results/shell_enc
+plots_dir: results/shell_plots
+kindproto_dir: results/shell_kindproto
+kindmix_dir: results/shell_kindmix
+kindmix_score_dir: results/shell_kindmix_score_esa
+kindmix_htune_dir: results/shell_kindmix_htune
+enc_score_dir: results/shell_enc_score

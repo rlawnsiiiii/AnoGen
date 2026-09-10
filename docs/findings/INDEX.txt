@@ -1,0 +1,28 @@
+Shortlist plots for docs/FINDINGS.md
+Encoders: time_recon, time_both
+Recipes: hybrid, hybrid_needles
+HPs: l03_a10 / l03_a05 / l03_a03  (λ=0.3, λ_anom=1.0 / 0.5 / 0.3)
+Aimed = kind-slice best-stat. Nearest = nearest in φ from the whole gallery.
+
+  time_recon_shortlist_aimed.png
+  time_recon_hybrid_l03_aimed.png
+  time_recon_hybrid_needles_l03_aimed.png
+  time_recon_esa_point_global_aimed4.png
+  time_recon_esa_point_global_nearest4.png
+  time_recon_esa_local_subseq_aimed4.png
+  time_recon_esa_local_subseq_nearest4.png
+  time_recon_level_shift_aimed4.png
+  time_recon_level_shift_nearest4.png
+  time_recon_esa_global_subseq_aimed4.png
+  time_recon_esa_global_subseq_nearest4.png
+  time_both_shortlist_aimed.png
+  time_both_hybrid_l03_aimed.png
+  time_both_hybrid_needles_l03_aimed.png
+  time_both_esa_point_global_aimed4.png
+  time_both_esa_point_global_nearest4.png
+  time_both_esa_local_subseq_aimed4.png
+  time_both_esa_local_subseq_nearest4.png
+  time_both_level_shift_aimed4.png
+  time_both_level_shift_nearest4.png
+  time_both_esa_global_subseq_aimed4.png
+  time_both_esa_global_subseq_nearest4.png

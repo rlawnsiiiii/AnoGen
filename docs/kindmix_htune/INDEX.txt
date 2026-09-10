@@ -1,0 +1,65 @@
+Open these first (click in the file tree). Copies live here so they are
+not hidden by gitignored results/. Same files also in
+results/shell_kindmix_htune/plots/ and results/shell_plots/shell_kindmix_htune/.
+
+START HERE
+  htune_time_recon_recipes_parent50_aimed.png   recipes at λ=0.3 λ_anom=1
+  htune_time_both_recipes_parent50_aimed.png
+  htune_time_recon_recommend_aimed.png          hybrid_needles vs stratified
+  htune_time_both_recommend_aimed.png
+  htune_time_recon_hybrid_needles_aimed.png     λ / λ_anom grid (recommended recipe)
+  htune_time_both_hybrid_needles_aimed.png
+  htune_time_recon_stratified_aimed.png         noisy baseline grid
+  htune_time_both_stratified_aimed.png
+  htune_time_recon_metrics.png
+  htune_time_both_metrics.png
+  metrics.csv
+
+l03_a10 = locked parent50 (λ=0.3, λ_anom=1).
+hybrid = proto on level shift only; band on points + subsequences.
+hybrid_needles = proto on shift + Point/Global; band on subsequences.
+Aimed = kind-slice best-stat; nearest = nearest in φ from the whole gallery.
+
+ALL FILES
+  htune_time_recon_stratified_aimed.png
+  htune_time_recon_stratified_nearest.png
+  htune_time_recon_stratified_esa_point_global_nearest.png
+  htune_time_recon_stratified_esa_local_subseq_nearest.png
+  htune_time_recon_stratified_level_shift_nearest.png
+  htune_time_recon_stratified_esa_global_subseq_nearest.png
+  htune_time_recon_hybrid_aimed.png
+  htune_time_recon_hybrid_nearest.png
+  htune_time_recon_hybrid_esa_point_global_nearest.png
+  htune_time_recon_hybrid_esa_local_subseq_nearest.png
+  htune_time_recon_hybrid_level_shift_nearest.png
+  htune_time_recon_hybrid_esa_global_subseq_nearest.png
+  htune_time_recon_hybrid_needles_aimed.png
+  htune_time_recon_hybrid_needles_nearest.png
+  htune_time_recon_hybrid_needles_esa_point_global_nearest.png
+  htune_time_recon_hybrid_needles_esa_local_subseq_nearest.png
+  htune_time_recon_hybrid_needles_level_shift_nearest.png
+  htune_time_recon_hybrid_needles_esa_global_subseq_nearest.png
+  htune_time_recon_recipes_parent50_aimed.png
+  htune_time_both_stratified_aimed.png
+  htune_time_both_stratified_nearest.png
+  htune_time_both_stratified_esa_point_global_nearest.png
+  htune_time_both_stratified_esa_local_subseq_nearest.png
+  htune_time_both_stratified_level_shift_nearest.png
+  htune_time_both_stratified_esa_global_subseq_nearest.png
+  htune_time_both_hybrid_aimed.png
+  htune_time_both_hybrid_nearest.png
+  htune_time_both_hybrid_esa_point_global_nearest.png
+  htune_time_both_hybrid_esa_local_subseq_nearest.png
+  htune_time_both_hybrid_level_shift_nearest.png
+  htune_time_both_hybrid_esa_global_subseq_nearest.png
+  htune_time_both_hybrid_needles_aimed.png
+  htune_time_both_hybrid_needles_nearest.png
+  htune_time_both_hybrid_needles_esa_point_global_nearest.png
+  htune_time_both_hybrid_needles_esa_local_subseq_nearest.png
+  htune_time_both_hybrid_needles_level_shift_nearest.png
+  htune_time_both_hybrid_needles_esa_global_subseq_nearest.png
+  htune_time_both_recipes_parent50_aimed.png
+  htune_time_recon_metrics.png
+  htune_time_both_metrics.png
+  htune_time_recon_recommend_aimed.png
+  htune_time_both_recommend_aimed.png
