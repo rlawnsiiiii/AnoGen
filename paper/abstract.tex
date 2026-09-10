@@ -1,0 +1,26 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{times}
+
+\title{GenFSDiff: Few-shot Steered Diffusion for Generation of Synthetic Spacecraft Anomalies}
+\author{Joon Kim\\German Aerospace Center (DLR)\\[0.4em]} % Added missing closing brace here
+\date{}
+\begin{document}
+\maketitle
+
+\noindent\textbf{Abstract.}
+Satellite telemetry anomaly detection is essential for scalable spacecraft operations but remains difficult due to scarce numbers of confirmed anomalies in public datasets such as ESA Anomaly Detection Benchmark (ESA-ADB). This motivates generation of synthetic anomalies as a promising approach for more realistic simulation of satellite telemetry and more accurate time series anomaly detection (TSAD). However, existing methods for generating synthetic anomalies rely on adhoc, hand-crafted strategies applied to raw time series that not only fail to capture diverse and complex anomalous patterns, but also lack the capacity to generate anomalies from scratch, i.e. e.g. from pure noise. We propose a synthetic anomaly generation method named \underline{Gen}erator for Anomalies in Satellite Telemetry using \underline{F}ew-shot \underline{S}teered \underline{Diff}usion \textbf{(GenFSDiff)}. 
+
+GenFSDiff is trained only on nominal windows of ESA-ADB Mission 1 channels and can be \textit{steered} at sample time to produce univariate realistic and diverse anomalies of a wanted anomaly type, following the anomaly categorization of ESA-ADB. For this purpose, a real nominal parent is noised to a moderate diffusion time and steered with extra force 
+\[
+  f(\hat{x})=\lambda_{\mathrm{shell}}(h_{\mathrm{nom}}(\hat{x})-Q_{q})^2
+    +\lambda_{\mathrm{anom}}h_{\mathrm{anom}}
+\]
+Here, $\hat{x}$ is the anomalous window being generated at sample time. $h_{\mathrm{nom}}$ and $h_{\mathrm{anom}}$ are a soft energies against normalies and anomalies respectively in a frozen encoder trained contrastively to separate nominal, anomalous, and rare-nominal windows from each other. To target a specific anomaly type, we set $h_{\mathrm{anom}}$ to be a soft energy against a specific sample of the wanted anomaly type. This would require knowing a few real anomalies beforehand, from which the "Few-shot" of the name originates. $Q_q$ is a $q$th-quantile of nominal energy such that e.g. $Q_{0.99}$ would mean "as rare as the rarest 1\% of nominals in encoder space". Therefore, with this steering, we denoise our sample towards a specific anomaly type inside the $Q_{0.99}$-shell.
+
+To evaluate the generation quality of GenFSDiff, we compare our method against a basic ad-hoc hand-crafted strategy and a recently published model named GenIAS leverating a variational autoencoder. Our results confirm comparable or superior generation quality of GenFSDiff over other alternatives on realism, diversity, and especially its unique capability to aim for a specific anomaly type. 
+
+\medskip
+
+\end{document}
