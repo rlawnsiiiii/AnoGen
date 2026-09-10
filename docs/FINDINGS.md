@@ -168,12 +168,19 @@ ARP on the mixed gallery.
    `time_both`; 0.3 drops the shelf. Raising \(\lambda\) to 1.0–1.5
    hashes band slices and kills the shelf. [KIND_MIX_HTUNE.md](KIND_MIX_HTUNE.md).
 
-6. **Occupancy** stays ~0–0.04 whenever proto is on. Coverage@τ stays
-   0 (\(\varphi\) z-scores DC). Shift proto **leaks fold 0**.
+6. **Occupancy** stays ~0–0.04 on these 128-donor eyes whenever proto
+   is on. Coverage@τ stays 0 (\(\varphi\) z-scores DC). Shift proto
+   **leaks fold 0**.
 
-7. **Locked protocol** is unchanged. Best steered §2 row is still
-   `time_recon` + combined \(f\) (Cov 0.023, ARP 0.536). Stratified
-   proto at 1536 has Cov 0. These 128-donor eyes are not that table.
+7. **Locked protocol (1536 / 3-fold)** is now scored for hybrid too
+   (`kindmixscorehybrid`). Best hybrid row: `time_both` +
+   `hybrid_needles` (Cov 0.039, gap +0.014, ARP 0.584, occ. 0.47).
+   Combined still wins occupancy (0.78). Coverage is still ≪ GenIAS
+   (0.195) and comes from global subsequence, not aimed kinds.
+   From \(x_T\sim\mathcal N(0,I)\) (`noisescore`): occupancy holds,
+   Div ~14, hybrid Cov falls to 0.012–0.020.
+   [PAPER_CANDIDATES.md](PAPER_CANDIDATES.md) §2. These 128-donor
+   eyes are not that table.
 
 ---
 

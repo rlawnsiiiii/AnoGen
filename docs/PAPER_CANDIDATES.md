@@ -7,7 +7,7 @@ Locked training log: [RESULTS.md](RESULTS.md). Sampling math: [STEERING_MATH.md]
 **Two different stories — do not mix them.**
 
 1. **Locked S4 (cite vs GenIAS).** Zero-shot shell = pooled recon encoder + **band-only** steering. No `time_both`, no contrastive energies. Win rule **lost**.
-2. **Later 1536-window scores** (`encscore`, then `s5`, then `kindmixscore`, frozen S4 τ). `time_recon` / `time_both` × band, combined \(f\), or **stratified proto**; S5 adapters on the same score. Same φ / τ / donor count as S4. **Does not overwrite** `results/shell_s4`. Combined, stratified, and S5 are few-shot (event-OOF). Fold-0 encoder weights only.
+2. **Later 1536-window scores** (`encscore`, then `s5`, then `kindmixscore` / `kindmixscorehybrid`, frozen S4 τ). `time_recon` / `time_both` × band, combined \(f\), **stratified proto**, or **hybrid / hybrid_needles**; S5 adapters on the same score. Same φ / τ / donor count as S4. **Does not overwrite** `results/shell_s4`. Combined, stratified, hybrid, and S5 are few-shot (event-OOF). Fold-0 encoder weights only.
 
 S6 stays sealed.
 
@@ -123,6 +123,7 @@ Same queries, same φ (`feature_pack_v1`), same τ = 0.105, same 1536-donor gall
 | **Locked S4** | pool_recon | S4 band only | **yes** (official win rule) |
 | **encscore (this table)** | time_recon, time_both | band or combined | **yes** (same τ/φ/1536; not a new S4 freeze) |
 | **kindmixscore (this table)** | time_recon, time_both | stratified proto | **yes** (same τ/φ/1536; not a new S4 freeze) |
+| **kindmixscorehybrid (this table)** | time_recon, time_both | hybrid / hybrid_needles | **yes** (same τ/φ/1536; isolated dir) |
 | Tune regen (c15 / z7 / id 10) | pool_recon | contrast or occupancy | loosely |
 | Enc steer probe | all five encoders | S4 band, 192 donors, fold 0 | **no** |
 | `shell_tune` PNGs | time_recon, time_both | all four recipes, 256 windows | eyes only |
@@ -151,23 +152,27 @@ Locked S4-only EDI (5-method union) is in [RESULTS.md](RESULTS.md) and must not 
 
 τ = 0.105, φ = `feature_pack_v1`, 1536 donors, 3-fold OOF. Locked S4 occupancy **0.20**. Official win: **lost**.
 
-The first block is the frozen S4 table. **Shell ZS is pool_recon × band only.** The second block is `encscore` (2026-09-09): same protocol, new encoder and/or combined \(f\). The third block is **stratified proto** (`kindmixscore`, 2026-09-10 ESA kinds): same τ/φ/1536, parent50, official `Length` × `Locality` plus the level-shift overlay. The fourth block is **S5** (2026-09-09): residual adapter on the locked TSDiff score. Occupancy for encoder rows is vs **that encoder’s** \(Q_q\), not S2’s. Combined, stratified, and S5 use event-OOF refs / train-fold anomalies. `time_both` encoder saw fold-1/2 anomalies at train time. Artifacts: `results/shell_enc_score/summary.json`, `results/shell_kindmix_score_esa/summary.json`, `results/shell_s5/summary.json`. Morphology-kind 1536 freeze (do not mix): `results/shell_kindmix_score/summary.json`.
+The first block is the frozen S4 table. **Shell ZS is pool_recon × band only.** The second block is `encscore` (2026-09-09): same protocol, new encoder and/or combined \(f\). The third block is **stratified proto** (`kindmixscore`, 2026-09-10 ESA kinds): same τ/φ/1536, parent50, official `Length` × `Locality` plus the level-shift overlay. The fourth block is **hybrid / hybrid_needles** (`kindmixscorehybrid`, 2026-09-10): same protocol, proto only on structured kinds, band on the rest. The fifth block is **from noise** (`noisescore`, 2026-09-10): same recipes with \(x_T\sim\mathcal N(0,I)\). The sixth block is **S5** (2026-09-09): residual adapter on the locked TSDiff score. Occupancy for encoder rows is vs **that encoder’s** \(Q_q\), not S2’s. Combined, stratified, hybrid, and S5 use event-OOF refs / train-fold anomalies. `time_both` encoder saw fold-1/2 anomalies at train time. Artifacts: `results/shell_enc_score/summary.json`, `results/shell_kindmix_score_esa/summary.json`, `results/shell_kindmix_score_hybrid/summary.json`, `results/shell_noise_score/summary.json`, `results/shell_s5/summary.json`. Morphology-kind 1536 freeze (do not mix): `results/shell_kindmix_score/summary.json`.
 
-† S5 EDI is from the **S5-extended** k-means union (S4 + encscore + S5 galleries). ‡ Stratified EDI is from a **new** union (S4 + encscore + the two stratified fold-0 galleries). Do not compare † / ‡ / the 9-method EDI to each other. **Div is comparable** across the whole table.
+† S5 EDI is from the **S5-extended** k-means union (S4 + encscore + S5 galleries). ‡ Stratified EDI is from a **new** union (S4 + encscore + the two stratified fold-0 galleries). \* Hybrid EDI is from another union (S4 + encscore + the four hybrid / hybrid_needles fold-0 galleries). ¶ From-noise EDI is yet another union (`shell_noise_score`). Do not compare † / ‡ / \* / ¶ / the 9-method EDI to each other. **Div is comparable** across the whole table.
 
 | Method | Shot | Encoder | Steering | Cov. anom | Cov. rare | Gap | ARP anom | Occ. | Div | EDI |
 |---|---|---|---|---:|---:|---:|---:|---:|---:|---:|
-| Unguided DDIM ν=1 | ZS | — (g=0) | none | 0.109 | 0.092 | +0.017 | **0.568** | — | 2.34 | 1.89 |
+| Unguided DDIM ν=1 | ZS | — (g=0) | none | 0.109 | 0.092 | +0.017 | 0.568 | — | 2.34 | 1.89 |
 | **Shell ZS (locked S4)** | ZS | **pool_recon** | **band λ=0.3** | 0.081 | 0.071 | +0.010 | 0.393 | 0.20 | 2.01 | 1.83 |
 | GenIAS ψ=2 (unpatched) | ZS | TCN-VAE | inflate z | 0.195 | 0.196 | −0.001 | 0.317 | — | 1.09 | 1.12 |
 | GenIAS + paper patch | ZS | same | Alg. 2 (0% kept) | 0.354 | 0.324 | +0.030 | 0.320 | — | 1.11 | 1.18 |
 | Post-hoc inject | — | — | step/pulse/ramp/scale | **0.267** | 0.220 | **+0.047** | 0.319 | — | 1.21 | 1.37 |
 | time_recon + band | ZS | time_recon | original \(f\) | 0.076 | 0.077 | −0.000 | 0.433 | 0.02 | 2.09 | 1.83 |
 | time_both + band | FS enc | time_both | original \(f\) | 0.083 | 0.100 | −0.017 | 0.459 | 0.01 | 2.07 | 1.85 |
-| **time_recon + combined \(f\)** | FS | time_recon | band + contrast | 0.023 | 0.016 | +0.007 | 0.536 | **0.78** | **6.61** | **2.54** |
+| **time_recon + combined \(f\)** | FS | time_recon | band + contrast | 0.023 | 0.016 | +0.007 | 0.536 | **0.78** | 6.61 | 2.54 |
 | time_both + combined \(f\) | FS | time_both | band + contrast | 0.011 | 0.011 | −0.000 | 0.512 | 0.77 | 6.23 | 2.51 |
-| time_recon + stratified proto | FS | time_recon | band + ESA-kind proto | **0.000** | 0.000 | 0.000 | 0.450 | 0.07 | **7.34** | 2.31‡ |
+| time_recon + stratified proto | FS | time_recon | band + ESA-kind proto | **0.000** | 0.000 | 0.000 | 0.450 | 0.07 | 7.34 | 2.31‡ |
 | time_both + stratified proto | FS | time_both | band + ESA-kind proto | **0.000** | 0.001 | −0.001 | 0.487 | 0.07 | 6.75 | 2.31‡ |
+| time_recon + hybrid | FS | time_recon | proto on shift only | 0.024 | 0.026 | −0.002 | 0.520 | 0.62 | 5.34 | 2.25* |
+| time_recon + hybrid_needles | FS | time_recon | proto on shift + Point/Global | 0.023 | 0.029 | −0.007 | 0.576 | 0.45 | **7.94** | 2.54* |
+| time_both + hybrid | FS | time_both | proto on shift only | 0.038 | 0.036 | +0.002 | 0.511 | 0.64 | 5.52 | 2.31* |
+| **time_both + hybrid_needles** | FS | time_both | proto on shift + Point/Global | 0.039 | 0.025 | +0.014 | **0.584** | 0.47 | 7.52 | 2.60* |
 | S5 adapter-only | FS | — (g=0) | adapted ε, ν=0.2 | 0.063 | 0.076 | −0.013 | 0.455 | — | 2.04 | 1.66† |
 | S5 adapter+cls | FS | pool_recon | adapted + S2 band (cls **dropped**) | 0.021 | 0.024 | −0.003 | 0.416 | 0.69 | 2.60 | 2.01† |
 | S5 + time_recon combined | FS | time_recon | adapted ε + combined \(f\) | **0.000** | 0.002 | −0.002 | 0.352 | 0.77 | 4.71 | 2.36† |
@@ -177,7 +182,29 @@ Energy diagnostic on locked S2 (do not retune): rares sit on \(Q_q\) (mean h ≈
 
 **How to read the new rows.** Original band \(f\) on a temporal encoder is the same story as locked Shell ZS: Coverage@τ stays ~0.08, still less than half of GenIAS (0.195) and far below post-hoc (0.267). ARP rises a bit (0.39 → 0.43–0.46) but occupancy collapses (0.20 → 0.01–0.02) because \(Q_q\) lives in a new embedding. `time_both` + band covers **rares more than anomalies** (gap −0.017). Combined \(f\) does the opposite trade: occupancy jumps to 0.77–0.78 (near the 0.8 win bar) and ARP approaches unguided (0.51–0.54 vs 0.57), **beating GenIAS ARP** (0.32). Coverage@τ falls to 0.01–0.02 — an order of magnitude below GenIAS. Gap is ~0. Combined also wins both diversity scores (Div 6.2–6.6 vs unguided 2.3; EDI 2.51–2.54 vs unguided 1.89, near the \(\ln 16\) ceiling). That is “leave the parent,” not “cover labeled faults”: GenIAS says not to credit EDI when realism fails, and Coverage@τ is the realism check that failed. Combined is few-shot and still loses the protocol (coverage and the win rule). Among the four encscore rows, **time_recon + combined** is the least bad: only positive gap, best ARP, occupancy 0.78. It is not a GenIAS-beating generator.
 
-**Stratified proto (2026-09-10, ESA kinds).** Same 1536 / 3-fold protocol as encscore. Math: §0. Kinds are official Point/Global, local subsequence, level shift (overlay), and global subsequence — Point/Local has no pretest windows. Coverage@τ is **0** on every fold and **every kind** (combined was 0.011–0.023). Occupancy collapses to 0.07 — proto overpowers the band. ARP 0.45–0.49 beats GenIAS (0.32) and the morphology-kind stratified freeze (0.43–0.47) but **loses to combined** (0.51–0.54) and sits **closer to rares than to anomalies** (ARP rare 0.55 / 0.62). Div is in the combined family; `time_recon` stratified is now the table’s highest Div (7.34). Fold 0 still leaks the six level-shift refs. Do not drop the 256-donor kindmix table into this one. Neither row is a protocol upgrade over **time_recon + combined**.
+**Stratified proto (2026-09-10, ESA kinds).** Same 1536 / 3-fold protocol as encscore. Math: §0. Kinds are official Point/Global, local subsequence, level shift (overlay), and global subsequence — Point/Local has no pretest windows. Coverage@τ is **0** on every fold and **every kind** (combined was 0.011–0.023). Occupancy collapses to 0.07 — proto overpowers the band. ARP 0.45–0.49 beats GenIAS (0.32) and the morphology-kind stratified freeze (0.43–0.47) but **loses to combined** (0.51–0.54) and sits **closer to rares than to anomalies** (ARP rare 0.55 / 0.62). Div is in the combined family. Fold 0 still leaks the six level-shift refs. Do not drop the 256-donor kindmix table into this one. Neither row is a protocol upgrade over **time_recon + combined**.
+
+**Hybrid / hybrid_needles (2026-09-10, 1536 / 3-fold).** Same τ/φ/donors/parent50 as stratified. Isolated `results/shell_kindmix_score_hybrid/` — does not rewrite the ESA stratified freeze. `hybrid` protos only level shift (3/4 slices are band). `hybrid_needles` protos shift + Point/Global (2/4 band). Occupancy tracks that split (0.62–0.64 vs 0.45–0.47): band slices sit near \(Q_q\); proto slices knock occupancy down. Coverage@τ is **0.023–0.039** — above stratified (0) and combined (0.011–0.023), still **5× below GenIAS** (0.195). That coverage is **global subsequence only** (band-like campaigns). Aimed Point/Global and level shift stay at Coverage **0** (`feature_pack_v1` z-scores DC). Local-subsequence Coverage 0.08–0.17 on `time_both` is \(n=4\) queries — ignore it. `time_both` + hybrid_needles is the strongest hybrid row: gap **+0.014**, ARP **0.584** (above unguided 0.568; fold 2 is a 0.77 spike). ARP rare is still ~0.78–0.80 — galleries remain closer to rares. Div peaks at **7.94** (`time_recon` needles). Still loses the frozen win rule (occupancy ≪ 0.8; Coverage ≪ GenIAS / post-hoc). Eyes stay [FINDINGS.md](FINDINGS.md); this block is the protocol cite.
+
+**From noise (2026-09-10, same 1536 / 3-fold).** `start_from_noise=True`, ν=1, \(x_T\sim\mathcal N(0,I)\). Channel index still conditions ε; no donor waveform. Isolated `results/shell_noise_score/` (`noisescore`). Same \(f\) / encoders / OOF refs as the ν=0.2 rows. Unguided in the main table is **not** this: it is q_sample(ν=1) from a real parent. EDI ¶ is a new union — compare **Div**, not EDI, to the ν=0.2 rows.
+
+| Method | Start | Cov. anom | Gap | ARP anom | Occ. | Div | EDI |
+|---|---|---:|---:|---:|---:|---:|---:|
+| time_recon + hybrid | parent ν=0.2 | 0.024 | −0.002 | 0.520 | 0.62 | 5.34 | 2.25* |
+| time_recon + hybrid | **noise** | 0.012 | +0.010 | 0.549 | 0.59 | 14.74 | 2.58¶ |
+| time_recon + hybrid_needles | parent ν=0.2 | 0.023 | −0.007 | 0.576 | 0.45 | 7.94 | 2.54* |
+| time_recon + hybrid_needles | **noise** | 0.013 | +0.011 | 0.544 | 0.44 | 14.62 | 2.64¶ |
+| time_recon + combined \(f\) | parent ν=0.2 | 0.023 | +0.007 | 0.536 | 0.78 | 6.61 | 2.54 |
+| time_recon + combined \(f\) | **noise** | 0.014 | +0.013 | 0.520 | 0.78 | 14.34 | 2.41¶ |
+| time_both + hybrid | parent ν=0.2 | 0.038 | +0.002 | 0.511 | 0.64 | 5.52 | 2.31* |
+| time_both + hybrid | **noise** | 0.020 | +0.015 | 0.577 | 0.61 | 14.74 | 2.58¶ |
+| time_both + hybrid_needles | parent ν=0.2 | 0.039 | +0.014 | 0.584 | 0.47 | 7.52 | 2.60* |
+| time_both + hybrid_needles | **noise** | 0.020 | +0.011 | 0.578 | 0.44 | 14.15 | 2.64¶ |
+| time_both + combined \(f\) | parent ν=0.2 | 0.011 | −0.000 | 0.512 | 0.77 | 6.23 | 2.51 |
+| time_both + combined \(f\) | **noise** | 0.027 | +0.021 | 0.551 | 0.78 | 13.87 | 2.39¶ |
+| Unguided (q_sample ν=1) | parent destroyed | 0.109 | +0.017 | 0.568 | — | 2.34 | 1.89 |
+
+Occupancy **holds** (combined 0.78; hybrid ~0.60; needles ~0.44). The shell leash does not need a parent. Div **doubles** (5–8 → 14–15) — that is the real “from scratch” gain; unguided Div is only 2.34 because q_sample(ν=1) still starts from a real window. Coverage **drops** for hybrid (0.024–0.039 → 0.012–0.020): the ν=0.2 Coverage was mostly inherited campaign-like parents. `time_both` + combined is the exception (0.011 → 0.027). Rare Coverage collapses (~0.03 → ~0.002–0.009), so gaps look better. ARP stays in the same band (0.52–0.58). Aimed level shift stays Coverage 0. Point/Global 0.11–0.17 is \(n=6\) — do not cite. Fold 2 ARP is still a 0.66–0.77 spike. Still ≪ GenIAS Coverage (0.195). Best from-noise cite: **`time_both` + combined** (Cov 0.027, gap +0.021, occ. 0.78, ARP 0.55, Div 13.9) or **`time_both` + hybrid_needles** if you want the mixed-kind recipe (Cov 0.020, ARP 0.578, occ. 0.44, Div 14.2).
 
 **Can the model emit each ESA type?** Eyes: `results/shell_kindmix_esa/plots/` (256 donors, fold 0; aimed-slice grids + nearest-φ). Slice `P(|μ_L−μ_R|≥0.01)` and `P(amp≥0.1)` below are fold-0 1536.
 
@@ -287,8 +314,11 @@ Plots (`results/shell_plots/shell_s5/`): `gen_{recipe}.png`, `*_extreme.png`, `r
 | Scored | time_both × band | FS enc | yes | Hits rares more (gap −0.017) |
 | Scored | **time_recon × combined \(f\)** | FS | yes | Best new ARP (0.54), occ. 0.78, coverage **0.023** |
 | Scored | time_both × combined \(f\) | FS | yes | Same trade, slightly worse coverage |
-| Scored | time_recon × stratified proto | FS | yes | Cov **0**, occ. 0.07, ARP 0.45, Div **7.34**. Needles + leaked shelves |
+| Scored | time_recon × stratified proto | FS | yes | Cov **0**, occ. 0.07, ARP 0.45, Div 7.34. Needles + leaked shelves |
 | Scored | time_both × stratified proto | FS | yes | Cov **0**, occ. 0.07, ARP 0.49, Div 6.75. Best shelves. Not a protocol win |
+| Scored | time_* × hybrid | FS | yes | Cov 0.024–0.038, occ. 0.62–0.64, ARP 0.51–0.52. Band-heavy |
+| Scored | **time_both × hybrid_needles** | FS | yes | Cov **0.039**, gap **+0.014**, ARP **0.584**, occ. 0.47, Div 7.52. Still ≪ GenIAS Cov |
+| Scored | from-noise (ν=1, no parent) | FS | yes | Occ. holds; Div ~14; hybrid Cov 0.012–0.020. `time_both` combined Cov 0.027 |
 | Ablation | Unguided ν=1 | ZS | yes | Best ARP (0.57). No injected faults |
 | Reference | GenIAS ψ=2 | ZS | yes | Coverage 0.195; mild editor |
 | Ablation | pool_recon × contrast (c15) | FS | loosely | ARP 0.45, coverage 0.027 |
@@ -296,11 +326,11 @@ Plots (`results/shell_plots/shell_s5/`): `gen_{recipe}.png`, `*_extreme.png`, `r
 | Scored | S5 + time_* combined | FS | yes | Occ ~0.78, coverage **0**. Worse than combined alone |
 | Kill | occupancy-max, SupCon-only | — | — | Band-sitting / collapse |
 
-**No scored method beats GenIAS on Coverage@τ, or post-hoc on gap.** Combined \(f\) wins a different game (ARP, occupancy, Div/EDI) that unguided already leads on ARP. ESA-kind stratified proto and S5 do not change that.  
-Coverage@τ: post-hoc > GenIAS > unguided > band shells (~0.08) > S5 adapter-only (0.063) ≫ combined (~0.01–0.02) ≫ S5+combined ≈ stratified (**0**).  
-ARP: unguided > time_recon combined > time_both combined > time_both stratified > S5 adapter-only > time_recon stratified > … > GenIAS.  
-Div: time_recon stratified (7.34) > combined (no adapter) > time_both stratified > S5+combined > adapter+band > unguided ≈ adapter-only > GenIAS.  
-Eyes (256, ESA kinds): `time_both` stratified emits **Point/Global needles and level-shift shelves** in one gallery. Local / global subsequence stay wrong. Protocol (1536): nothing enters the τ-ball.
+**No scored method beats GenIAS on Coverage@τ, or post-hoc on gap.** Combined \(f\) wins occupancy; hybrid_needles now leads steered ARP (and edges unguided) but Coverage stays ~0.04. ESA-kind stratified proto and S5 do not change the Coverage ranking.  
+Coverage@τ: post-hoc > GenIAS > unguided > band shells (~0.08) > S5 adapter-only (0.063) > hybrid / needles (0.023–0.039) ≥ combined (~0.01–0.02) ≫ S5+combined ≈ stratified (**0**).  
+ARP: time_both hybrid_needles (0.584) > time_recon hybrid_needles (0.576) ≳ unguided (0.568) > time_recon combined > … > GenIAS. Fold-2 needles ARP is a 0.77 spike — do not over-read the mean.  
+Div: time_recon hybrid_needles (7.94) > time_both hybrid_needles (7.52) > time_recon stratified (7.34) > combined (no adapter) > … > GenIAS.  
+Eyes (256 / 128, ESA kinds): `hybrid_needles` emits **Point/Global needles and level-shift shelves** in one gallery. Protocol (1536): those aimed kinds still have Coverage@τ **0**; the 0.02–0.04 Coverage is global subsequence.
 
 ---
 
@@ -311,7 +341,7 @@ A nominal quantile shell does not generate ESA Anomalies. Temporal encoders, com
 
 **B — methods.** Not supported by these 1536 numbers. A later paper would need a different \(f\) or a metric declared *before* seeing that ARP and Coverage disagree.
 
-**Not viable.** “time_recon / time_both + combined beats GenIAS.” It beats GenIAS only on ARP, which unguided already wins, and loses badly on the protocol coverage number. Same for “stratified proto is the best steered model”: it can emit needles and leaked shelves, but Coverage@τ stays 0.
+**Not viable.** “time_recon / time_both + combined beats GenIAS.” It beats GenIAS only on ARP (and hybrid_needles now does too), and loses badly on the protocol coverage number. Same for “hybrid_needles is the best steered model”: it can emit needles and leaked shelves, and it is the best *hybrid* protocol row (Cov 0.039, ARP 0.584), but Coverage@τ is still an order of magnitude below GenIAS and the aimed kinds stay at 0.
 
 ---
 
@@ -319,6 +349,8 @@ A nominal quantile shell does not generate ESA Anomalies. Temporal encoders, com
 
 1. Do not promote combined \(f\) as a Coverage@τ win. It failed that test at 1536.
 2. Do not promote stratified proto from the 256-donor kindmix plots. At 1536 / 3-fold on ESA kinds, Coverage@τ is 0 and occupancy is ~0.07. It *can* emit Point/Global and (leaky) level shifts; it cannot emit the majority global-subsequence campaigns.
+2b. Hybrid / hybrid_needles **are scored** at 1536 (`kindmixscorehybrid`). Cite `time_both` + hybrid_needles as the best hybrid row, not as a Coverage@τ win. Occupancy 0.45–0.64 is the band-slice fraction, not a shell that covers aimed kinds.
+2c. From-noise (`noisescore`) occupancy holds and Div doubles (~14). Do not cite it as a Coverage win — hybrid Cov falls; only `time_both` + combined rises (0.011 → 0.027). Do not mix unguided (q_sample ν=1 from a parent) with `start_from_noise`.
 3. If you keep going: a constraint that targets **long-campaign** morphology, not another shove toward \(Q_q\) or train-fold spikes.
 4. S5 is scored. Do not stack the adapter on combined \(f\) expecting Coverage@τ to rise. S6 once after freeze.
 
@@ -331,6 +363,8 @@ A nominal quantile shell does not generate ESA Anomalies. Temporal encoders, com
 | Locked S4 vs GenIAS | `results/shell_s4/summary.json` |
 | time_recon / time_both vs GenIAS | `results/shell_enc_score/summary.json` |
 | time_* × ESA stratified proto (1536) | `results/shell_kindmix_score_esa/summary.json` |
+| time_* × hybrid / hybrid_needles (1536) | `results/shell_kindmix_score_hybrid/summary.json` |
+| time_* × hybrid / combined from noise (1536) | `results/shell_noise_score/summary.json` |
 | Morphology stratified freeze (1536) | `results/shell_kindmix_score/summary.json` |
 | ESA stratified eyes (256) | `results/shell_kindmix_esa/` |
 | Tune grid / regen (pool_recon) | `results/shell_tune/summary.json`, `sweep.csv` |

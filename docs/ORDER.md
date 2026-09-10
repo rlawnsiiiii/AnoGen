@@ -21,6 +21,8 @@ Label roles (Anomaly vs Rare Event vs nominal): [STEERING_MATH.md](STEERING_MATH
 | kindproto | Kind-conditional proto + 200-step from-noise. Isolated `results/shell_kindproto/`. Docs: [KIND_PROTO.md](KIND_PROTO.md) |
 | kindmix | Stratified proto, kind-balanced soft, two-recipe mix. Isolated `results/shell_kindmix/`. Docs: [KIND_MIX.md](KIND_MIX.md) |
 | kindmixscore | ESA-kind stratified proto at 1536 / 3-fold. Isolated `results/shell_kindmix_score_esa/`. Morphology freeze stays in `results/shell_kindmix_score/`. |
+| kindmixscorehybrid | `hybrid` / `hybrid_needles` at the same 1536 / 3-fold protocol. Isolated `results/shell_kindmix_score_hybrid/`. |
+| noisescore | Same recipes + combined from \(x_T\sim\mathcal N(0,I)\) (ν=1). Isolated `results/shell_noise_score/`. |
 | kindmixhtune | λ / λ_anom sweep on stratified + hybrid slices. Isolated `results/shell_kindmix_htune/`. Docs: [HYBRID.md](HYBRID.md), [KIND_MIX_HTUNE.md](KIND_MIX_HTUNE.md) |
 
 CausalDiscovery path (read-only): `/mnt/extras/SSD/AI/CausalDiscovery`.

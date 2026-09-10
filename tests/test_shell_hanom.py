@@ -128,11 +128,38 @@ def test_kindproto_recipes_and_cli():
     assert RECIPES["noise200"]["lam_rare"] == 0.0
 
 
+def test_noisescore_from_noise_recipe():
+    from anogen.cli import _PHASES
+    from anogen.phases.noisescore import NOISE50, NOISE_RECIPES
+
+    assert "noisescore" in _PHASES
+    assert NOISE50["start_from_noise"] is True
+    assert NOISE50["nu"] == 1.0
+    assert NOISE50["lam"] == 0.3
+    assert "combined" in NOISE_RECIPES
+    assert "hybrid_needles" in NOISE_RECIPES
+
+
+def test_kindmixscore_hybrid_recipes():
+    from anogen.phases.kindmixscore import SCORE_RECIPES, _requested_recipes
+
+    assert SCORE_RECIPES["hybrid"] is not None
+    assert "real level shift" in SCORE_RECIPES["hybrid"]
+    assert "real ESA Point / Global" in SCORE_RECIPES["hybrid_needles"]
+    assert SCORE_RECIPES["stratified"] is None
+    assert _requested_recipes({}) == ("stratified",)
+    assert _requested_recipes({"kindmixscore_recipes": ["hybrid", "hybrid_needles"]}) == (
+        "hybrid",
+        "hybrid_needles",
+    )
+
+
 def test_kindmixhtune_grid_and_recommend():
     from anogen.cli import _PHASES
     from anogen.phases.kindmixhtune import GRID, recommend_hparams, total_variation
 
     assert "kindmixhtune" in _PHASES
+    assert "kindmixscorehybrid" in _PHASES
     assert GRID[0] == ("l03_a10", 0.3, 1.0)
     flat = np.ones((4, 8), dtype=np.float64)
     assert np.allclose(total_variation(flat), 0.0)

@@ -229,33 +229,42 @@ def _combined_oof(
     score_kw: dict[str, Any],
     out: Path,
     variant: str,
+    sample_kw: dict[str, Any] | None = None,
+    tag: str = "combined",
 ) -> dict[str, Any]:
     fold_rows = []
     chunks = []
     q_q, delta = float(shell["Q_q"]), float(shell["delta"])
+    ddim = {**_COMBINED, **(sample_kw or {})}
     for fold_id in sorted({int(f) for f in fold_a.tolist() if int(f) >= 0}):
-        ra = torch.from_numpy(embed_shell(enc, x_a[fold_a != fold_id][:n_ref], device))
-        rr = torch.from_numpy(embed_shell(enc, x_r[fold_r != fold_id][:n_ref], device))
-        samples, h = chunked_guided_ddim(
-            model,
-            enc,
-            x_cond,
-            cond_ch,
-            schedule,
-            ref_anom=ra,
-            ref_rare=rr,
-            **_COMBINED,
-            **{k: v for k, v in common.items() if k != "bsz"},
-            bsz=common["bsz"],
-        )
+        cache = out / f"{variant}_{tag}_fold{fold_id}.npz"
+        if cache.is_file():
+            blob = np.load(cache)
+            samples = np.asarray(blob["x"])
+            h = np.asarray(blob["h"])
+        else:
+            ra = torch.from_numpy(embed_shell(enc, x_a[fold_a != fold_id][:n_ref], device))
+            rr = torch.from_numpy(embed_shell(enc, x_r[fold_r != fold_id][:n_ref], device))
+            samples, h = chunked_guided_ddim(
+                model,
+                enc,
+                x_cond,
+                cond_ch,
+                schedule,
+                ref_anom=ra,
+                ref_rare=rr,
+                **ddim,
+                **{k: v for k, v in common.items() if k != "bsz"},
+                bsz=common["bsz"],
+            )
+            np.savez_compressed(cache, x=samples, h=h)
         chunks.append(samples)
         scored = _score_gallery(samples, only_fold=fold_id, **score_kw)
         scored["fold"] = fold_id
         scored["occupancy"] = float(np.mean(np.abs(h - q_q) <= delta))
         fold_rows.append(scored)
-        np.savez_compressed(out / f"{variant}_combined_fold{fold_id}.npz", x=samples, h=h)
     gallery = np.concatenate(chunks, axis=0)
-    np.savez_compressed(out / f"{variant}_combined.npz", x=gallery)
+    np.savez_compressed(out / f"{variant}_{tag}.npz", x=gallery)
     return {
         "coverage_anomaly": float(np.mean([r["coverage_anomaly"] for r in fold_rows])),
         "coverage_rare": float(np.mean([r["coverage_rare"] for r in fold_rows])),

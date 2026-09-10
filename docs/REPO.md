@@ -26,8 +26,9 @@ src/anogen/
     hanom.py             nearest / knn / proto h_anom on locked 41–46
     kindproto.py         kind-conditional proto (per-kind \(R_\mathrm{anom}\))
     kindmix.py           stratified proto / kind-balanced soft / two-recipe mix
-    kindmixscore.py      time_* × stratified proto @ 1536 / 3-fold
+    kindmixscore.py      time_* × stratified / hybrid / hybrid_needles @ 1536 / 3-fold
     kindmixhtune.py      λ / λ_anom sweep on stratified + hybrid slices
+    noisescore.py        hybrid / needles / combined from x_T ~ N(0,I) @ 1536
     plots.py             S4-era gallery PNGs
     plot_tune.py         tune / encoder×recipe strips
     plot_from_noise.py   time_recon+combined from x_T ~ N(0,I)
@@ -86,11 +87,15 @@ All generation-quality numbers in `PAPER_CANDIDATES.md` §2 use **the same** `φ
 | mixed kinds (morphology caches) | `kindmix.py` | fold-0 `_score_gallery`, 256 donors | `results/shell_kindmix/` |
 | mixed kinds (ESA) | `kindmix.py` stratified | fold-0 `_score_gallery`, 256 donors | `results/shell_kindmix_esa/` |
 | time_* + ESA stratified proto | `kindmixscore.py` `_stratified` + OOF refs | fold-wise `_score_gallery` | `shell_kindmix_score_esa/{variant}_stratified_fold{k}.npz` |
+| time_* + hybrid / hybrid_needles | `kindmixscore.py` `run_kindmixscore_hybrid` | same | `shell_kindmix_score_hybrid/{variant}_{recipe}_fold{k}.npz` |
+| time_* + hybrid / combined from noise | `noisescore.py` `start_from_noise` | same | `shell_noise_score/{variant}_{recipe}_fold{k}.npz` |
 | time_* + morphology stratified (freeze) | same script, old kinds | same | `shell_kindmix_score/` |
 
 EDI for the **encscore 9-method** table: `encscore.py` `_edi_table_union` → `shell_enc_score/summary.json` `edi_table_union`.  
 EDI for **S5-extended** table: `s5.py` `_edi_s5_union` → `shell_s5/summary.json` `edi_table_union` (new union; do not mix with the 9-method EDI).  
 EDI for **stratified** rows: `kindmixscore.py` `_edi_strat_union` → `shell_kindmix_score_esa/summary.json` `edi_table_union` (S4 + encscore + two ESA stratified fold-0 galleries; mark ‡).  
+EDI for **hybrid / hybrid_needles** rows: `kindmixscore.py` `_edi_recipe_union` → `shell_kindmix_score_hybrid/summary.json` `edi_table_union` (S4 + encscore + four hybrid fold-0 galleries; mark \*). Do not mix ‡ / \*.  
+EDI for **from-noise** rows: `noisescore.py` → `shell_noise_score/summary.json` `edi_table_union` (mark ¶). Div is comparable to the ν=0.2 table; EDI is not.  
 Div is always `coverage.mean_pairwise_distance` on fold-0 / single 1536 gallery — comparable across tables.
 
 ## Plot scripts

@@ -23,6 +23,8 @@ uv run anogen -c configs/shell_mission1.yaml hanom      # h_anom nearest / knn /
 uv run anogen -c configs/shell_mission1.yaml kindproto  # aim proto at one anomaly kind
 uv run anogen -c configs/shell_mission1.yaml kindmix    # stratified / kind-balanced soft / mix
 uv run anogen -c configs/shell_mission1.yaml kindmixscore  # stratified proto @ 1536 / 3-fold
+uv run anogen -c configs/shell_mission1.yaml kindmixscorehybrid  # hybrid / needles @ 1536 / 3-fold
+uv run anogen -c configs/shell_mission1.yaml noisescore  # same recipes from x_T ~ N(0,I)
 uv run anogen -c configs/shell_mission1.yaml kindmixhtune  # λ / λ_anom + hybrid slices
 uv run anogen -c configs/xfer.yaml xfer   # M2 + extra M1 channels (isolated)
 uv run pytest -q

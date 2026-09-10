@@ -146,7 +146,7 @@ GenIAS App. E treats ARP as primary realism: \(1/(1+\mathrm{mean}\,d)\), how clo
 Div 6.61 vs unguided 2.34 vs post-hoc 1.21 vs GenIAS 1.09. EDI 2.54 vs 1.89 / 1.37 / 1.12 (near \(\ln 16\)). Parent-copying refs stay in a tight \(\varphi\) clump; combined leaves the donor. GenIAS says credit EDI only if ARP is credible — here ARP is the *higher* of the two stories, so the diversity win is fair to report next to ARP (still not a substitute for Coverage@τ).
 
 **Generate from noise.**  
-`start_from_noise=True`: \(x_T\sim\mathcal N(0,I)\), no donor waveform. GenIAS and post-hoc cannot do this; they are editors of a real window. Channel index + frozen \(Q_q\) / OOF refs still come from data; the path does not. Exhibit: `real_vs_time_recon_combined_from_noise.png` (§2).
+`start_from_noise=True`: \(x_T\sim\mathcal N(0,I)\), no donor waveform. GenIAS and post-hoc cannot do this; they are editors of a real window. Channel index + frozen \(Q_q\) / OOF refs still come from data; the path does not. Exhibit: `real_vs_time_recon_combined_from_noise.png` (§2). Protocol scores (1536 / 3-fold): `results/shell_noise_score/summary.json` and [PAPER_CANDIDATES.md](PAPER_CANDIDATES.md) §2 — occupancy holds (~0.78 combined), Div ~14, Coverage stays far below GenIAS.
 
 **Few-shot / online-capable refs.**  
 Combined \(f\) is semi-supervised at **sample time**, not a second training loop:

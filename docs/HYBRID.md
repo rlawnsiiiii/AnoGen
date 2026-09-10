@@ -144,6 +144,7 @@ Not a default `kindmix` variant (that would rewrite
 
 ```bash
 .venv/bin/anogen -c configs/shell_mission1.yaml kindmixhtune
+.venv/bin/anogen -c configs/shell_mission1.yaml kindmixscorehybrid  # 1536 / 3-fold metrics → results/shell_kindmix_score_hybrid/
 ```
 
 Or pass `shell.kindmix.variants: [hybrid_needles]` and a dedicated

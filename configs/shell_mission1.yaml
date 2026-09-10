@@ -119,5 +119,7 @@ plots_dir: results/shell_plots
 kindproto_dir: results/shell_kindproto
 kindmix_dir: results/shell_kindmix
 kindmix_score_dir: results/shell_kindmix_score_esa
+kindmix_score_hybrid_dir: results/shell_kindmix_score_hybrid
 kindmix_htune_dir: results/shell_kindmix_htune
+noise_score_dir: results/shell_noise_score
 enc_score_dir: results/shell_enc_score

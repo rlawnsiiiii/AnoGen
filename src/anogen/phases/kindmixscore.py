@@ -1,8 +1,10 @@
-"""Score time_recon / time_both × stratified proto on the locked S4 protocol.
+"""Score time_recon / time_both × kind-slice recipes on the locked S4 protocol.
 
-Same τ, φ, 1536 S3 donors, 3-fold OOF as encscore. Isolated
-results/shell_kindmix_score_esa/. Does not overwrite shell_s4, shell_enc_score,
-or the morphology freeze in results/shell_kindmix_score/.
+Same τ, φ, 1536 S3 donors, 3-fold OOF as encscore. Default
+results/shell_kindmix_score_esa/ is stratified only. Hybrid / hybrid_needles
+go to results/shell_kindmix_score_hybrid/ (kindmixscorehybrid). Does not
+overwrite shell_s4, shell_enc_score, or the morphology freeze in
+results/shell_kindmix_score/.
 
 Recipe is kindmix parent50 (λ=0.3, λ_anom=1, λ_rare=0, 50 DDIM, unit ∇)
 with ESA Length × Locality plus the level-shift overlay (docs/ESA_LABELS.md).
@@ -21,12 +23,20 @@ import torch
 from anogen.config import REPO_ROOT
 from anogen.phases.encscore import _abs, _brief, _jsonable, _load_encoder
 from anogen.phases.kindmix import (
+    HYBRID_NEEDLES_PROTO_KINDS,
+    HYBRID_PROTO_KINDS,
     _PARENT50,
     _coverage_by_kind,
     _coverage_slices,
     _kind_alloc_labels,
     _stratified,
 )
+
+SCORE_RECIPES: dict[str, frozenset[str] | None] = {
+    "stratified": None,
+    "hybrid": HYBRID_PROTO_KINDS,
+    "hybrid_needles": HYBRID_NEEDLES_PROTO_KINDS,
+}
 from anogen.phases.tune import _score_gallery
 from anogen.shell.coverage import edi_by_method, mean_pairwise_distance
 from anogen.shell.diffusion import DiffusionSchedule, denoiser_from_ckpt, torch_available
@@ -38,6 +48,29 @@ from anogen.shell.scaler import resolve_scaler
 from anogen.shell.steer import band_report
 
 
+def run_kindmixscore_hybrid(cfg: dict[str, Any]) -> dict[str, Any]:
+    """1536 / 3-fold scores for hybrid and hybrid_needles. Isolated dir."""
+    cfg = dict(cfg)
+    root = Path(cfg.get("_repo_root", REPO_ROOT))
+    cfg["kindmixscore_recipes"] = ("hybrid", "hybrid_needles")
+    cfg["kindmix_score_dir"] = cfg.get(
+        "kindmix_score_hybrid_dir", root / "results/shell_kindmix_score_hybrid"
+    )
+    return run_kindmixscore(cfg)
+
+
+def _requested_recipes(cfg: dict[str, Any]) -> tuple[str, ...]:
+    raw = cfg.get("kindmixscore_recipes")
+    if raw is None:
+        km = ((cfg.get("shell") or {}).get("kindmixscore") or {})
+        raw = km.get("recipes")
+    recipes = tuple(raw) if raw else ("stratified",)
+    unknown = [r for r in recipes if r not in SCORE_RECIPES]
+    if unknown:
+        raise ValueError(f"unknown kindmixscore recipes {unknown}")
+    return recipes
+
+
 def run_kindmixscore(cfg: dict[str, Any]) -> dict[str, Any]:
     root = Path(cfg.get("_repo_root", REPO_ROOT))
     s0 = _abs(cfg.get("s0_dir", root / "results/shell_s0"), root)
@@ -46,7 +79,13 @@ def run_kindmixscore(cfg: dict[str, Any]) -> dict[str, Any]:
     s4 = _abs(cfg.get("s4_dir", root / "results/shell_s4"), root)
     enc_dir = _abs(cfg.get("enc_dir", root / "results/shell_enc"), root)
     enc_score = _abs(cfg.get("enc_score_dir", root / "results/shell_enc_score"), root)
-    out = _abs(cfg.get("kindmix_score_dir", root / "results/shell_kindmix_score_esa"), root)
+    recipes = _requested_recipes(cfg)
+    esa_out = _abs(cfg.get("kindmix_score_dir", root / "results/shell_kindmix_score_esa"), root)
+    hybrid_out = _abs(
+        cfg.get("kindmix_score_hybrid_dir", root / "results/shell_kindmix_score_hybrid"),
+        root,
+    )
+    out = hybrid_out if set(recipes) & {"hybrid", "hybrid_needles"} else esa_out
     out.mkdir(parents=True, exist_ok=True)
 
     if not torch_available():
@@ -131,48 +170,59 @@ def run_kindmixscore(cfg: dict[str, Any]) -> dict[str, Any]:
             bsz=bsz,
             **_PARENT50,
         )
-        print(f"kindmixscore {variant} stratified OOF n={len(x_cond)}×3", flush=True)
-        scored = _stratified_oof(
-            model,
-            enc,
-            x_cond,
-            cond_ch,
-            schedule,
-            common=common,
-            shell=shell,
-            device=device,
-            kind_lab=kind_lab,
-            x_a=x_a,
-            fold_a=fold_a,
-            score_kw=score_kw,
-            out=out,
-            variant=variant,
-            seed=seed,
-        )
-        scored["encoder"] = variant
-        scored["recipe"] = "stratified"
-        scored["shot"] = "FS"
-        methods[f"{variant}_stratified"] = scored
-        ref_info[variant] = scored.get("refs", {})
+        for recipe in recipes:
+            print(
+                f"kindmixscore {variant} {recipe} OOF n={len(x_cond)}×3",
+                flush=True,
+            )
+            scored = _stratified_oof(
+                model,
+                enc,
+                x_cond,
+                cond_ch,
+                schedule,
+                common=common,
+                shell=shell,
+                device=device,
+                kind_lab=kind_lab,
+                x_a=x_a,
+                fold_a=fold_a,
+                score_kw=score_kw,
+                out=out,
+                variant=variant,
+                recipe=recipe,
+                proto_kinds=SCORE_RECIPES[recipe],
+                seed=seed,
+            )
+            scored["encoder"] = variant
+            scored["recipe"] = recipe
+            scored["shot"] = "FS"
+            methods[f"{variant}_{recipe}"] = scored
+            ref_info[f"{variant}_{recipe}"] = scored.get("refs", {})
 
     locked = dict(s4_sum.get("methods") or {})
     for name in ("shell", "genias", "posthoc", "unguided"):
         if name in locked:
             methods[name] = dict(locked[name])
 
-    edi_table = _edi_strat_union(s4=s4, enc_out=enc_score, strat_out=out, gal=gal)
+    edi_table = _edi_recipe_union(
+        s4=s4, enc_out=enc_score, recipe_out=out, gal=gal, recipes=recipes
+    )
+    recipe_suffixes = tuple(f"_{r}" for r in recipes) + ("_combined",)
     for name, val in edi_table.items():
         if name in methods:
             methods[name]["edi_table"] = val
-            if str(name).endswith("_stratified") or str(name).endswith("_combined"):
+            if any(str(name).endswith(suf) for suf in recipe_suffixes):
                 methods[name]["edi"] = val
 
+    recipe_note = ", ".join(recipes)
     report = {
         "ok": True,
         "skipped": False,
         "tau": tau,
         "tau_source": "s4_frozen",
         "n_donors": int(len(x_cond)),
+        "recipes": list(recipes),
         "methods": {k: _brief(v) for k, v in methods.items()},
         "refs": ref_info,
         "edi_table_union": {
@@ -180,19 +230,20 @@ def run_kindmixscore(cfg: dict[str, Any]) -> dict[str, Any]:
             "n_per_gallery": 1536,
             "values": edi_table,
             "note": (
-                "GenIAS App. E.2 EDI on S4 + encscore + stratified fold-0 galleries. "
+                f"GenIAS App. E.2 EDI on S4 + encscore + {recipe_note} fold-0 galleries. "
                 "New partition — do not mix with locked S4 5-method, encscore 9-method, "
-                "or S5-extended EDI."
+                "stratified ‡, or S5-extended EDI."
             ),
         },
         "folds": {k: v.get("folds") for k, v in methods.items() if v.get("folds") is not None},
         "kind_scheme": "esa",
         "note": (
-            "Stratified proto scored with frozen S4 τ and feature_pack_v1. "
+            f"{recipe_note} scored with frozen S4 τ and feature_pack_v1. "
             "1536 S3 donors, 3-fold OOF. parent50: λ=0.3, λ_anom=1, λ_rare=0, "
             "50 DDIM, unit ∇. ESA Length × Locality + level-shift overlay. "
-            "Fold-0 encoder only. Does not overwrite results/shell_s4 "
-            "or results/shell_kindmix_score/ (morphology freeze)."
+            "Fold-0 encoder only. Does not overwrite results/shell_s4, "
+            "results/shell_kindmix_score/ (morphology freeze), or "
+            "results/shell_kindmix_score_esa/ (stratified freeze)."
         ),
     }
     (out / "summary.json").write_text(json.dumps(_jsonable(report), indent=2) + "\n")
@@ -216,6 +267,8 @@ def _stratified_oof(
     out: Path,
     variant: str,
     seed: int,
+    recipe: str = "stratified",
+    proto_kinds: frozenset[str] | None = None,
 ) -> dict[str, Any]:
     fold_rows = []
     chunks = []
@@ -240,7 +293,7 @@ def _stratified_oof(
             kind_z[kind] = torch.from_numpy(embed_shell(enc, x_a[idx], device))
         refs_by_fold[str(fold_id)] = fold_refs
         active = [k for k in KIND_ORDER if k in kind_z]
-        cache = out / f"{variant}_stratified_fold{fold_id}.npz"
+        cache = out / f"{variant}_{recipe}_fold{fold_id}.npz"
         if cache.is_file():
             blob = np.load(cache)
             samples = np.asarray(blob["x"])
@@ -262,6 +315,7 @@ def _stratified_oof(
                 seed + 1000 * fold_id,
                 kind_order=KIND_ORDER,
                 kind_slug=KIND_SLUG,
+                proto_kinds=proto_kinds,
             )
             alloc = _kind_alloc_labels(len(samples), active)
             np.savez_compressed(
@@ -284,7 +338,7 @@ def _stratified_oof(
         )
         fold_rows.append(scored)
     gallery = np.concatenate(chunks, axis=0)
-    np.savez_compressed(out / f"{variant}_stratified.npz", x=gallery)
+    np.savez_compressed(out / f"{variant}_{recipe}.npz", x=gallery)
     return {
         "coverage_anomaly": float(np.mean([r["coverage_anomaly"] for r in fold_rows])),
         "coverage_rare": float(np.mean([r["coverage_rare"] for r in fold_rows])),
@@ -319,12 +373,13 @@ def _mean_kind_rows(rows: list[dict[str, dict[str, float]]]) -> dict[str, dict[s
     return out
 
 
-def _edi_strat_union(
+def _edi_recipe_union(
     *,
     s4: Path,
     enc_out: Path,
-    strat_out: Path,
+    recipe_out: Path,
     gal: Any,
+    recipes: tuple[str, ...],
 ) -> dict[str, float]:
     s4g = np.load(s4 / "shell_gallery.npz")
     embs: dict[str, np.ndarray] = {
@@ -342,7 +397,24 @@ def _edi_strat_union(
             embs[f"{variant}_band"] = embed_windows(np.asarray(np.load(band)["x"]))
         if comb.is_file():
             embs[f"{variant}_combined"] = embed_windows(np.asarray(np.load(comb)["x"]))
-        strat = strat_out / f"{variant}_stratified_fold0.npz"
-        if strat.is_file():
-            embs[f"{variant}_stratified"] = embed_windows(np.asarray(np.load(strat)["x"]))
+        for recipe in recipes:
+            path = recipe_out / f"{variant}_{recipe}_fold0.npz"
+            if path.is_file():
+                embs[f"{variant}_{recipe}"] = embed_windows(np.asarray(np.load(path)["x"]))
     return edi_by_method(embs)
+
+
+def _edi_strat_union(
+    *,
+    s4: Path,
+    enc_out: Path,
+    strat_out: Path,
+    gal: Any,
+) -> dict[str, float]:
+    return _edi_recipe_union(
+        s4=s4,
+        enc_out=enc_out,
+        recipe_out=strat_out,
+        gal=gal,
+        recipes=("stratified",),
+    )

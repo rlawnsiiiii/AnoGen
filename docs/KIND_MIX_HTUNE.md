@@ -137,8 +137,11 @@ declared pick kept both structured kinds, so it is `hybrid_needles`.
 - **Local vs global subsequence** are not two generators. See
   [HYBRID.md](HYBRID.md) §2.
 
-This is not a replacement for **time_recon + combined** on the locked
-1536 / 3-fold table ([PAPER_CANDIDATES.md](PAPER_CANDIDATES.md) §2).
-It is the sampling recipe when you want one mixed gallery that can
-contain a shelf, a needle, and quiet crops without hashing the quiet
-ones.
+Hybrid / hybrid_needles now have locked-protocol scores
+(`kindmixscorehybrid`, `results/shell_kindmix_score_hybrid/`). Best
+hybrid row is `time_both` + `hybrid_needles` (Cov 0.039, ARP 0.584).
+That is still not a Coverage@τ win vs GenIAS. Combined still wins
+occupancy. Full table: [PAPER_CANDIDATES.md](PAPER_CANDIDATES.md) §2.
+This sweep is the sampling recipe when you want one mixed gallery that
+can contain a shelf, a needle, and quiet crops without hashing the
+quiet ones.

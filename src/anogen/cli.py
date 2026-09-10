@@ -26,7 +26,9 @@ _PHASES = (
     "kindproto",
     "kindmix",
     "kindmixscore",
+    "kindmixscorehybrid",
     "kindmixhtune",
+    "noisescore",
 )
 
 
@@ -39,7 +41,7 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument(
         "phase",
         choices=_PHASES,
-        help="s0–s6, tune, enc, encscore, plots, xfer, hanom, kindproto, kindmix, kindmixscore, kindmixhtune",
+        help="s0–s6, tune, enc, encscore, plots, xfer, hanom, kindproto, kindmix, kindmixscore, kindmixscorehybrid, kindmixhtune, noisescore",
     )
     args = parser.parse_args(argv)
     cfg = load_config(args.config)
@@ -122,10 +124,18 @@ def _dispatch(phase: str, cfg: dict) -> dict:
         from anogen.phases.kindmixscore import run_kindmixscore
 
         return run_kindmixscore(cfg)
+    if phase == "kindmixscorehybrid":
+        from anogen.phases.kindmixscore import run_kindmixscore_hybrid
+
+        return run_kindmixscore_hybrid(cfg)
     if phase == "kindmixhtune":
         from anogen.phases.kindmixhtune import run_kindmix_htune
 
         return run_kindmix_htune(cfg)
+    if phase == "noisescore":
+        from anogen.phases.noisescore import run_noisescore
+
+        return run_noisescore(cfg)
     print(f"{phase} is not implemented yet.", file=sys.stderr)
     sys.exit(2)
 
