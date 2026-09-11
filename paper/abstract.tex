@@ -4,21 +4,21 @@
 \usepackage{times}
 
 \title{GenFSDiff: Few-shot Steered Diffusion for Generation of Synthetic Spacecraft Anomalies}
-\author{Joon Kim\\Galileo Competence Center at the German Aerospace Center (DLR)\\Muenchener Str. 20, 82234 Wessling, Germany\\[0.4em]} % Added missing closing brace here
+%\author{Joon Kim\\Galileo Competence Center at the German Aerospace Center (DLR)\\Muenchener Str. 20, 82234 Wessling, Germany\\[0.4em]} % Added missing closing brace here
 \date{}
 \begin{document}
 \maketitle
 
 Satellite telemetry anomaly detection is essential for scalable spacecraft operations but remains challenging due to the scarcity of confirmed anomalies in public datasets like the ESA Anomaly Detection Benchmark (ESA-ADB). This motivates the generation of synthetic anomalies to enable more realistic telemetry simulations and improve time series anomaly detection (TSAD) accuracy. However, existing generation methods mostly rely on ad-hoc, hand-crafted strategies applied to raw time series. These approaches often fail to capture diverse, complex anomalous patterns and cannot generate anomalies from scratch (e.g., from pure noise). We propose a novel synthetic anomaly generation method named \underline{Gen}erator for Anomalies in Satellite Telemetry using \underline{F}ew-shot \underline{S}teered \underline{Diff}usion \textbf{(GenFSDiff)}. 
 
-GenFSDiff is trained exclusively on nominal windows of ESA-ADB Mission 1 channels. At sample time, it can be \textit{steered} to produce realistic, diverse, univariate anomalies of specific types, adhering to the ESA-ADB categorization. To achieve this, a real nominal parent time series is noised to a moderate diffusion time and steered using an energy-based force: 
+GenFSDiff is trained on nominal and rare-nominal windows of six ESA-ADB Mission 1 channels (channels 41–46). At sample time, it can be \textit{steered} to produce realistic, diverse, univariate anomalies of specific types, inspired by the ESA-ADB categorization. To achieve this, a real nominal parent time series is noised to a moderate diffusion time and steered using an energy-based force: 
 \[
-  f(\hat{x})=\lambda_{\mathrm{shell}}(h_{\mathrm{nom}}(\hat{x})-Q_{q})^2
-    +\lambda_{\mathrm{anom}}h_{\mathrm{anom}}(\hat{x})
+  f(\hat{x})=\lambda_{\mathrm{shell}}(h_{\mathrm{nom}}(e(\hat{x}))-Q_{q})^2
+    +\lambda_{\mathrm{anom}}h_{\mathrm{anom}}(e(\hat{x}))
 \]
-Here, $\hat{x}$ is the anomalous window being denoised/generated at sample time. The terms $h_{\mathrm{nom}}$ and $h_{\mathrm{anom}}$ represent soft energies of $\hat{x}$ against nominals and anomalies in a frozen encoder that is contrastively trained to separate nominal, anomalous, and rare-nominal windows. To target a specific anomaly type, $h_{\mathrm{anom}}$ is set to the soft energy of $\hat{x}$ against a specific known sample of the wanted anomaly type (hence, "few-shot"). $Q_q$ represents the $q$th-quantile of nominal energy (e.g. $Q_{0.99}$ bounds the sample to the rarest 1\% of nominals in encoder space). Ultimately, this steering process guides the denoising trajectory toward a specific anomaly type while remaining within a defined $Q_{0.99}$-shell of nominals.
+Here, $\hat{x}$ is the anomalous window being denoised/generated at sample time. The term $h_{\mathrm{nom}}$ represents soft energies of $\hat{x}$ against nominals in a frozen encoder $e(\cdot)$ that is trained with reconstruction and an auxiliary supervised-contrastive loss on train-fold labels, i.e., including known rare-nominals and anomalies (hence, "few-shot"). $Q_q$ represents the $q$th-quantile of nominal energy (e.g. $Q_{0.99}$ bounds the sample to the rarest 1\% of nominals in encoder space). To target a specific anomaly type, $h_{\mathrm{anom}}$ is set to the squared error between the embeddings of $\hat{x}$ and a specific known sample of the wanted anomaly type in the encoder space. Ultimately, this steering process guides the denoising trajectory toward a specific anomaly type while penalizing large deviations from a defined $Q_{0.99}$-shell of nominals.
 
-We evaluate GenFSDiff against a basic hand-crafted baseline and GenIAS, a recently published variational autoencoder-based model. Following the GenIAS methodology, we measure generation quality using Anomalous Representation Proximity (ARP) for realism and the Entropy-Based Diversity Index (EDI) for diversity. Our results demonstrate that GenFSDiff achieves comparable or superior realism, nearly doubles the diversity score, and introduces a unique capability to target specific anomaly types. Furthermore, unlike existing methods, our trained model does not require raw time series as parents; it can generate anomalies from pure noise while maintaining its ARP and EDI scores.
+We evaluate GenFSDiff against a basic hand-crafted baseline and GenIAS, a recently published variational autoencoder-based model. Following the GenIAS methodology, we measure generation quality using Anomalous Representation Proximity (ARP) for realism and the Entropy-Based Diversity Index (EDI) for diversity. Our results demonstrate that GenFSDiff achieves comparable or superior realism, nearly doubles the diversity score, and introduces a unique capability to target specific anomaly types. Furthermore, unlike existing methods, our trained model does not require raw time series as parents; it can generate anomalies from pure noise without significantly degrading its ARP and EDI scores.
 
 
 \medskip
