@@ -2,13 +2,24 @@
 \usepackage[margin=1in]{geometry}
 \usepackage[T1]{fontenc}
 \usepackage{times}
+\usepackage{authblk} 
+\usepackage{amsmath} % Added for robust math support
 
 \title{GenFSDiff: Few-shot Steered Diffusion for Generation of Synthetic Spacecraft Anomalies}
-%\author{Joon Kim\\Galileo Competence Center at the German Aerospace Center (DLR)\\Muenchener Str. 20, 82234 Wessling, Germany\\[0.4em]} % Added missing closing brace here
+
+% Assign authors and affiliations using matching numbers
+\author[1]{Joon Kim}
+\author[2]{Nils-Holger Kaul}
+\affil[1]{Student, Space and Ground Segment Technology, Galileo Competence Center, DLR}
+\affil[2]{Research Associate, Space and Ground Segment Technology, Galileo Competence Center, DLR}
+
+% Optional: Make the affiliation font slightly smaller and italicized
+\renewcommand\Affilfont{\itshape\small}
+
 \date{}
+
 \begin{document}
 \maketitle
-
 Satellite telemetry anomaly detection is essential for scalable spacecraft operations but remains challenging due to the scarcity of confirmed anomalies in public datasets like the ESA Anomaly Detection Benchmark (ESA-ADB). This motivates the generation of synthetic anomalies to enable more realistic telemetry simulations and improve time series anomaly detection (TSAD) accuracy. However, existing generation methods mostly rely on ad-hoc, hand-crafted strategies applied to raw time series. These approaches often fail to capture diverse, complex anomalous patterns and cannot generate anomalies from scratch (e.g., from pure noise). We propose a novel synthetic anomaly generation method named \underline{Gen}erator for Anomalies in Satellite Telemetry using \underline{F}ew-shot \underline{S}teered \underline{Diff}usion \textbf{(GenFSDiff)}. 
 
 GenFSDiff is trained on nominal and rare-nominal windows of six ESA-ADB Mission 1 channels (channels 41–46). At sample time, it can be \textit{steered} to produce realistic, diverse, univariate anomalies of specific types, inspired by the ESA-ADB categorization. To achieve this, a real nominal parent time series is noised to a moderate diffusion time and steered using an energy-based force: 
