@@ -29,6 +29,7 @@ src/anogen/
     kindmixscore.py      time_* × stratified / hybrid / hybrid_needles @ 1536 / 3-fold
     kindmixhtune.py      λ / λ_anom sweep on stratified + hybrid slices
     noisescore.py        hybrid / needles / combined from x_T ~ N(0,I) @ 1536
+    ablate_lambda.py     λ_shell=0 proto-only and no-steer @ 1536
     plots.py             S4-era gallery PNGs
     plot_tune.py         tune / encoder×recipe strips
     plot_from_noise.py   time_recon+combined from x_T ~ N(0,I)
@@ -109,6 +110,7 @@ Div is always `coverage.mean_pairwise_distance` on fold-0 / single 1536 gallery 
 | Kind-conditional proto | `phases/kindproto.py` | `results/shell_kindproto/plots/` |
 | Mixed-gallery kinds | `phases/kindmix.py` | `results/shell_kindmix/plots/` |
 | Hybrid λ / λ_anom sweep | `phases/kindmixhtune.py` | `docs/kindmix_htune/` (copy; also `results/shell_kindmix_htune/plots/`) |
+| λ_shell=0 / no-steer | `phases/ablate_lambda.py` | `docs/ablate_lambda/` (copy; also `results/shell_ablate_lambda/plots/`) |
 
 Shared drawing: `shell/plots.py` `save_strip`, `save_compare_rows`. Kinds: `shell/morphology.py`.
 
