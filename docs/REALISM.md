@@ -798,6 +798,54 @@ so the linear density axis hides everything that matters. The envelope and
 CUSUM diagnostics in `diagnostics.csv` carry the actual signal; a log density
 axis or a tail-only inset would be the fix.
 
+### 17.8 Targeted kind was confounded with channel; fixing it relocates the blame
+
+S3 lays the 1536 donors out in per-channel blocks of 256, and
+`_kind_alloc_labels` split them into **contiguous** slices, so each targeted
+kind only ever saw one or two channels: Point/Global on 41–42, local
+subsequence on 42–43, level shift on 44–45, global subsequence on 45–46.
+Every per-kind number in this repo was therefore a kind *and* channel effect.
+
+`channel_stratified_alloc` splits within each channel instead (64 donors per
+channel per kind, same 384 totals). `results/shell_chanmix/` regenerates
+`hybrid_needles` with it; the frozen gallery is untouched. Per-kind diagnostics,
+fold 0:
+
+| kind | | env frac | env max | cusum | diff p99.9 | peak@start |
+|---|---|---|---|---|---|---|
+| Point/Global | contiguous | 0.734 | 4.09 | 0.05 | 0.774 | 0.193 |
+| | chanmix | 0.625 | 4.14 | 0.04 | 0.686 | 0.315 |
+| local subseq | contiguous | 0.943 | 2.58 | −0.12 | 0.251 | 0.357 |
+| | chanmix | **0.341** | 2.95 | −0.03 | **0.164** | 0.326 |
+| level shift | contiguous | 0.987 | 3.54 | 4.44 | 0.889 | 0.870 |
+| | chanmix | 0.987 | 4.04 | **4.50** | 0.869 | **0.917** |
+| global subseq | contiguous | 0.023 | 0.49 | −0.09 | 0.065 | 0.383 |
+| | chanmix | **0.346** | **3.60** | 0.00 | 0.182 | 0.323 |
+
+Two things fall out:
+
+- **The level-shift transient is intrinsic to the proto steering, not to a
+  channel.** Every number is unchanged when the slice moves from channels 44–45
+  onto all six. It is by far the worst slice — CUSUM 4.5 against a whole-gallery
+  1.13 and a real −0.005, and 92% of its peaks in the first tenth of the window
+  — and it is a quarter of the gallery.
+- **The clean global-subsequence slice was a channel artifact.** Moved off
+  channels 45–46 it goes from 2% to 35% envelope exits and from 0.49 to 3.60
+  max excess. Local subsequence moves the other way: its violence was channel,
+  not kind.
+
+Whole-gallery effect is close to a wash (envelope fraction 0.672 → 0.575,
+everything else within noise), and ARP falls 0.584 → 0.565 with Coverage@τ
+0.039 → 0.022 — the honest cost of removing an accidental advantage. EDI is a
+different per-run union here and is not comparable.
+
+Full write-up, including the scores and the EDI **c** union, is in
+[CHANMIX.md](CHANMIX.md). Eyes: [`docs/chanmix_by_kind/`](chanmix_by_kind/INDEX.txt)
+against [`docs/c1_by_kind/`](c1_by_kind/INDEX.txt).
+
+Everything in §17.1–17.7 above still describes the **contiguous** gallery;
+`results/shell_chanmix/` has not been through this audit.
+
 ---
 
 ## 18. References

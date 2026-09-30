@@ -1,14 +1,15 @@
-"""What c1 (time_both hybrid_needles) actually generates, per targeted kind.
+"""What a hybrid_needles gallery actually generates, per targeted kind.
 
 One figure per allocated kind: 16 generations with the nominal donor each was
-steered from, plus a real-vs-c1 overview. Channel-span units, so the shaded
-band is the S0 nominal training envelope.
+steered from, plus a real-vs-generated overview. Channel-span units, so the
+shaded band is the S0 nominal training envelope.
 
-Writes docs/c1_by_kind/. Reads only; touches no S3/S4/audit artifact.
+Defaults to c1 into docs/c1_by_kind/. Reads only; writes no result artifact.
 """
 
 from __future__ import annotations
 
+import argparse
 from pathlib import Path
 
 import matplotlib
@@ -65,7 +66,9 @@ def _panel(
     ax.tick_params(labelsize=7)
 
 
-def _grid(out: Path, kind: str, gen: np.ndarray, donor: np.ndarray, ch: np.ndarray) -> str:
+def _grid(
+    out: Path, kind: str, gen: np.ndarray, donor: np.ndarray, ch: np.ndarray, label: str
+) -> str:
     rng = np.random.default_rng(SEED)
     idx = rng.choice(len(gen), size=min(N_GRID, len(gen)), replace=False)
     cols = 4
@@ -82,12 +85,12 @@ def _grid(out: Path, kind: str, gen: np.ndarray, donor: np.ndarray, ch: np.ndarr
     for k in range(len(idx), rows * cols):
         axes[k // cols, k % cols].axis("off")
     fig.suptitle(
-        f"c1 targeting {SHORT.get(kind, kind)} — {len(idx)} random generations "
+        f"{label} targeting {SHORT.get(kind, kind)} — {len(idx)} random generations "
         f"(grey = nominal donor, band = training envelope)",
         fontsize=12,
     )
     fig.tight_layout()
-    name = f"c1_{KIND_SLUG.get(kind, 'kind')}.png"
+    name = f"{label}_{KIND_SLUG.get(kind, 'kind')}.png"
     fig.savefig(out / name, dpi=145)
     plt.close(fig)
     return name
@@ -98,6 +101,7 @@ def _overview(
     kinds: list[str],
     gen_by_kind: dict[str, np.ndarray],
     real_by_kind: dict[str, np.ndarray],
+    label: str,
 ) -> str:
     rows = [k for k in kinds if len(gen_by_kind.get(k, ()))]
     fig, axes = plt.subplots(
@@ -108,7 +112,7 @@ def _overview(
         for which, source, color in ((0, real_by_kind.get(kind), REAL), (1, gen_by_kind[kind], GEN)):
             ar = 2 * r + which
             n = 0 if source is None else len(source)
-            label = ("real" if which == 0 else "c1") + f"\n{SHORT.get(kind, kind)}"
+            row_label = ("real" if which == 0 else label) + f"\n{SHORT.get(kind, kind)}"
             pick = rng.choice(n, size=min(N_OVERVIEW, n), replace=False) if n else np.zeros(0, int)
             for c in range(N_OVERVIEW):
                 ax = axes[ar, c]
@@ -117,27 +121,36 @@ def _overview(
                     continue
                 _panel(ax, _hours(source.shape[1]), source[pick[c]], None, color=color)
                 if c == 0:
-                    ax.set_ylabel(label, fontsize=8)
+                    ax.set_ylabel(row_label, fontsize=8)
                 if ar == 2 * len(rows) - 1:
                     ax.set_xlabel("hours", fontsize=8)
             if n == 0:
                 axes[ar, 0].axis("on")
                 axes[ar, 0].set_xticks([])
                 axes[ar, 0].set_yticks([])
-                axes[ar, 0].set_ylabel(f"{label}\n(none in set)", fontsize=8)
-    fig.suptitle("Real anomalies (red) vs c1 generations (blue), by kind", fontsize=12)
+                axes[ar, 0].set_ylabel(f"{row_label}\n(none in set)", fontsize=8)
+    fig.suptitle(f"Real anomalies (red) vs {label} generations (blue), by kind", fontsize=12)
     fig.tight_layout()
-    name = "c1_vs_real_by_kind.png"
+    name = f"{label}_vs_real_by_kind.png"
     fig.savefig(out / name, dpi=145)
     plt.close(fig)
     return name
 
 
 def main() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument(
+        "--gallery",
+        default="results/shell_kindmix_score_hybrid/time_both_hybrid_needles_fold0.npz",
+    )
+    ap.add_argument("--out", default="docs/c1_by_kind")
+    ap.add_argument("--label", default="c1")
+    args = ap.parse_args()
+
     cfg = load_config(Path(REPO_ROOT) / "configs/shell_mission1.yaml")
     root = Path(cfg.get("_repo_root", REPO_ROOT))
     s0 = root / "results/shell_s0"
-    out = root / "docs/c1_by_kind"
+    out = root / args.out
     out.mkdir(parents=True, exist_ok=True)
     scaler = load_minmax(s0 / "minmax_scaler.npz")
 
@@ -154,10 +167,7 @@ def main() -> None:
     cond_ch = np.asarray(s3g["channel_idx"], dtype=np.int64)
     u_donor = channel_span_normalize(cond, cond_ch, scaler)
 
-    f = np.load(
-        root / "results/shell_kindmix_score_hybrid/time_both_hybrid_needles_fold0.npz",
-        allow_pickle=True,
-    )
+    f = np.load(root / args.gallery, allow_pickle=True)
     x = np.asarray(f["x"], dtype=np.float64)
     ch = np.asarray(f["channel_idx"], dtype=np.int64)
     alloc = np.asarray(f["kind_alloc"]).astype(str)
@@ -170,12 +180,15 @@ def main() -> None:
         gen_by_kind[kind] = u_gen[m]
         rm = real_kind == kind
         real_by_kind[kind] = u_real[rm] if np.any(rm) else None
-        counts.append(f"  {kind}: c1 n={int(m.sum())}, real n={int(rm.sum())}")
-        written.append(_grid(out, kind, u_gen[m], u_donor[: len(u_gen)][m], ch[m]))
-    written.append(_overview(out, kinds, gen_by_kind, real_by_kind))
+        chans = sorted((np.unique(ch[m]) + 41).tolist())
+        counts.append(
+            f"  {kind}: n={int(m.sum())} on channels {chans}, real n={int(rm.sum())}"
+        )
+        written.append(_grid(out, kind, u_gen[m], u_donor[: len(u_gen)][m], ch[m], args.label))
+    written.append(_overview(out, kinds, gen_by_kind, real_by_kind, args.label))
 
     (out / "INDEX.txt").write_text(
-        "c1 = time_both hybrid_needles, fold 0, targeted by allocated kind.\n"
+        f"{args.label} = {args.gallery}, targeted by allocated kind.\n"
         "Channel-span units; green band = S0 nominal training envelope.\n"
         "Grey in the per-kind grids is the nominal donor the window was steered from.\n\n"
         + "\n".join(counts)

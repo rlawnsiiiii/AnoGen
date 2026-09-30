@@ -31,6 +31,7 @@ Label roles (Anomaly vs Rare Event vs nominal): [STEERING_MATH.md](STEERING_MATH
 | timeleash | Donor L2 / Geman-McClure pull during DDIM. Isolated `results/shell_timeleash/`. Docs: [TIME_LEASH.md](TIME_LEASH.md) |
 | hashfix | Last Tweedie / 20 DDIM / clip-in-box ∇ on hybrid_needles. Isolated `results/shell_hashfix/`. Docs: [HASHFIX.md](HASHFIX.md) |
 | realism | Raw-window published fidelity measures + separately labeled diagnostics. Reads existing galleries only; keeps `feature_pack_v1`/S4 frozen. Isolated `results/shell_realism/`. Docs: [REALISM.md](REALISM.md) |
+| chanmix | `hybrid_needles` re-run with channel-stratified kind allocation, so each targeted kind sees all six channels instead of a contiguous block. Same model, unconfounded measurement. `scripts/run_chanmix.py`, isolated `results/shell_chanmix/`. Docs: [CHANMIX.md](CHANMIX.md) |
 | augdetect | Dev-only supervised augmentation of a 1-D CNN. Isolated `results/shell_augdetect/`. Docs: [AUGDETECT.md](AUGDETECT.md) |
 
 CausalDiscovery path (read-only): `/mnt/extras/SSD/AI/CausalDiscovery`.

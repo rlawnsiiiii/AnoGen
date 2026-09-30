@@ -116,6 +116,60 @@ def test_kindmix_cli_and_splits():
     assert list(np.unique(labels4, return_counts=True)[1]) == [384, 384, 384, 384]
 
 
+def test_channel_stratified_alloc_gives_every_kind_every_channel():
+    from anogen.phases.kindmix import _kind_alloc_labels, channel_stratified_alloc
+
+    ch = np.repeat(np.arange(6), 256)  # S3 lays donors out in per-channel blocks
+    kinds = ["p", "l", "s", "g"]
+
+    contiguous = _kind_alloc_labels(len(ch), kinds)
+    assert sorted(np.unique(ch[contiguous == "p"]).tolist()) == [0, 1]
+    assert sorted(np.unique(ch[contiguous == "g"]).tolist()) == [4, 5]
+
+    alloc = channel_stratified_alloc(ch, kinds, seed=0)
+    for kind in kinds:
+        assert sorted(np.unique(ch[alloc == kind]).tolist()) == [0, 1, 2, 3, 4, 5]
+        assert list(np.unique(ch[alloc == kind], return_counts=True)[1]) == [64] * 6
+    assert list(np.unique(alloc, return_counts=True)[1]) == [384] * 4
+
+
+def test_stratified_returns_donor_order_for_both_allocations(monkeypatch):
+    import torch
+
+    from anogen.phases import kindmix
+
+    def fake(model, enc, x0, ch, schedule, **kw):
+        lam = float(kw.get("lam_anom", -1.0))
+        return (
+            np.full((len(x0), np.shape(x0)[1]), lam, dtype=np.float32),
+            np.full(len(x0), lam, dtype=np.float64),
+        )
+
+    monkeypatch.setattr(kindmix, "chunked_guided_ddim", fake)
+    shift, point = "real level shift", "real ESA Point / Global"
+    n, w = 12, 4
+    x0 = np.zeros((n, w), dtype=np.float32)
+    ch = np.repeat(np.arange(3), 4)
+    kind_z = {shift: torch.zeros(2, 3), point: torch.zeros(2, 3)}
+    common = {"lam_anom": 1.0}
+    args = (None, None, x0, ch, None, common, kind_z, 0)
+    proto = frozenset({shift})
+
+    x, h = kindmix._stratified(*args, proto_kinds=proto)
+    contiguous = kindmix._kind_alloc_labels(n, [point, shift])
+    assert np.allclose(x[contiguous == shift], 1.0)
+    assert np.allclose(x[contiguous == point], 0.0)
+
+    alloc = kindmix.channel_stratified_alloc(ch, [point, shift], seed=0)
+    x2, h2 = kindmix._stratified(*args, proto_kinds=proto, alloc=alloc)
+    # every row lands back on its own donor index, whatever the allocation
+    assert np.allclose(x2[alloc == shift], 1.0)
+    assert np.allclose(x2[alloc == point], 0.0)
+    assert np.allclose(h2[alloc == shift], 1.0)
+    assert sorted(np.unique(ch[alloc == shift]).tolist()) == [0, 1, 2]
+    assert x.shape == x2.shape == (n, w) and h.shape == h2.shape == (n,)
+
+
 def test_slice_lam_anom_frozenset_and_dict():
     from anogen.phases.kindmix import (
         HYBRID_NEEDLES_PROTO_KINDS,

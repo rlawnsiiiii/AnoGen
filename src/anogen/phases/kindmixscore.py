@@ -30,6 +30,7 @@ from anogen.phases.kindmix import (
     _coverage_slices,
     _kind_alloc_labels,
     _stratified,
+    channel_stratified_alloc,
 )
 
 SCORE_RECIPES: dict[str, frozenset[str] | None] = {
@@ -139,6 +140,9 @@ def run_kindmixscore(cfg: dict[str, Any]) -> dict[str, Any]:
     scfg = dict((cfg.get("shell") or {}).get("steer") or {})
     bsz = int(scfg.get("n_sample", 128))
     seed = int(cfg.get("seed", 0))
+    channel_stratified = bool(
+        ((cfg.get("shell") or {}).get("kindmixscore") or {}).get("channel_stratified", False)
+    )
     score_kw = dict(
         x_a=x_a,
         x_r=x_r,
@@ -193,6 +197,7 @@ def run_kindmixscore(cfg: dict[str, Any]) -> dict[str, Any]:
                 recipe=recipe,
                 proto_kinds=SCORE_RECIPES[recipe],
                 seed=seed,
+                channel_stratified=channel_stratified,
             )
             scored["encoder"] = variant
             scored["recipe"] = recipe
@@ -216,6 +221,14 @@ def run_kindmixscore(cfg: dict[str, Any]) -> dict[str, Any]:
                 methods[name]["edi"] = val
 
     recipe_note = ", ".join(recipes)
+    # The two allocations build different EDI partitions from the same recipe
+    # name, so the union has to say which one it is.
+    alloc_note = (
+        " Channel-stratified kind allocation (chanmix): a separate partition, "
+        "mark **c**, do not mix with the contiguous hybrid *."
+        if channel_stratified
+        else ""
+    )
     report = {
         "ok": True,
         "skipped": False,
@@ -223,6 +236,7 @@ def run_kindmixscore(cfg: dict[str, Any]) -> dict[str, Any]:
         "tau_source": "s4_frozen",
         "n_donors": int(len(x_cond)),
         "recipes": list(recipes),
+        "kind_alloc": "channel_stratified" if channel_stratified else "contiguous",
         "methods": {k: _brief(v) for k, v in methods.items()},
         "refs": ref_info,
         "edi_table_union": {
@@ -232,7 +246,7 @@ def run_kindmixscore(cfg: dict[str, Any]) -> dict[str, Any]:
             "note": (
                 f"GenIAS App. E.2 EDI on S4 + encscore + {recipe_note} fold-0 galleries. "
                 "New partition — do not mix with locked S4 5-method, encscore 9-method, "
-                "stratified ‡, or S5-extended EDI."
+                "stratified ‡, or S5-extended EDI." + alloc_note
             ),
         },
         "folds": {k: v.get("folds") for k, v in methods.items() if v.get("folds") is not None},
@@ -243,7 +257,7 @@ def run_kindmixscore(cfg: dict[str, Any]) -> dict[str, Any]:
             "50 DDIM, unit ∇. ESA Length × Locality + level-shift overlay. "
             "Fold-0 encoder only. Does not overwrite results/shell_s4, "
             "results/shell_kindmix_score/ (morphology freeze), or "
-            "results/shell_kindmix_score_esa/ (stratified freeze)."
+            "results/shell_kindmix_score_esa/ (stratified freeze)." + alloc_note
         ),
     }
     (out / "summary.json").write_text(json.dumps(_jsonable(report), indent=2) + "\n")
@@ -269,6 +283,7 @@ def _stratified_oof(
     seed: int,
     recipe: str = "stratified",
     proto_kinds: frozenset[str] | None = None,
+    channel_stratified: bool = False,
 ) -> dict[str, Any]:
     fold_rows = []
     chunks = []
@@ -304,6 +319,11 @@ def _stratified_oof(
                 else _kind_alloc_labels(len(samples), active)
             )
         else:
+            alloc = (
+                channel_stratified_alloc(cond_ch, active, seed=seed + 1000 * fold_id)
+                if channel_stratified
+                else _kind_alloc_labels(len(x_cond), active)
+            )
             samples, h = _stratified(
                 model,
                 enc,
@@ -316,8 +336,8 @@ def _stratified_oof(
                 kind_order=KIND_ORDER,
                 kind_slug=KIND_SLUG,
                 proto_kinds=proto_kinds,
+                alloc=alloc if channel_stratified else None,
             )
-            alloc = _kind_alloc_labels(len(samples), active)
             np.savez_compressed(
                 cache,
                 x=samples,

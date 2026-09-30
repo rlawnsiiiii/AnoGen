@@ -422,29 +422,42 @@ def _stratified(
     kind_order: tuple[str, ...] | None = None,
     kind_slug: dict[str, str] | None = None,
     proto_kinds: frozenset[str] | dict[str, float] | None = None,
+    alloc: np.ndarray | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Uniform kind slices. ``proto_kinds=None`` uses proto on every slice.
 
     Pass a frozenset to proto only those kinds (hybrid: level shift; needles:
     shift + Point/Global). Other slices are band (λ_anom=0). Pass a dict of
     kind → λ_anom to override per slice (quiettune).
+
+    ``alloc`` overrides the contiguous split with an explicit per-donor kind
+    label (see ``channel_stratified_alloc``). Output always stays in donor
+    order, so ``x0[i]`` is the parent of the returned ``x[i]`` either way.
     """
     order = list(kind_order or KIND_ORDER)
     slugs = kind_slug or KIND_SLUG
     kinds = [k for k in order if k in kind_z]
     n = len(x0)
-    counts = _split_counts(n, len(kinds))
+    if alloc is None:
+        index_of, start = {}, 0
+        for kind, n_k in zip(kinds, _split_counts(n, len(kinds)), strict=True):
+            index_of[kind] = np.arange(start, start + n_k)
+            start += n_k
+    else:
+        labels = np.asarray(alloc).astype(str).reshape(-1)
+        if len(labels) != n:
+            raise ValueError(f"alloc {len(labels)} vs donors {n}")
+        index_of = {kind: np.flatnonzero(labels == kind) for kind in kinds}
     default_lam = float(common.get("lam_anom", 1.0))
-    xs, hs = [], []
-    start = 0
-    for kind, n_k in zip(kinds, counts, strict=True):
-        if n_k == 0:
+    parts: list[tuple[np.ndarray, np.ndarray, np.ndarray]] = []
+    for kind in kinds:
+        idx = index_of[kind]
+        if len(idx) == 0:
             continue
-        sl = slice(start, start + n_k)
         use_proto, lam_k = slice_lam_anom(kind, proto_kinds, default_lam)
         mode = "proto" if use_proto else "band"
         print(
-            f"  stratified {slugs.get(kind, kind)} n={n_k} {mode} "
+            f"  stratified {slugs.get(kind, kind)} n={len(idx)} {mode} "
             f"λ_anom={lam_k:g} refs={kind_z[kind].size(0)}",
             flush=True,
         )
@@ -453,8 +466,8 @@ def _stratified(
             x, h = chunked_guided_ddim(
                 model,
                 enc,
-                x0[sl],
-                ch[sl],
+                x0[idx],
+                ch[idx],
                 schedule,
                 ref_anom=kind_z[kind],
                 anom_energy_kind="proto",
@@ -463,11 +476,16 @@ def _stratified(
             )
         else:
             band = {**common, "lam_anom": 0.0, "lam_rare": 0.0}
-            x, h = chunked_guided_ddim(model, enc, x0[sl], ch[sl], schedule, **band)
-        xs.append(x)
-        hs.append(h)
-        start += n_k
-    return np.concatenate(xs, axis=0), np.concatenate(hs, axis=0)
+            x, h = chunked_guided_ddim(model, enc, x0[idx], ch[idx], schedule, **band)
+        parts.append((idx, x, h))
+    if not parts:
+        return np.zeros((0, x0.shape[1]), dtype=np.float32), np.zeros(0, dtype=np.float64)
+    out_x = np.zeros((n, parts[0][1].shape[1]), dtype=parts[0][1].dtype)
+    out_h = np.zeros(n, dtype=parts[0][2].dtype)
+    for idx, x, h in parts:
+        out_x[idx] = x
+        out_h[idx] = h
+    return out_x, out_h
 
 
 def _twomix(
@@ -541,6 +559,37 @@ def _kind_alloc_labels(n: int, kinds: list[str]) -> np.ndarray:
     for kind, n_k in zip(kinds, _split_counts(int(n), len(kinds)), strict=True):
         labels[start : start + n_k] = kind
         start += n_k
+    return labels
+
+
+def channel_stratified_alloc(
+    channel_idx: np.ndarray,
+    kinds: list[str],
+    *,
+    seed: int = 0,
+) -> np.ndarray:
+    """Kind labels balanced inside every channel, so each kind sees all channels.
+
+    S3 lays donors out in per-channel blocks, so the contiguous split of
+    ``_kind_alloc_labels`` gives each kind a disjoint set of channels and
+    confounds targeted kind with channel identity. This splits within each
+    channel instead. The rotation keeps a remainder from always landing on the
+    same kind; with equal per-channel counts the totals match the contiguous
+    split exactly.
+    """
+    ch = np.asarray(channel_idx).reshape(-1)
+    labels = np.empty(len(ch), dtype=object)
+    if not kinds:
+        return labels
+    rng = np.random.default_rng(int(seed))
+    k = len(kinds)
+    for turn, c in enumerate(np.unique(ch)):
+        idx = np.flatnonzero(ch == c)
+        idx = idx[rng.permutation(len(idx))]
+        start = 0
+        for j, n_j in enumerate(_split_counts(len(idx), k)):
+            labels[idx[start : start + n_j]] = kinds[(j + turn) % k]
+            start += n_j
     return labels
 
 
