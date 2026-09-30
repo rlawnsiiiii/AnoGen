@@ -29,6 +29,14 @@ _PHASES = (
     "kindmixscorehybrid",
     "kindmixhtune",
     "noisescore",
+    "ablatelambda",
+    "quiettune",
+    "genbase",
+    "augdetect",
+    "editor",
+    "timeleash",
+    "hashfix",
+    "realism",
 )
 
 
@@ -41,7 +49,7 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument(
         "phase",
         choices=_PHASES,
-        help="s0–s6, tune, enc, encscore, plots, xfer, hanom, kindproto, kindmix, kindmixscore, kindmixscorehybrid, kindmixhtune, noisescore",
+        help="s0–s6, tune, enc, encscore, plots, xfer, hanom, kindproto, kindmix, kindmixscore, kindmixscorehybrid, kindmixhtune, noisescore, ablatelambda, quiettune, genbase, augdetect, editor, timeleash, hashfix, realism",
     )
     args = parser.parse_args(argv)
     cfg = load_config(args.config)
@@ -136,6 +144,38 @@ def _dispatch(phase: str, cfg: dict) -> dict:
         from anogen.phases.noisescore import run_noisescore
 
         return run_noisescore(cfg)
+    if phase == "ablatelambda":
+        from anogen.phases.ablate_lambda import run_ablate_lambda
+
+        return run_ablate_lambda(cfg)
+    if phase == "quiettune":
+        from anogen.phases.quiettune import run_quiettune
+
+        return run_quiettune(cfg)
+    if phase == "genbase":
+        from anogen.phases.genbase import run_genbase
+
+        return run_genbase(cfg)
+    if phase == "augdetect":
+        from anogen.phases.augdetect import run_augdetect
+
+        return run_augdetect(cfg)
+    if phase == "editor":
+        from anogen.phases.editor import run_editor
+
+        return run_editor(cfg)
+    if phase == "timeleash":
+        from anogen.phases.timeleash import run_timeleash
+
+        return run_timeleash(cfg)
+    if phase == "hashfix":
+        from anogen.phases.hashfix import run_hashfix
+
+        return run_hashfix(cfg)
+    if phase == "realism":
+        from anogen.phases.realism import run_realism
+
+        return run_realism(cfg)
     print(f"{phase} is not implemented yet.", file=sys.stderr)
     sys.exit(2)
 

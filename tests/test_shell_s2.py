@@ -75,3 +75,22 @@ def test_encoder_and_guided_sample():
     )
     assert prior.shape == (4, 64)
     assert np.isfinite(prior).all()
+    clean, _ = guided_ddim(
+        den["model"],
+        enc["encoder"],
+        x[:4],
+        ch[:4],
+        den["schedule"],
+        ref=shell["ref"],
+        Q_q=shell["Q_q"],
+        tau=shell["tau"],
+        nu=0.4,
+        lam=0.1,
+        c_max=1.0,
+        ddim_steps=4,
+        device="cpu",
+        apply_final_grad=False,
+        normalize_grad=False,
+    )
+    assert clean.shape == (4, 64)
+    assert np.isfinite(clean).all()

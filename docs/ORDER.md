@@ -23,6 +23,14 @@ Label roles (Anomaly vs Rare Event vs nominal): [STEERING_MATH.md](STEERING_MATH
 | kindmixscore | ESA-kind stratified proto at 1536 / 3-fold. Isolated `results/shell_kindmix_score_esa/`. Morphology freeze stays in `results/shell_kindmix_score/`. |
 | kindmixscorehybrid | `hybrid` / `hybrid_needles` at the same 1536 / 3-fold protocol. Isolated `results/shell_kindmix_score_hybrid/`. |
 | noisescore | Same recipes + combined from \(x_T\sim\mathcal N(0,I)\) (ν=1). Isolated `results/shell_noise_score/`. |
+| ablatelambda | λ=0 proto-only and λ=λ_anom=0. Isolated `results/shell_ablate_lambda/`. Docs: [ABLATE_LAMBDA.md](ABLATE_LAMBDA.md) |
 | kindmixhtune | λ / λ_anom sweep on stratified + hybrid slices. Isolated `results/shell_kindmix_htune/`. Docs: [HYBRID.md](HYBRID.md), [KIND_MIX_HTUNE.md](KIND_MIX_HTUNE.md) |
+| quiettune | Small λ_anom on hybrid_needles local/global subsequence. Isolated `results/shell_quiettune/`. Docs: [QUIET_TUNE.md](QUIET_TUNE.md) |
+| genbase | CutAddPaste + Lai taxonomy at 1536 / frozen τ. Isolated `results/shell_genbase/`. Docs: [GEN_BASELINES.md](GEN_BASELINES.md) |
+| editor | Post-hoc residual copy / deviation-patch on locked `hybrid_needles`. Isolated `results/shell_editor/`. Docs: [EDITOR.md](EDITOR.md) |
+| timeleash | Donor L2 / Geman-McClure pull during DDIM. Isolated `results/shell_timeleash/`. Docs: [TIME_LEASH.md](TIME_LEASH.md) |
+| hashfix | Last Tweedie / 20 DDIM / clip-in-box ∇ on hybrid_needles. Isolated `results/shell_hashfix/`. Docs: [HASHFIX.md](HASHFIX.md) |
+| realism | Raw-window published fidelity measures + separately labeled diagnostics. Reads existing galleries only; keeps `feature_pack_v1`/S4 frozen. Isolated `results/shell_realism/`. Docs: [REALISM.md](REALISM.md) |
+| augdetect | Dev-only supervised augmentation of a 1-D CNN. Isolated `results/shell_augdetect/`. Docs: [AUGDETECT.md](AUGDETECT.md) |
 
 CausalDiscovery path (read-only): `/mnt/extras/SSD/AI/CausalDiscovery`.

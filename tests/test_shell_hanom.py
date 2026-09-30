@@ -116,6 +116,95 @@ def test_kindmix_cli_and_splits():
     assert list(np.unique(labels4, return_counts=True)[1]) == [384, 384, 384, 384]
 
 
+def test_slice_lam_anom_frozenset_and_dict():
+    from anogen.phases.kindmix import (
+        HYBRID_NEEDLES_PROTO_KINDS,
+        slice_lam_anom,
+    )
+
+    shift = "real level shift"
+    point = "real ESA Point / Global"
+    local = "real ESA local subsequence"
+    glob = "real ESA global subsequence"
+    # frozenset path: hybrid_needles unchanged
+    assert slice_lam_anom(shift, HYBRID_NEEDLES_PROTO_KINDS, 1.0) == (True, 1.0)
+    assert slice_lam_anom(point, HYBRID_NEEDLES_PROTO_KINDS, 1.0) == (True, 1.0)
+    assert slice_lam_anom(local, HYBRID_NEEDLES_PROTO_KINDS, 1.0) == (False, 0.0)
+    assert slice_lam_anom(glob, HYBRID_NEEDLES_PROTO_KINDS, 1.0) == (False, 0.0)
+    assert slice_lam_anom(shift, None, 1.0) == (True, 1.0)
+    assert slice_lam_anom(local, frozenset(), 1.0) == (False, 0.0)
+    mapping = {
+        shift: 1.0,
+        point: 1.0,
+        local: 0.10,
+        glob: 0.0,
+    }
+    assert slice_lam_anom(shift, mapping, 1.0) == (True, 1.0)
+    assert slice_lam_anom(local, mapping, 1.0) == (True, 0.10)
+    assert slice_lam_anom(glob, mapping, 1.0) == (False, 0.0)
+    assert slice_lam_anom("missing kind", mapping, 1.0) == (False, 0.0)
+
+
+def test_quiettune_jobs_and_pick_rule():
+    from anogen.cli import _PHASES
+    from anogen.phases.quiettune import (
+        GLOBAL,
+        LOCAL,
+        POINT,
+        SHIFT,
+        _quiet_jobs,
+        needles_quiet_map,
+        recommend_quiet,
+        two_sided_rel,
+    )
+
+    assert "quiettune" in _PHASES
+    jobs = _quiet_jobs({})
+    assert jobs[0][0] == "q00" and jobs[0][1] == 0.0
+    assert any(t == "q10" for t, _, _ in jobs)
+    m = needles_quiet_map(0.1, 0.0)
+    assert m[SHIFT] == 1.0 and m[POINT] == 1.0
+    assert m[LOCAL] == 0.1 and m[GLOBAL] == 0.0
+    assert abs(two_sided_rel(0.0012, 0.0029) - abs(0.0012 / 0.0029 - 1)) < 1e-12
+    methods = {
+        "time_both_q00": {
+            "encoder": "time_both",
+            "tag": "q00",
+            "lam_local": 0.0,
+            "lam_global": 0.0,
+            "occupancy": 0.5,
+            "arp_anomaly": 0.4,
+            "slices": {
+                SHIFT: {"frac_shift": 0.95},
+                POINT: {"frac_amp": 0.9},
+                LOCAL: {"med_tv": 0.0012, "med_spec": 1.0},
+                GLOBAL: {"med_tv": 0.0012, "med_spec": 1.0},
+            },
+        },
+        "time_both_q10": {
+            "encoder": "time_both",
+            "tag": "q10",
+            "lam_local": 0.10,
+            "lam_global": 0.10,
+            "occupancy": 0.4,
+            "arp_anomaly": 0.41,
+            "slices": {
+                SHIFT: {"frac_shift": 0.95},
+                POINT: {"frac_amp": 0.9},
+                LOCAL: {"med_tv": 0.0029, "med_spec": 1.0},
+                GLOBAL: {"med_tv": 0.0029, "med_spec": 1.0},
+            },
+        },
+    }
+    rec = recommend_quiet(
+        methods,
+        {LOCAL: 0.0029, GLOBAL: 0.0029},
+        {LOCAL: 1.0, GLOBAL: 1.0},
+    )
+    assert rec["time_both"]["tag"] == "q10"
+    assert rec["time_both"]["viable_kept_kinds"] is True
+
+
 def test_kindproto_recipes_and_cli():
     from anogen.cli import _PHASES
     from anogen.phases.kindproto import RECIPES
@@ -126,6 +215,19 @@ def test_kindproto_recipes_and_cli():
     assert RECIPES["noise200"]["ddim_steps"] == 200
     assert RECIPES["noise200"]["start_from_noise"] is True
     assert RECIPES["noise200"]["lam_rare"] == 0.0
+
+
+def test_ablate_lambda_jobs():
+    from anogen.cli import _PHASES
+    from anogen.phases.ablate_lambda import JOBS, NOSTEER, PROTOONLY
+
+    assert "ablatelambda" in _PHASES
+    assert PROTOONLY["lam"] == 0.0 and PROTOONLY["lam_anom"] == 1.0
+    assert NOSTEER["lam"] == 0.0 and NOSTEER["lam_anom"] == 0.0
+    names = [j[0] for j in JOBS]
+    assert "stratified_protoonly" in names
+    assert "hybrid_needles_protoonly" in names
+    assert "nosteer" in names
 
 
 def test_noisescore_from_noise_recipe():

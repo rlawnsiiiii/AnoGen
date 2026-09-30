@@ -311,6 +311,10 @@ def guided_ddim(
     anom_knn: int = 8,
     anom_proto_index: "torch.Tensor | None" = None,
     anom_kind_ids: "torch.Tensor | None" = None,
+    lam_parent: float = 0.0,
+    parent_leash: str = "l2",
+    parent_delta: float = 0.03,
+    apply_final_grad: bool = True,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Noise nominal windows to ν, DDIM with clipped constraint gradients.
 
@@ -326,6 +330,12 @@ def guided_ddim(
     n_correct reapplies guidance at the same t before the DDIM advance —
     extra GD steps to land in the constraint, not extra diffusion times.
     Gradients are optionally unit-normalized per sample, as in Sehwag 2022.
+    lam_parent > 0 subtracts a time-domain pull toward the donor (not unit-
+    normalized). parent_leash=l2 is μ(x̂_0−x_par); gm saturates large residuals
+    so a shelf or needle can survive.
+    apply_final_grad=False returns the last Tweedie x̂_0 without subtracting
+    ∇f (the kick is otherwise stamped onto the output with no further DDIM).
+    Default True keeps locked S4 / parent50 behaviour.
     """
     _require_torch()
     from anogen.shell.diffusion import q_sample
@@ -417,10 +427,14 @@ def guided_ddim(
                 logit = classifier(x0_enc)
                 g_cls = torch.autograd.grad((-logit).mean(), xt)[0]
                 total = total + lam_cls * _prep_grad(g_cls, c_max, normalize_grad)
+            if float(lam_parent) != 0.0 and not start_from_noise:
+                total = total + float(lam_parent) * _parent_pull(
+                    x0_hat - xt0, kind=parent_leash, delta=parent_delta
+                ).clamp(-c_max, c_max)
             last_h = h.detach()
             advance = corr == n_correct - 1
             if t_prev < 0 and advance:
-                xt = (x0_hat - total).detach()
+                xt = (x0_hat - total).detach() if apply_final_grad else x0_hat.detach()
                 break
             if not advance:
                 xt = (ab.sqrt() * x0_hat + (1.0 - ab).sqrt() * eps - total).detach()
@@ -474,6 +488,29 @@ def chunked_guided_ddim(
         xs.append(s)
         hs.append(h)
     return np.concatenate(xs, axis=0), np.concatenate(hs, axis=0)
+
+
+def _parent_pull(residual: "torch.Tensor", *, kind: str, delta: float) -> "torch.Tensor":
+    """Time-domain donor leash. Not unit-normalized (scale is window units / step)."""
+    name = str(kind).lower()
+    if name in {"gm", "geman", "cauchy"}:
+        d = max(float(delta), 1e-8)
+        return residual / (1.0 + (residual / d).pow(2))
+    if name in {"l2", "mse", "sq"}:
+        return residual
+    raise ValueError(f"unknown parent_leash {kind}")
+
+
+def parent_pull_np(residual: np.ndarray, *, kind: str = "l2", delta: float = 0.03) -> np.ndarray:
+    """Numpy twin of ``_parent_pull`` (unit tests, no torch)."""
+    r = np.asarray(residual, dtype=np.float64)
+    name = str(kind).lower()
+    if name in {"gm", "geman", "cauchy"}:
+        d = max(float(delta), 1e-8)
+        return r / (1.0 + (r / d) ** 2)
+    if name in {"l2", "mse", "sq"}:
+        return r
+    raise ValueError(f"unknown parent_leash {kind}")
 
 
 def _prep_grad(grad: "torch.Tensor", c_max: float, normalize_grad: bool) -> "torch.Tensor":

@@ -384,6 +384,32 @@ def _generate(
     raise ValueError(f"unknown kindmix variant {vname}")
 
 
+def slice_lam_anom(
+    kind: str,
+    proto_kinds: frozenset[str] | dict[str, float] | None,
+    default_lam_anom: float,
+) -> tuple[bool, float]:
+    """(use_proto, λ_anom) for one stratified slice.
+
+    ``None``: proto on every kind at ``default_lam_anom`` (full stratified).
+    ``frozenset``: proto only on listed kinds (hybrid / hybrid_needles).
+    ``dict``: listed kinds run proto at that λ_anom; λ_anom=0 is band;
+    kinds not in the dict are band. Does not mutate the frozenset path.
+    """
+    if proto_kinds is None:
+        return True, float(default_lam_anom)
+    if isinstance(proto_kinds, dict):
+        if kind not in proto_kinds:
+            return False, 0.0
+        lam = float(proto_kinds[kind])
+        if lam == 0.0:
+            return False, 0.0
+        return True, lam
+    if kind in proto_kinds:
+        return True, float(default_lam_anom)
+    return False, 0.0
+
+
 def _stratified(
     model: Any,
     enc: Any,
@@ -395,31 +421,35 @@ def _stratified(
     seed: int,
     kind_order: tuple[str, ...] | None = None,
     kind_slug: dict[str, str] | None = None,
-    proto_kinds: frozenset[str] | None = None,
+    proto_kinds: frozenset[str] | dict[str, float] | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Uniform kind slices. ``proto_kinds=None`` uses proto on every slice.
 
     Pass a frozenset to proto only those kinds (hybrid: level shift; needles:
-    shift + Point/Global). Other slices are band (λ_anom=0).
+    shift + Point/Global). Other slices are band (λ_anom=0). Pass a dict of
+    kind → λ_anom to override per slice (quiettune).
     """
     order = list(kind_order or KIND_ORDER)
     slugs = kind_slug or KIND_SLUG
     kinds = [k for k in order if k in kind_z]
     n = len(x0)
     counts = _split_counts(n, len(kinds))
+    default_lam = float(common.get("lam_anom", 1.0))
     xs, hs = [], []
     start = 0
     for kind, n_k in zip(kinds, counts, strict=True):
         if n_k == 0:
             continue
         sl = slice(start, start + n_k)
-        use_proto = proto_kinds is None or kind in proto_kinds
+        use_proto, lam_k = slice_lam_anom(kind, proto_kinds, default_lam)
         mode = "proto" if use_proto else "band"
         print(
-            f"  stratified {slugs.get(kind, kind)} n={n_k} {mode} refs={kind_z[kind].size(0)}",
+            f"  stratified {slugs.get(kind, kind)} n={n_k} {mode} "
+            f"λ_anom={lam_k:g} refs={kind_z[kind].size(0)}",
             flush=True,
         )
         if use_proto:
+            kw = {**common, "lam_anom": lam_k}
             x, h = chunked_guided_ddim(
                 model,
                 enc,
@@ -429,7 +459,7 @@ def _stratified(
                 ref_anom=kind_z[kind],
                 anom_energy_kind="proto",
                 anom_proto_seed=seed + 17 * (1 + order.index(kind)),
-                **common,
+                **kw,
             )
         else:
             band = {**common, "lam_anom": 0.0, "lam_rare": 0.0}

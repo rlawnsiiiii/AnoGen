@@ -364,3 +364,9 @@ ARP/EDI in the table in §2. These strips are the locked S4 galleries
 Longer score table and kill list: [`docs/PAPER_CANDIDATES.md`](../docs/PAPER_CANDIDATES.md).
 Hybrid allocation: [`docs/HYBRID.md`](../docs/HYBRID.md).
 Sampling: [`docs/STEERING_MATH.md`](../docs/STEERING_MATH.md).
+
+Lab notes (not this pack): quiet-kind \(\lambda\) sweep
+[`docs/QUIET_TUNE.md`](../docs/QUIET_TUNE.md), CutAddPaste / Lai taxonomy
+[`docs/GEN_BASELINES.md`](../docs/GEN_BASELINES.md), downstream CNN
+[`docs/AUGDETECT.md`](../docs/AUGDETECT.md), hash knobs
+[`docs/HASHFIX.md`](../docs/HASHFIX.md).
