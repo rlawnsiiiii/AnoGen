@@ -107,17 +107,74 @@ report are not the same thing. Cheapest item on the list by a wide margin.
 Biggest single lever: 25% of the gallery, worst on four of five diagnostics,
 and we know the cause is the steering. Hypotheses worth testing, cheapest first:
 
-1. **Ramp λ_anom over t.** The overshoot-then-ring signature is what you expect
+1. **64 samples share each prototype — the collapse is over-determined.**
+   `chunked_guided_ddim` gives every sample exactly one prototype index:
+
+   ```python
+   proto_idx = torch.randint(0, int(ref_a.size(0)), (len(x0),), generator=gen)
+   ```
+
+   The level-shift slice has **6** references and **384** samples, so ~64
+   windows are pulled toward the identical target at λ_anom = 1. That is a
+   structural explanation for 16 draws producing one shape, and it cannot be
+   fixed at the source: 6 is every level-shift window Mission-1 41–46 has.
+   Check this first — it is the cheapest to confirm and it changes what the
+   other hypotheses mean.
+2. **Ramp λ_anom over t.** The overshoot-then-ring signature is what you expect
    when a large guidance gradient lands at high noise and later steps pull back.
    Try applying the level-shift proto only in the low-noise tail of the DDIM
    trajectory.
-2. **The proto has 6 references and they leak on fold 0.** Six windows is
-   extremely few-shot for a prototype. Check whether the proto energy is
-   degenerate at that count before blaming the schedule.
 3. **A step is broadband; the encoder may not require one.** The editor result
    showed that 3 rFFT bins cannot hold a shelf. If the encoder's level-shift
    prototype is satisfiable by an onset transient, the steering has no reason to
    produce a persistent step. Worth inspecting what the proto actually matches.
+4. **Add a repulsion term between simultaneously-sampled windows.** If (1)
+   holds, the prototype shortage is irreducible and a diversity term is a
+   legitimate mitigation rather than metric-chasing. This is **particle
+   guidance** (Corso et al., ICLR 2024): a pairwise potential between the
+   particles of one reverse-diffusion batch. `supcon_loss` in
+   [`shell/encoders.py`](../src/anogen/shell/encoders.py) is already the same
+   pairwise-over-batch idiom. Design notes in §2a.
+
+### P2a — Design notes for the repulsion term
+
+Scope it to the collapsed slices (level shift, possibly Point/Global). A
+**global** diversity term would push the wrong axis: diversity is already C1's
+strength — EDI 2.52 against GenIAS 1.60 and post-hoc 1.95 — while every
+measured deficit is realism. Expect an unscoped version to make C2ST worse.
+
+**It can see position, because of the encoder we happen to use.** `time_both`
+is `pool="time"`, so `encode` returns `proj(feat).flatten(1)`: 8 channels ×
+`W/8 = 64` steps = 512-D with the temporal layout intact. Repulsion in that
+space can genuinely push two transients apart *in time*. Any `pool` variant
+would have run `AdaptiveAvgPool1d` first and been blind to exactly the defect
+we want to fix — worth knowing before anyone swaps encoders.
+
+**Project the repulsion onto the shell level set.** The shell term pulls every
+sample onto `Q_q`; repulsion pushes them apart in the same space, so the two
+fight directly and a naive version buys diversity by pushing samples *off* the
+plausibility surface — the last thing we need given the envelope numbers.
+Removing the component along `∇h_shell` before applying it gives spread along
+constant plausibility instead. One extra term, reusing a gradient already
+computed.
+
+**Do not measure it with EDI.** `feature_pack_v1` is position-invariant by
+construction: z-path moments, first-difference moments, peak `|z|` (a max),
+longest excursion *run length*, and four rFFT *power* bands (phase discarded).
+Nothing in it records where an event happens, so EDI and Div cannot register
+positional diversity at all — the current EDI of 2.52 coexists with
+`peak@start` 0.470 for precisely this reason. Judge the term on the
+`signed_peak_position` distribution from the realism diagnostics, where real
+anomalies sit at 0.114 in the first tenth.
+
+Two things to settle before building. `chunked_guided_ddim` calls `guided_ddim`
+independently per chunk of `bsz`, so repulsion couples only *within* a chunk —
+12 independent groups of 128 at the current settings — which promotes `bsz`
+from a memory knob to a semantically load-bearing hyper-parameter. And it will
+not fix L2 at root: `unguided` shows the position bias at 0.425 with no
+steering, so repulsion can spread the *set* while every individual window still
+carries the boundary artifact. Keep "the set is diverse" and "each sample is
+plausible" apart.
 
 ### P3 — Make the final gradient kick continuous *(L3, L4)*
 
@@ -173,6 +230,17 @@ without that caveat.
 **MDD hides 39% of C1's mass.** TSGBench's definition discards generated values
 outside the real per-timestep range. The `mdd_out_of_real_range_fraction`
 diagnostic exists precisely so this is visible; quote it alongside MDD.
+
+**EDI and Div cannot see *where* an anomaly is.** Both run on
+`feature_pack_v1`, which is position-invariant by construction — z-path
+moments, first-difference moments, peak `|z|` (a max), longest excursion *run
+length*, and four rFFT *power* bands with phase discarded. No component records
+position. That is why EDI 2.52, the best number in the project, sits happily
+next to `peak@start` 0.470 against a real 0.114: the diversity metric is not
+measuring the axis on which the galleries are collapsed. Any claim about
+diverse anomaly *placement* needs the `signed_peak_position` diagnostic, not
+EDI. This is a property of the frozen protocol, not a bug — but it means EDI
+alone cannot support a diversity claim about morphology *and* timing.
 
 ---
 
