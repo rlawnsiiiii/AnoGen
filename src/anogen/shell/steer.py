@@ -552,8 +552,11 @@ def guided_ddim(
                 x0_win = x0_hat[..., crop:]
                 terms, h = objective_terms(x0_win)
                 total = guidance(xt, terms) if (active and terms) else torch.zeros_like(xt)
-                if use_contrast and active:
-                    total = total + F.pad(contrast_edit(x0_win), (crop, 0))
+                # Contrast edit is in x̂₀ units; scaled by √ᾱ_next below so that
+                # subtracting it from x_{t'} moves the implied x̂₀ by exactly it.
+                c_edit = (
+                    F.pad(contrast_edit(x0_win), (crop, 0)) if (use_contrast and active) else None
+                )
                 if float(lam_parent) != 0.0 and not start_from_noise and active:
                     pull = _parent_pull(
                         x0_win - xt0[..., crop:], kind=parent_leash, delta=parent_delta
@@ -577,14 +580,19 @@ def guided_ddim(
                     ).clamp(-c_max, c_max)
                 x0_next = x0_hat
                 edit = F.pad(total.detach(), (crop, 0))
+                c_edit = None
             last_h = h.detach()
             advance = corr == n_correct - 1
             if t_prev < 0 and advance:
+                if c_edit is not None:
+                    edit = edit + c_edit
                 xt = (x0_next - final_scale * edit).detach()
                 break
             if space == "x":
                 # Locked algebra: subtract the x_t-gradient from the DDIM output.
                 a_next = ab if not advance else sched.alpha_bar[int(t_prev)]
+                if c_edit is not None:
+                    edit = edit + a_next.sqrt() * c_edit
                 xt = (a_next.sqrt() * x0_next + (1.0 - a_next).sqrt() * eps - edit).detach()
             else:
                 a_next = ab if not advance else sched.alpha_bar[int(t_prev)]

@@ -118,12 +118,12 @@ def run_diffdetect(cfg: dict[str, Any]) -> dict[str, Any]:
         den = torch.load(den_path, map_location=device, weights_only=False)
         model = wrap_denoiser(denoiser_from_ckpt(den, device=torch.device(device)), spec.get("flip"))
         scaler = resolve_scaler(den, s0)
-        sched = DiffusionSchedule.from_ckpt(den).to(torch.device(device))
-        kw = dict(t_eval=t_eval, n_draws=n_draws, bsz=bsz, skip=int(spec.get("skip_start", 0)), seed=seed)
+        sched = DiffusionSchedule.from_ckpt(den, allow_nonlinear=True).to(torch.device(device))
+        kw = dict(t_eval=_map_t_eval(sched, t_eval), n_draws=n_draws, bsz=bsz, skip=int(spec.get("skip_start", 0)), seed=seed)
         cache = out / f"{vname}_scores.npz"
         key = json.dumps({**kw, "denoiser": str(den_path), "flip": spec.get("flip"), "n_fresh": int(len(x_d))}, sort_keys=True)
         blob = np.load(cache) if cache.is_file() else None
-        if blob is not None and str(blob["key"]) == key and not bool(dcfg.get("force", False)):
+        if blob is not None and "key" in blob.files and str(blob["key"]) == key and not bool(dcfg.get("force", False)):
             sa, sr, sd = blob["anomaly"], blob["rare"], blob["fresh"]
         else:
             print(f"diffdetect {vname}", flush=True)
@@ -243,6 +243,18 @@ def heldout_nominal_windows(
     if not xs:
         raise RuntimeError("no held-out nominal windows found; lower n_fresh_per_channel")
     return np.stack(xs), np.asarray(chs, dtype=np.int64), {"found_per_channel": json.dumps(found)}
+
+
+def _map_t_eval(schedule: Any, t_eval: list[int]) -> list[int]:
+    """t_eval is configured as linear-schedule indices; keep their noise levels."""
+    from anogen.shell.diffusion import DiffusionSchedule
+
+    n = int(schedule.betas.numel())
+    lin = DiffusionSchedule.linear(n).alpha_bar.numpy()
+    ab = schedule.alpha_bar.detach().cpu().numpy()
+    if np.allclose(ab, lin):
+        return [int(t) for t in t_eval]
+    return [int(np.argmin(np.abs(ab - lin[int(t)]))) for t in t_eval]
 
 
 def _channel_stats(scores: np.ndarray, ch: np.ndarray) -> tuple[np.ndarray, np.ndarray]:

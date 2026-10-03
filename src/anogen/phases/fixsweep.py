@@ -199,7 +199,7 @@ def run_fixsweep(cfg: dict[str, Any]) -> dict[str, Any]:
             dens[key] = (
                 model,
                 resolve_scaler(den, s0),
-                DiffusionSchedule.from_ckpt(den).to(device_t),
+                DiffusionSchedule.from_ckpt(den, allow_nonlinear=True).to(device_t),
             )
         return dens[key]
 

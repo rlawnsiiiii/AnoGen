@@ -332,12 +332,12 @@ def _run_one(
     if len(x_pos) == 0:
         raise RuntimeError(f"{arm} produced no train positives")
 
+    # 20 % of the training nominals are always kept out of fitting (so the CNN
+    # rows do not depend on whether fusion is on); they serve as the CNN's
+    # reference distribution for rank fusion (training negatives would sit
+    # below every test score and saturate the empirical CDF).
     ref_nom = np.zeros(len(x_nom_tr), dtype=bool)
-    if diff_scores is not None:
-        # 20 % of the training nominals are kept out of fitting and serve as the
-        # CNN's reference distribution for rank fusion (training negatives would
-        # sit below every test score and saturate the empirical CDF).
-        ref_nom[rng.choice(len(x_nom_tr), size=max(1, len(x_nom_tr) // 5), replace=False)] = True
+    ref_nom[rng.choice(len(x_nom_tr), size=max(1, len(x_nom_tr) // 5), replace=False)] = True
     x_fit_nom, ch_fit_nom = x_nom_tr[~ref_nom], ch_nom_tr[~ref_nom]
     x_neg = np.concatenate([x_fit_nom, x_r[train_r]], axis=0) if int(train_r.sum()) else x_fit_nom
     ch_neg = np.concatenate([ch_fit_nom, ch_r[train_r]], axis=0) if int(train_r.sum()) else ch_fit_nom
@@ -474,6 +474,7 @@ def _run_one(
         "n_pos_synth": int(len(x_syn) if arm != "real_only" else 0),
         "n_neg": int(len(x_neg)),
         "n_nom_train": int(len(x_nom_tr)),
+        "n_fit_nominals": int((~ref_nom).sum()),
         "n_nom_test": int(len(x_nom_te)),
         "n_nom_train_idx": nom_train_m.astype(np.int8).tobytes().hex()[:16],
         "n_nom_test_idx": nom_test_m.astype(np.int8).tobytes().hex()[:16],

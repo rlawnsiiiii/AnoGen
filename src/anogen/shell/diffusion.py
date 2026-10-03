@@ -142,10 +142,22 @@ class DiffusionSchedule:
         return cls(betas=1.0 - alphas, alphas=alphas, alpha_bar=alpha_bar)
 
     @classmethod
-    def from_ckpt(cls, ckpt: dict[str, Any]) -> DiffusionSchedule:
-        """The schedule a checkpoint was trained with (linear for every frozen one)."""
+    def from_ckpt(cls, ckpt: dict[str, Any], *, allow_nonlinear: bool = False) -> DiffusionSchedule:
+        """The schedule a checkpoint was trained with (linear for every frozen one).
+
+        Most phases express edit strength as ν (a *fraction* of the schedule)
+        or as raw t indices, which only mean the frozen noise levels on the
+        linear schedule. They therefore refuse a non-linear checkpoint; phases
+        that map ν / t to noise levels (fixsweep, diffdetect) pass
+        ``allow_nonlinear=True``.
+        """
         kind = str(ckpt.get("schedule", "linear")).lower()
         n = int(ckpt["n_times"])
+        if kind != "linear" and not allow_nonlinear:
+            raise ValueError(
+                f"checkpoint uses the {kind!r} schedule; this phase reads nu / t as linear-schedule "
+                "positions. Use fixsweep / diffdetect, which map them to noise levels."
+            )
         if kind == "geometric":
             return cls.geometric(
                 n, float(ckpt.get("sigma_min", 1e-3)), float(ckpt.get("sigma_max", 10.0))
@@ -376,7 +388,8 @@ def train_denoiser(
         bidirectional=bidirectional,
     ).to(device_t)
     schedule = DiffusionSchedule.from_ckpt(
-        {"schedule": schedule_kind, "n_times": n_times, "sigma_min": sigma_min, "sigma_max": sigma_max}
+        {"schedule": schedule_kind, "n_times": n_times, "sigma_min": sigma_min, "sigma_max": sigma_max},
+        allow_nonlinear=True,
     ).to(device_t)
     opt = torch.optim.Adam(model.parameters(), lr=lr)
 

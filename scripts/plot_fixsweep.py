@@ -8,7 +8,7 @@ Writes docs/fixsweep/*.png:
 * ratios_<m>.png     one metric per chart (env exit, diff p99.9, peak@start),
                      as generated / real; 1 = matches the real anomalies
 * kind_<slug>.png    random windows of each allocated kind slice for
-                     c1_repro and the variants named with --show, real first
+                     c1_repro and the variants named with --show (same donors)
 """
 
 from __future__ import annotations

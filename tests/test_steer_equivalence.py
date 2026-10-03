@@ -145,9 +145,12 @@ def test_geometric_schedule_and_from_ckpt():
 
     lin = DiffusionSchedule.from_ckpt({"n_times": 200})
     assert torch.allclose(lin.alpha_bar, DiffusionSchedule.linear(200).alpha_bar)
-    geo = DiffusionSchedule.from_ckpt({"n_times": 200, "schedule": "geometric", "sigma_min": 1e-3, "sigma_max": 10.0})
+    geo_ckpt = {"n_times": 200, "schedule": "geometric", "sigma_min": 1e-3, "sigma_max": 10.0}
+    with pytest.raises(ValueError):
+        DiffusionSchedule.from_ckpt(geo_ckpt)  # phases that map nu as a fraction refuse it
+    geo = DiffusionSchedule.from_ckpt(geo_ckpt, allow_nonlinear=True)
     sig = ((1 - geo.alpha_bar) / geo.alpha_bar).sqrt()
-    assert abs(float(sig[0]) - 1e-3) < 1e-6 and abs(float(sig[-1]) - 10.0) < 1e-3
+    assert abs(float(sig[0]) / 1e-3 - 1) < 0.03 and abs(float(sig[-1]) / 10.0 - 1) < 1e-3  # float32 alpha_bar
     assert torch.allclose(torch.cumprod(geo.alphas, 0), geo.alpha_bar, atol=1e-6)
     nu = nu_for_noise_level(geo.alpha_bar, float(lin.alpha_bar[40]))
     assert 0.5 < nu < 0.75
