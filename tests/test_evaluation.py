@@ -107,3 +107,38 @@ def test_calibration_galleries_are_out_of_fold():
     fold = np.array([0, 0, 1, 1, 2, 2, 0, 1, 2, 0])
     g = calibration_galleries(xa, fold, np.ones((5, 8)), fold_id=0, rng=np.random.default_rng(0))
     assert set(g["oracle_train_fold_anomalies"][:, 0].astype(int)) == {2, 3, 4, 5, 7, 8}
+
+
+def test_prdc_separates_fidelity_from_spread():
+    from anogen.shell.evaluation import prdc
+
+    rng = np.random.default_rng(0)
+    real = rng.normal(size=(300, 4))
+    same = prdc(real, rng.normal(size=(300, 4)))
+    wide = prdc(real, rng.normal(scale=4.0, size=(300, 4)))
+    collapsed = prdc(real, rng.normal(scale=0.05, size=(300, 4)))
+    assert same["precision"] > 0.8 and same["coverage"] > 0.8
+    assert wide["precision"] < 0.4 and wide["density"] < same["density"]
+    assert collapsed["precision"] > 0.9 and collapsed["coverage"] < 0.3
+
+
+def test_feature_attribution_sums_to_one():
+    from anogen.shell.evaluation import PHI_NAMES, feature_attribution
+
+    rng = np.random.default_rng(1)
+    q, g = rng.normal(size=(20, 12)), rng.normal(size=(50, 12))
+    g[:, 11] += 10.0
+    a = feature_attribution(q, g, PHI_NAMES)
+    assert abs(sum(a.values()) - 1.0) < 1e-9 and max(a, key=a.get) == "fft_band4"
+
+
+def test_paired_event_bootstrap():
+    from anogen.shell.detector import paired_event_bootstrap
+
+    ev = [f"e{i}" for i in range(10)]
+    a = {s: {e: (i < 7) for i, e in enumerate(ev)} for s in range(3)}
+    b = {s: {e: (i < 5) for i, e in enumerate(ev)} for s in range(3)}
+    r = paired_event_bootstrap(a, b, n_boot=500)
+    assert abs(r["diff"] - 0.2) < 1e-12 and r["lo"] >= 0.0 and r["p_le_zero"] < 0.2
+    same = paired_event_bootstrap(a, a, n_boot=100)
+    assert same["diff"] == 0.0 and same["p_le_zero"] == 1.0

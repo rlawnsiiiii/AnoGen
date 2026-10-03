@@ -55,10 +55,25 @@ DEFAULT_VARIANTS: dict[str, dict[str, Any]] = {
         "lam_repel": 0.3,
     },
     "flip_x0_from_noise": {"flip": "ramp", "guidance_space": "x0", "start_from_noise": True},
+    "flip_x0_from_matched_noise": {
+        "flip": "ramp",
+        "guidance_space": "x0",
+        "start_from_noise": True,
+        "matched_noise": True,
+    },
 }
 
 # Keys the phase interprets itself; everything else goes to guided_ddim.
-_PHASE_KEYS = {"flip", "denoiser", "burnin", "proto_shift_max", "start_from_noise", "encoder", "recipe"}
+_PHASE_KEYS = {
+    "flip",
+    "denoiser",
+    "burnin",
+    "proto_shift_max",
+    "start_from_noise",
+    "encoder",
+    "recipe",
+    "matched_noise",
+}
 
 
 def run_fixsweep(cfg: dict[str, Any]) -> dict[str, Any]:
@@ -214,6 +229,10 @@ def run_fixsweep(cfg: dict[str, Any]) -> dict[str, Any]:
             common["start_from_noise"] = True
             if bool(spec.get("burnin")):
                 common["burnin_bins"] = burn_bins
+            if bool(spec.get("matched_noise")):
+                common["noise_init_mean"], common["noise_init_std"] = channel_moments(
+                    x_cond, cond_ch, scaler
+                )
         rows = []
         for fold_id in folds:
             cache = out / f"{vname}_fold{fold_id}.npz"
@@ -585,6 +604,16 @@ def fixsweep_table(results: dict[str, Any]) -> str:
     if edi:
         lines += ["", "EDI (partition **f**): " + ", ".join(f"{k} {v:.2f}" for k, v in edi.items())]
     return "\n".join(lines) + "\n"
+
+
+def channel_moments(x: np.ndarray, ch: np.ndarray, scaler: Any) -> tuple[np.ndarray, np.ndarray]:
+    """Per-channel mean and std of windows in the denoiser's scaled units."""
+    ch = np.asarray(ch, dtype=np.int64)
+    xs = scaler.transform(x, ch) if scaler is not None else np.asarray(x, dtype=np.float32)
+    n = int(ch.max()) + 1
+    mean = np.array([xs[ch == c].mean() if np.any(ch == c) else 0.0 for c in range(n)], dtype=np.float32)
+    std = np.array([xs[ch == c].std() if np.any(ch == c) else 1.0 for c in range(n)], dtype=np.float32)
+    return mean, std
 
 
 def donor_prefix(

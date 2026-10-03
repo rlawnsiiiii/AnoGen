@@ -11,7 +11,8 @@ from anogen.testbed.metrics import gallery_report, edge_stats
 
 OUT = Path(sys.argv[1] if len(sys.argv) > 1 else "results/testbed")
 OUT.mkdir(parents=True, exist_ok=True)
-W, B, N = 512, 128, 512
+W, N = 512, 512
+B = int(sys.argv[2]) if len(sys.argv) > 2 else 128
 ch, sch = GPChannel(), Schedule()
 rng = np.random.default_rng(0)
 train = ch.sample(4096, W, rng)
@@ -51,4 +52,4 @@ for nu, steps in ((1.0, 20), (0.2, 50)):
 real = {**gallery_report(ref, lo, hi), **edge_stats(ref, ch.sample(N, W, rng))}
 rows["real_nominal"] = real
 print("real", {k: round(v, 3) for k, v in real.items()})
-(OUT / "e1_unguided.json").write_text(json.dumps({"x0hat_error_t40": prof, "galleries": rows}, indent=1))
+(OUT / f"e1_unguided_B{B}.json").write_text(json.dumps({"x0hat_error_t40": prof, "galleries": rows}, indent=1))

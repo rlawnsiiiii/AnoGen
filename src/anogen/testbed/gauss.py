@@ -283,6 +283,7 @@ def guided_ddim(
     start_from_noise: bool = False,
     crop: int = 0,
     t_window: tuple[float, float] = (0.0, 1.0),
+    noise_init: tuple[float, float] | None = None,
 ) -> np.ndarray:
     """Numpy mirror of ``steer.guided_ddim`` (eta = 0).
 
@@ -309,6 +310,10 @@ def guided_ddim(
         raise ValueError(f"donor length {x0.shape[1]} != denoiser length {den.length}")
     if start_from_noise:
         xt = rng.standard_normal(x0.shape)
+        if noise_init is not None:  # marginal-matched start, as steer.noise_init_mean
+            ab = sch.alpha_bar[t_start]
+            m, sd = noise_init
+            xt = np.sqrt(ab) * m + np.sqrt(1.0 - ab + ab * sd**2) * xt
     else:
         ab = sch.alpha_bar[t_start]
         xt = np.sqrt(ab) * x0 + np.sqrt(1.0 - ab) * rng.standard_normal(x0.shape)

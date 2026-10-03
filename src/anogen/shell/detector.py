@@ -62,8 +62,8 @@ def bootstrap_event_recall(
     seed: int = 0,
 ) -> dict[str, float]:
     ids = list(hits)
-    if not ids:
-        return {"median": float("nan"), "lo": float("nan"), "hi": float("nan"), "n": 0}
+    if not ids or int(n_boot) <= 0:
+        return {"median": float("nan"), "lo": float("nan"), "hi": float("nan"), "n": len(ids)}
     vals = np.asarray([1.0 if hits[i] else 0.0 for i in ids], dtype=np.float64)
     rng = np.random.default_rng(seed)
     stats = np.empty(int(n_boot), dtype=np.float64)
@@ -91,8 +91,15 @@ def fit_detector(
     batch_size: int = 32,
     lr: float = 1e-3,
     device: str | None = None,
+    shift_aug: int = 0,
 ) -> Any:
-    """BCE, balanced batches. Returns a trained AnomalyClassifier."""
+    """BCE, balanced batches. Returns a trained AnomalyClassifier.
+
+    ``shift_aug`` > 0 circularly shifts every training window (both classes)
+    by an independent U{-s..s} offset per batch, so the detector cannot key on
+    where in the window an excursion sits. Both classes get the same wrap
+    seam, so the seam itself carries no label information. 0 = unchanged.
+    """
     from anogen.shell.adapters import AnomalyClassifier
     import torch
     import torch.nn.functional as F
@@ -115,6 +122,9 @@ def fit_detector(
         ia = torch.randint(0, len(xa), (n_pos,))
         inn = torch.randint(0, len(xn), (n_neg,))
         xb = torch.cat([xa[ia], xn[inn]], dim=0).to(device_t)
+        if int(shift_aug) > 0:
+            shifts = torch.randint(-int(shift_aug), int(shift_aug) + 1, (xb.size(0),))
+            xb = torch.stack([torch.roll(xb[i], int(shifts[i]), dims=-1) for i in range(xb.size(0))])
         yb = torch.cat(
             [
                 torch.ones(n_pos, device=device_t),
@@ -201,6 +211,38 @@ def eval_detector(
         "n_rare": int(len(s_r)),
         "n_events": int(len(hits)),
         "bootstrap": bootstrap_event_recall(hits, n_boot=n_boot, seed=seed),
+    }
+
+
+def paired_event_bootstrap(
+    hits_a: dict[int, dict[str, bool]],
+    hits_b: dict[int, dict[str, bool]],
+    *,
+    n_boot: int = 2000,
+    seed: int = 0,
+) -> dict[str, float]:
+    """Event recall(A) − recall(B), paired by seed and event, bootstrap over events.
+
+    Each event's hit rate is averaged over the seeds both arms share; events
+    are then resampled with replacement. ``p_le_zero`` is the share of
+    replicates with no improvement (one-sided bootstrap p for "A > B").
+    """
+    seeds = sorted(set(hits_a) & set(hits_b))
+    events = sorted(set.intersection(*[set(hits_a[s]) & set(hits_b[s]) for s in seeds])) if seeds else []
+    if not events:
+        return {"diff": float("nan"), "lo": float("nan"), "hi": float("nan"), "p_le_zero": float("nan"), "n_events": 0}
+    a = np.array([[float(hits_a[s][e]) for s in seeds] for e in events]).mean(axis=1)
+    b = np.array([[float(hits_b[s][e]) for s in seeds] for e in events]).mean(axis=1)
+    d = a - b
+    rng = np.random.default_rng(int(seed))
+    boot = np.array([d[rng.integers(0, len(d), len(d))].mean() for _ in range(int(n_boot))])
+    return {
+        "diff": float(d.mean()),
+        "lo": float(np.quantile(boot, 0.025)),
+        "hi": float(np.quantile(boot, 0.975)),
+        "p_le_zero": float(np.mean(boot <= 0.0)),
+        "n_events": int(len(events)),
+        "n_seeds": int(len(seeds)),
     }
 
 

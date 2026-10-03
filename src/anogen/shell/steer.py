@@ -326,6 +326,8 @@ def guided_ddim(
     anom_proto_shift: "torch.Tensor | None" = None,
     lam_repel: float = 0.0,
     repel_project: bool = True,
+    noise_init_mean: np.ndarray | None = None,
+    noise_init_std: np.ndarray | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Noise nominal windows to ν, DDIM with clipped constraint gradients.
 
@@ -374,6 +376,15 @@ def guided_ddim(
                        Moves the requested event in time so that samples
                        sharing one of very few prototypes (6 level shifts) do
                        not all aim at the same position.
+    noise_init_mean    per-channel mean (and ``noise_init_std`` std) of the
+                       *scaled* training windows. With start_from_noise the
+                       chain then starts from N(√ᾱ_T m_c, (1−ᾱ_T+ᾱ_T s_c²) I),
+                       the per-bin marginal of q(x_T), instead of N(0, I).
+                       The linear schedule leaves √ᾱ_T ≈ 0.36 of the clean
+                       signal at t = T−1 (SNR 0.15), so N(0, I) is an input
+                       the denoiser never saw (Lin et al., WACV 2024); since
+                       φ z-scores every window, the resulting level bias is
+                       invisible to ARP / EDI. None keeps the locked N(0, I).
     lam_repel          particle-guidance repulsion between samples of the same
                        call (Corso et al., ICLR 2024): RBF kernel on encoder
                        embeddings, median bandwidth. With repel_project the
@@ -422,6 +433,15 @@ def guided_ddim(
     cb = torch.from_numpy(ch_np).to(device_t)
     if start_from_noise:
         xt = torch.randn_like(xt0)
+        if noise_init_mean is not None:
+            ab_t = sched.alpha_bar[int(t_start)]
+            m = torch.as_tensor(np.asarray(noise_init_mean, dtype=np.float32), device=device_t)[cb]
+            sd = (
+                torch.as_tensor(np.asarray(noise_init_std, dtype=np.float32), device=device_t)[cb]
+                if noise_init_std is not None
+                else torch.zeros_like(m)
+            )
+            xt = ab_t.sqrt() * m.view(-1, 1, 1) + (1.0 - ab_t + ab_t * sd.view(-1, 1, 1) ** 2).sqrt() * xt
     else:
         t0 = torch.full((xt0.size(0),), t_start, device=device_t, dtype=torch.long)
         xt, _ = q_sample(xt0, t0, sched)

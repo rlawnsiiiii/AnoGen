@@ -17,7 +17,7 @@ import pandas as pd
 
 from anogen.config import REPO_ROOT
 from anogen.phases.encscore import _abs, _jsonable
-from anogen.shell.detector import eval_detector, fit_detector, needs_torch
+from anogen.shell.detector import eval_detector, fit_detector, needs_torch, paired_event_bootstrap
 from anogen.shell.events import types_from_cfg
 from anogen.shell.morphology import kinds_for_windows
 from anogen.shell.scaler import load_minmax
@@ -97,6 +97,13 @@ def run_augdetect(cfg: dict[str, Any]) -> dict[str, Any]:
     n_nom_test = int(acfg.get("n_nominal_test", 512))
     device = str(acfg.get("device") or "")
     seed0 = int(cfg.get("seed", 0))
+    # Synthetic positives for test fold k only from donors whose S3 index is not
+    # a fold-k test nominal (index % 3 == k). Before 2026-10-03 every arm drew
+    # from all 1536 donors, so a test negative's own edited copy could be a
+    # training positive. Set false only to reproduce docs/AUGDETECT.md.
+    donor_disjoint = bool(acfg.get("donor_disjoint", True))
+    shift_aug = int(acfg.get("shift_aug", 0))
+    flip_test = bool(acfg.get("flip_test", True))
 
     lab = np.load(s0 / "labeled_arrays.npz")
     gal = np.load(s3 / "galleries.npz")
@@ -172,6 +179,9 @@ def run_augdetect(cfg: dict[str, Any]) -> dict[str, Any]:
                         n_boot=n_boot,
                         device=device or None,
                         leaked=leaked,
+                        donor_disjoint=donor_disjoint,
+                        shift_aug=shift_aug,
+                        flip_test=flip_test,
                     )
                 except FileNotFoundError as exc:
                     row = {
@@ -252,6 +262,9 @@ def _run_one(
     n_boot: int,
     device: str | None,
     leaked: bool,
+    donor_disjoint: bool = False,
+    shift_aug: int = 0,
+    flip_test: bool = False,
 ) -> dict[str, Any]:
     rng = np.random.default_rng(seed + 1000 * fold_id)
     train_a = fold_a != fold_id
@@ -287,6 +300,7 @@ def _run_one(
         hybrid=hybrid,
         enc_score=enc_score,
         cond_ch=cond_ch,
+        exclude_donor_fold=fold_id if donor_disjoint else None,
     )
     if arm == "real_only":
         x_pos, ch_pos = x_pos_real, ch_pos_real
@@ -320,6 +334,7 @@ def _run_one(
         batch_size=batch_size,
         lr=lr,
         device=device,
+        shift_aug=shift_aug,
     )
     ev = eval_detector(
         clf,
@@ -334,6 +349,27 @@ def _run_one(
         seed=seed,
     )
     kind_hits = ev.pop("event_hits")
+    flipped: dict[str, Any] = {}
+    if flip_test:
+        # Position-sensitivity check: the same test set read backwards. A
+        # detector that learned "anomaly = window start" loses recall here.
+        evf = eval_detector(
+            clf,
+            x_anom=x_te_a[:, ::-1].copy(),
+            x_nom=x_te_n[:, ::-1].copy(),
+            x_rare=x_te_r[:, ::-1].copy(),
+            event_id=event_a[test_a],
+            kind=kind_a[test_a],
+            far=far,
+            device=device,
+            n_boot=0,
+            seed=seed,
+        )
+        flipped = {
+            "event_recall_flipped": evf["event_recall"],
+            "window_recall_flipped": evf["window_recall"],
+            "ap_flipped": evf["ap"],
+        }
     row = {
         "arm": arm,
         "fold": int(fold_id),
@@ -358,6 +394,9 @@ def _run_one(
         "train_events": sorted(train_ev),
         "test_events": sorted(test_ev),
         "event_hits": kind_hits,
+        "donor_disjoint": bool(donor_disjoint),
+        "shift_aug": int(shift_aug),
+        **flipped,
     }
     return row
 
@@ -372,9 +411,18 @@ def _synth_for_arm(
     hybrid: Path,
     enc_score: Path,
     cond_ch: np.ndarray,
+    exclude_donor_fold: int | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     if n_synth <= 0:
         return np.zeros((0, 1), dtype=np.float32), np.zeros(0, dtype=np.int64)
+
+    def _disjoint(x: np.ndarray, ch: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        # Galleries are stored in S3 donor order (row i is an edit of donor i).
+        if exclude_donor_fold is None or len(x) != len(cond_ch):
+            return x, ch
+        keep = np.arange(len(x)) % 3 != int(exclude_donor_fold)
+        return x[keep], np.asarray(ch)[keep]
+
     key = {
         "synth_only": "genfsdiff_c1",
         "c1_plus_real": "genfsdiff_c1",
@@ -382,21 +430,21 @@ def _synth_for_arm(
     }.get(arm, arm)
     if key in galleries:
         x, ch = galleries[key]
-        return _subsample(x, ch, n_synth, rng)
+        return _subsample(*_disjoint(x, ch), n_synth, rng)
     if key == "genfsdiff_c1":
         path = hybrid / f"{C1_GALLERY}_fold{fold_id}.npz"
         if not path.is_file():
             raise FileNotFoundError(path)
         blob = np.load(path)
         ch = np.asarray(blob["channel_idx"]) if "channel_idx" in blob.files else cond_ch
-        return _subsample(np.asarray(blob["x"]), ch, n_synth, rng)
+        return _subsample(*_disjoint(np.asarray(blob["x"]), ch), n_synth, rng)
     if key == "genfsdiff_c3":
         path = enc_score / f"{C3_GALLERY}_fold{fold_id}.npz"
         if not path.is_file():
             raise FileNotFoundError(path)
         blob = np.load(path)
         ch = np.asarray(blob["channel_idx"]) if "channel_idx" in blob.files else cond_ch
-        return _subsample(np.asarray(blob["x"]), ch, n_synth, rng)
+        return _subsample(*_disjoint(np.asarray(blob["x"]), ch), n_synth, rng)
     raise FileNotFoundError(f"unknown augdetect arm {arm}")
 
 
@@ -470,7 +518,16 @@ def _aggregate(
             "n_runs": len(pool),
             "leaked_runs": int(sum(1 for r in pool if r.get("leaked"))),
             "seed_event_recall": seed_rec,
+            "event_recall_flipped_mean": float(
+                np.nanmean([r.get("event_recall_flipped", float("nan")) for r in pool])
+            ),
         }
+        out[arm]["_hits_by_seed"] = by_seed
+    ref = out.get("real_only", {}).get("_hits_by_seed")
+    for arm in list(out):
+        hits = out[arm].pop("_hits_by_seed")
+        if ref is not None and arm != "real_only":
+            out[arm]["vs_real_only"] = paired_event_bootstrap(hits, ref)
     return out
 
 

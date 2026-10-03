@@ -262,3 +262,103 @@ def calibration_galleries(
         "donor_nominal": donors,
         "white_noise": noise.astype(np.float32),
     }
+
+
+# --------------------------------------------------------------------------
+# Fidelity vs diversity, separated (Naeem et al. 2020; Kynkäänniemi et al. 2019)
+# --------------------------------------------------------------------------
+
+
+def prdc(real_emb: np.ndarray, gen_emb: np.ndarray, *, k: int = 5) -> dict[str, float]:
+    """Precision, recall, density and coverage in the frozen φ space.
+
+    ARP and EDI each mix fidelity with spread: a gallery that scatters widely
+    gets closer to *some* real anomaly (ARP up) and fills more k-means bins
+    (EDI up) whether or not its samples look like anomalies. These four
+    numbers keep the two axes apart, all against the real anomaly set:
+
+    precision  share of generated points inside some real point's k-NN ball
+    recall     share of real points inside some generated point's k-NN ball
+    density    mean number of real balls a generated point falls in, / k
+    coverage   share of real points whose own k-NN ball contains a generated point
+
+    Naeem et al. (ICML 2020) recommend density/coverage because precision and
+    recall are fragile to outliers. k = 5 is their default.
+    """
+    r = np.asarray(real_emb, dtype=np.float64)
+    g = np.asarray(gen_emb, dtype=np.float64)
+    kk = int(min(k, len(r) - 1, len(g) - 1))
+    if kk < 1:
+        return {"precision": float("nan"), "recall": float("nan"), "density": float("nan"), "coverage": float("nan")}
+    d_rr = distance_matrix(r, r)
+    d_gg = distance_matrix(g, g)
+    d_rg = distance_matrix(r, g)
+    r_rad = np.sort(d_rr, axis=1)[:, kk]  # kk-th neighbour (index 0 is self)
+    g_rad = np.sort(d_gg, axis=1)[:, kk]
+    inside = d_rg <= r_rad[:, None]  # (n_r, n_g): gen j inside real i's ball
+    return {
+        "precision": float(inside.any(axis=0).mean()),
+        "recall": float((d_rg <= g_rad[None, :]).any(axis=1).mean()),
+        "density": float(inside.sum(axis=0).mean() / kk),
+        "coverage": float((d_rg.min(axis=1) <= r_rad).mean()),
+        "k": kk,
+    }
+
+
+def feature_attribution(
+    query_emb: np.ndarray,
+    gallery_emb: np.ndarray,
+    names: list[str] | None = None,
+) -> dict[str, float]:
+    """Which φ components carry the query→nearest-gallery distance.
+
+    For every query, take its nearest gallery point and split the squared
+    distance by feature; report each feature's share of the total. If a
+    gallery's ARP advantage comes from, say, the high-frequency band energy
+    rather than from excursion shape, this is where it shows.
+    """
+    q = np.asarray(query_emb, dtype=np.float64)
+    g = np.asarray(gallery_emb, dtype=np.float64)
+    nn = distance_matrix(q, g).argmin(axis=1)
+    sq = (q - g[nn]) ** 2
+    share = sq.sum(axis=0) / max(sq.sum(), 1e-12)
+    names = names or [f"f{i}" for i in range(q.shape[1])]
+    return {n: float(v) for n, v in zip(names, share, strict=True)}
+
+
+PHI_NAMES = [
+    "z_mean",
+    "z_std",
+    "z_min",
+    "z_max",
+    "dz_mean",
+    "dz_std",
+    "peak_abs_z",
+    "longest_excursion",
+    "fft_band1",
+    "fft_band2",
+    "fft_band3",
+    "fft_band4",
+]
+
+
+def query_keep_mask(
+    channel_idx: np.ndarray,
+    folds: np.ndarray,
+    fold_tab: Any,
+    *,
+    fold_id: int,
+    channels: list[str] | None = None,
+) -> np.ndarray:
+    """Torch-free twin of ``tune._keep_mask`` (same rule, same default names).
+
+    Keep the windows of ``fold_id`` whose channel is not flagged ``below_min``
+    for that fold. Default channel names follow ``tune._keep_mask``
+    (channel_41 + index); pass ``channels`` for other panels.
+    """
+    dropped = set(
+        fold_tab.loc[(fold_tab["fold"] == fold_id) & (fold_tab["below_min"]), "channel"].astype(str)
+    )
+    idx = np.asarray(channel_idx)
+    names = np.array([channels[int(c)] if channels else f"channel_{41 + int(c)}" for c in idx])
+    return (np.asarray(folds) == int(fold_id)) & np.array([n not in dropped for n in names], dtype=bool)
