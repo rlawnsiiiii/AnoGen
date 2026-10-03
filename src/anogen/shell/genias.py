@@ -148,6 +148,7 @@ def train_genias(
     delta_min: float = 0.1,
     delta_max: float = 0.2,
     psi_init: float = 2.0,
+    kl_form: str = "paper",
 ) -> dict[str, Any]:
     """Train the TCN-VAE.
 
@@ -160,7 +161,10 @@ def train_genias(
     Eq. 2–6, UTS defaults): L = α L_recon + β L_perturb + ζ L_compKL with a
     *learned* ψ ≥ 1, the triplet-margin perturbation loss
     max(d(X,X̂) − d(X,X̃) + δ_min, 0) + max(d(X,X̃) − δ_max, 0) with d = MSE,
-    and the compact KL against N(0, σ_prior²). γ (zero-perturbation) is 0 for
+    and the compact KL (Eq. 2). As printed, Eq. 2 is not the exact KL to
+    N(0, σ_prior²): μ² is not divided by σ_prior² and the constant differs.
+    ``kl_form="paper"`` (default) reproduces the printed objective;
+    ``kl_form="exact"`` uses the textbook KL. γ (zero-perturbation) is 0 for
     univariate series, as in the paper. Distances are in per-window whitened
     units, the same units the reconstruction loss already uses here.
     """
@@ -218,9 +222,14 @@ def train_genias(
                     F.relu(d_hat - d_tilde + float(delta_min)) + F.relu(d_tilde - float(delta_max))
                 ).mean()
                 sp2 = float(sigma_prior) ** 2
-                kl = -0.5 * (
-                    1 + logv - mu.pow(2) - logv.exp() / sp2 + 2.0 * float(np.log(sigma_prior))
-                ).mean()
+                if kl_form == "paper":
+                    # Eq. 2 as printed in the paper (μ² not divided by σ_prior²).
+                    kl = -0.5 * (
+                        1 + logv - mu.pow(2) - logv.exp() / sp2 + 2.0 * float(np.log(sigma_prior))
+                    ).mean()
+                else:
+                    # Exact KL( N(μ, σ²) || N(0, σ_prior²) ).
+                    kl = 0.5 * ((mu.pow(2) + logv.exp()) / sp2 - 1.0 - logv + float(np.log(sp2))).mean()
                 loss = recon + float(beta) * perturb + float(zeta) * kl
             else:
                 rec, mu, logv = model(xb, psi=1.0)

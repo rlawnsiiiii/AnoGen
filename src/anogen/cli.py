@@ -199,6 +199,7 @@ def _dispatch(phase: str, cfg: dict) -> dict:
         shell["diffusion"] = diff
         cfg["shell"] = shell
         cfg["s1_dir"] = cfg.get("s1_bidir_dir", "results/shell_s1_bidir")
+        cfg["_keep_s0_scaler"] = True  # never rewrite the frozen S0 scaler file
         return run_s1(cfg)
     print(f"{phase} is not implemented yet.", file=sys.stderr)
     sys.exit(2)

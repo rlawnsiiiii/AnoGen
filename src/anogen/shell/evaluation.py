@@ -103,9 +103,14 @@ def paired_arp_difference(
     n_boot: int = 2000,
     seed: int = 0,
     resample_gallery: bool = True,
+    aligned: bool = False,
     level: float = 0.95,
 ) -> dict[str, Any]:
     """ARP(A) − ARP(B) and Coverage(A) − Coverage(B) on the same queries.
+
+    ``aligned``: row i of A and of B come from the same donor and noise draw
+    (fixsweep's common random numbers), so the same gallery columns are drawn
+    for both; otherwise the two galleries are resampled independently.
 
     Paired over events (the same event draw for both galleries). With
     ``resample_gallery`` each gallery is also resampled independently.
@@ -130,7 +135,7 @@ def paired_arp_difference(
         rows = _cluster_draw(query_events, rng)
         if resample_gallery:
             ca = rng.integers(0, da.shape[1], da.shape[1])
-            cb = rng.integers(0, db.shape[1], db.shape[1])
+            cb = ca if (aligned and da.shape[1] == db.shape[1]) else rng.integers(0, db.shape[1], db.shape[1])
             xa = da[np.ix_(rows, ca)].min(axis=1)
             xb = db[np.ix_(rows, cb)].min(axis=1)
         else:

@@ -116,7 +116,8 @@ def test_causal_and_bidirectional_backbones():
         if bidir:
             assert before > 1e-6
         else:
-            assert before == 0.0
+            # float32 FFT: exact zero in exact arithmetic, ~1e-8 in practice
+            assert before < 1e-5 * max(float(d.max()), 1.0)
 
 
 def test_flip_ensemble_sees_both_sides_and_skips_bidirectional():

@@ -305,6 +305,7 @@ def run_fixsweep(cfg: dict[str, Any]) -> dict[str, Any]:
                         tau=tau,
                         n_boot=n_boot,
                         seed=seed0 + fold_id,
+                        aligned=True,
                     )
                 )
             results[vname]["paired_vs_" + base] = diffs
@@ -317,7 +318,9 @@ def run_fixsweep(cfg: dict[str, Any]) -> dict[str, Any]:
         q_emb = embed_windows(x_a[qm])
         for name, g in calibration_galleries(x_a, fold_a, x_cond, fold_id=fold_id, rng=rng).items():
             calib.setdefault(name, []).append(
-                arp_coverage_ci(q_emb, embed_windows(g), event_a[qm], tau=tau, n_boot=n_boot, seed=fold_id)
+                arp_coverage_ci(
+                    q_emb, embed_windows(g), event_a[qm], tau=tau, n_boot=n_boot, seed=fold_id, resample_gallery=True
+                )
             )
     results["_calibration"] = {
         k: {
@@ -373,8 +376,11 @@ def _generate_slices(
 ) -> tuple[np.ndarray, np.ndarray]:
     """``kindmix._stratified`` with per-donor arrays (prefix) sliced per kind.
 
-    Same seeds as ``_stratified`` (proto seed = seed + 17·(1 + kind index)), so
-    ``c1_repro`` regenerates the chanmix recipe.
+    Same allocation and proto seeds as ``_stratified`` (proto seed = seed +
+    17·(1 + kind index)). The frozen chanmix galleries were drawn without a
+    torch seed, so ``c1_repro`` is a fresh draw of the same recipe, not a
+    bit-for-bit copy: compare variants against ``c1_repro`` (shared torch seed),
+    not against the frozen table.
     """
     labels = np.asarray(alloc).astype(str)
     default_lam = float(common.get("lam_anom", 1.0))

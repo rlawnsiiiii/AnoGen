@@ -84,7 +84,8 @@ def run_s1(cfg: dict[str, Any]) -> dict[str, Any]:
     if kind == "minmax":
         fr = tuple(scfg.get("feature_range") or (0.0, 1.0))
         scaler = fit_channel_minmax(x, ch, panel.k, feature_range=(float(fr[0]), float(fr[1])))
-        scaler.save(s0 / "minmax_scaler.npz")
+        if not bool(cfg.get("_keep_s0_scaler", False)):
+            scaler.save(s0 / "minmax_scaler.npz")
     trained = train_denoiser(
         x,
         ch,

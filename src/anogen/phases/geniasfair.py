@@ -101,6 +101,7 @@ def run_geniasfair(cfg: dict[str, Any]) -> dict[str, Any]:
             delta_min=float(gcfg.get("delta_min", 0.1)),
             delta_max=float(gcfg.get("delta_max", 0.2)),
             psi_init=float(gcfg.get("psi_init", 2.0)),
+            kl_form=str(gcfg.get("kl_form", "paper")),
         )
         model = trained.pop("model")
         psi = float(trained["psi_learned"])
