@@ -64,3 +64,34 @@ for name, den, space, final in (("causal net", dens["causal net"], "x", 1.0),
     res["level_shift"][f"{name}, {space}-space, final {final}"] = r
     print(f"level shift | {name}, {space}, final {final}: start {r['peak_at_start']:.2f} end {r['peak_at_end']:.2f} diff p99.9 {r['diff_p999']:.3f}", flush=True)
 (OUT / "e8_trained_nets.json").write_text(json.dumps(res, indent=1))
+
+# ---- label-free detection with the trained nets (diffdetect in miniature)
+from sklearn.metrics import roc_auc_score
+from anogen.testbed.gauss import spike as _spike
+
+def denoise_score(net, x, skip=0, ts=(10, 20, 40), draws=4, seed=0):
+    r = np.random.default_rng(seed)
+    acc = np.zeros(len(x))
+    for t in ts:
+        ab = sch.alpha_bar[t]
+        for _ in range(draws):
+            e = r.standard_normal(x.shape)
+            xt = np.sqrt(ab) * (x - ch.mean) + np.sqrt(1 - ab) * e
+            acc += ((net.forward(xt, np.full(len(x), t)) - e) ** 2)[:, skip:].mean(axis=1)
+    return acc / (len(ts) * draws)
+
+nom = ch.sample(256, W, rng)
+pos = rng.integers(3, W - 6, 256)
+anom = _spike(ch.sample(256, W, rng), pos, rng.choice([-1, 1], 256) * 0.15, width=3)
+early = pos < W // 10
+res["detection"] = {}
+for name, net, skip in (("causal net", nets["causal"], 0), ("causal net, skip first 32", nets["causal"], 32),
+                        ("bidir net", nets["bidir"], 0)):
+    s_n, s_a = denoise_score(net, nom, skip), denoise_score(net, anom, skip)
+    y = np.r_[np.zeros(len(s_n)), np.ones(len(s_a))]
+    auc = roc_auc_score(y, np.r_[s_n, s_a])
+    auc_early = roc_auc_score(np.r_[np.zeros(len(s_n)), np.ones(early.sum())], np.r_[s_n, s_a[early]])
+    auc_late = roc_auc_score(np.r_[np.zeros(len(s_n)), np.ones((~early).sum())], np.r_[s_n, s_a[~early]])
+    res["detection"][name] = {"auroc": float(auc), "auroc_spike_in_first_10pct": float(auc_early), "auroc_spike_elsewhere": float(auc_late)}
+    print(f"detection | {name}: AUROC {auc:.3f} (spike in first 10 %: {auc_early:.3f}, elsewhere: {auc_late:.3f})", flush=True)
+(OUT / "e8_trained_nets.json").write_text(json.dumps(res, indent=1))

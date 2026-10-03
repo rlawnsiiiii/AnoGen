@@ -286,6 +286,7 @@ def guided_ddim(
     final_scale: float = 1.0,
     start_from_noise: bool = False,
     crop: int = 0,
+    crop_end: int = 0,
     t_window: tuple[float, float] = (0.0, 1.0),
     noise_init: tuple[float, float] | None = None,
     eta: float = 0.0,
@@ -334,9 +335,10 @@ def guided_ddim(
         for term in terms:
             if term.lam == 0.0:
                 continue
-            _, g_win = term.fn(x0h[:, crop:])
+            end = x0h.shape[1] - crop_end
+            _, g_win = term.fn(x0h[:, crop:end])
             g = np.zeros_like(x0h)
-            g[:, crop:] = g_win
+            g[:, crop:end] = g_win
             if term.project:
                 tot += term.lam * g
                 continue
@@ -381,7 +383,7 @@ def guided_ddim(
             xt = np.sqrt(abp) * (x0h - edit) + c_eps * eps + noise
         else:
             xt = np.sqrt(abp) * x0h + c_eps * eps - edit + noise
-    return xt[:, crop:]
+    return xt[:, crop : xt.shape[1] - crop_end]
 
 
 # --------------------------------------------------------------------------

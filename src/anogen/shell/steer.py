@@ -328,6 +328,8 @@ def guided_ddim(
     repel_project: bool = True,
     noise_init_mean: np.ndarray | None = None,
     noise_init_std: np.ndarray | None = None,
+    burnin_suffix: np.ndarray | None = None,
+    burnin_bins_end: int = 0,
     contrast_weights: np.ndarray | None = None,
     contrast_target: np.ndarray | None = None,
     lam_contrast: float = 0.0,
@@ -374,6 +376,12 @@ def guided_ddim(
                        from the output. Gives a causal backbone real context at
                        the window start. With start_from_noise, use burnin_bins
                        instead (the prefix is then pure noise like the rest).
+    burnin_suffix      (N, B) telemetry immediately *following* each donor
+                       (``burnin_bins_end`` for from-noise). A bidirectional
+                       backbone has edge effects at both ends of whatever it is
+                       given (a trained 'same'-padded net puts ~1/3 of peaks in
+                       each edge tenth, testbed E8); context on both sides moves
+                       those edges outside the kept window.
     anom_proto_shift   (N,) integer shift, in encoder time steps, applied to the
                        proto embedding (temporal encoders only; edge-replicate).
                        Moves the requested event in time so that samples
@@ -436,6 +444,17 @@ def guided_ddim(
             raise ValueError("burnin_bins without a prefix needs start_from_noise=True; pass burnin_prefix")
         x_np = np.concatenate([np.repeat(x_np[:, :1], int(burnin_bins), axis=1), x_np], axis=1)
     crop = int(x_np.shape[1]) - width
+    if burnin_suffix is not None:
+        post = np.asarray(burnin_suffix, dtype=np.float32)
+        if post.ndim != 2 or len(post) != len(x_np):
+            raise ValueError(f"burnin_suffix must be (N, B) with N={len(x_np)}, got {post.shape}")
+        x_np = np.concatenate([x_np, post], axis=1)
+    elif int(burnin_bins_end) > 0:
+        if not start_from_noise:
+            raise ValueError("burnin_bins_end without a suffix needs start_from_noise=True; pass burnin_suffix")
+        x_np = np.concatenate([x_np, np.repeat(x_np[:, -1:], int(burnin_bins_end), axis=1)], axis=1)
+    crop_end = int(x_np.shape[1]) - width - crop
+    win = slice(crop, crop + width)
     if scaler is not None:
         x_np = scaler.transform(x_np, ch_np)
     xt0 = torch.from_numpy(x_np).unsqueeze(1).to(device_t)
@@ -549,19 +568,19 @@ def guided_ddim(
                 xt = xt.detach().requires_grad_(True)
                 eps = model(xt, t_batch, cb)
                 x0_hat = (xt - (1.0 - ab).sqrt() * eps) / ab.sqrt()
-                x0_win = x0_hat[..., crop:]
+                x0_win = x0_hat[..., win]
                 terms, h = objective_terms(x0_win)
                 total = guidance(xt, terms) if (active and terms) else torch.zeros_like(xt)
                 # Contrast edit is in x̂₀ units; scaled by √ᾱ_next below so that
                 # subtracting it from x_{t'} moves the implied x̂₀ by exactly it.
                 c_edit = (
-                    F.pad(contrast_edit(x0_win), (crop, 0)) if (use_contrast and active) else None
+                    F.pad(contrast_edit(x0_win), (crop, crop_end)) if (use_contrast and active) else None
                 )
                 if float(lam_parent) != 0.0 and not start_from_noise and active:
                     pull = _parent_pull(
-                        x0_win - xt0[..., crop:], kind=parent_leash, delta=parent_delta
+                        x0_win - xt0[..., win], kind=parent_leash, delta=parent_delta
                     ).clamp(-c_max, c_max)
-                    total = total + float(lam_parent) * F.pad(pull, (crop, 0))
+                    total = total + float(lam_parent) * F.pad(pull, (crop, crop_end))
                 x0_next = x0_hat.detach()
                 edit = total.detach()
                 eps = eps.detach()
@@ -569,17 +588,17 @@ def guided_ddim(
                 with torch.no_grad():
                     eps = model(xt.detach(), t_batch, cb)
                     x0_hat = (xt.detach() - (1.0 - ab).sqrt() * eps) / ab.sqrt()
-                leaf = x0_hat[..., crop:].detach().requires_grad_(True)
+                leaf = x0_hat[..., win].detach().requires_grad_(True)
                 terms, h = objective_terms(leaf)
                 total = guidance(leaf, terms) if (active and terms) else torch.zeros_like(leaf)
                 if use_contrast and active:
                     total = total + contrast_edit(leaf)
                 if float(lam_parent) != 0.0 and not start_from_noise and active:
                     total = total + float(lam_parent) * _parent_pull(
-                        leaf.detach() - xt0[..., crop:], kind=parent_leash, delta=parent_delta
+                        leaf.detach() - xt0[..., win], kind=parent_leash, delta=parent_delta
                     ).clamp(-c_max, c_max)
                 x0_next = x0_hat
-                edit = F.pad(total.detach(), (crop, 0))
+                edit = F.pad(total.detach(), (crop, crop_end))
                 c_edit = None
             last_h = h.detach()
             advance = corr == n_correct - 1
@@ -600,7 +619,7 @@ def guided_ddim(
         if t_prev < 0:
             break
     # Occupancy uses the last predicted x0 energy (before the final subtract).
-    samples = xt[..., crop:].squeeze(1).detach().cpu().numpy().astype(np.float32)
+    samples = xt[..., win].squeeze(1).detach().cpu().numpy().astype(np.float32)
     if scaler is not None:
         samples = scaler.inverse(samples, ch_np)
     h_np = last_h.cpu().numpy() if last_h is not None else np.zeros(len(samples))
@@ -632,6 +651,7 @@ def chunked_guided_ddim(
     shift_seed = int(kwargs.pop("anom_proto_shift_seed", 0) or 0)
     proto_shift = kwargs.pop("anom_proto_shift", None)
     prefix = kwargs.pop("burnin_prefix", None)
+    suffix = kwargs.pop("burnin_suffix", None)
     c_w = kwargs.pop("contrast_weights", None)
     c_t = kwargs.pop("contrast_target", None)
     if str(kwargs.get("anom_energy_kind", "soft")).lower() == "proto":
@@ -662,6 +682,8 @@ def chunked_guided_ddim(
             extra["anom_proto_shift"] = proto_shift[i : i + step]
         if prefix is not None:
             extra["burnin_prefix"] = np.asarray(prefix)[i : i + step]
+        if suffix is not None:
+            extra["burnin_suffix"] = np.asarray(suffix)[i : i + step]
         if c_w is not None:
             extra["contrast_weights"] = np.asarray(c_w)[i : i + step]
             extra["contrast_target"] = np.asarray(c_t)[i : i + step]

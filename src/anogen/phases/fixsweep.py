@@ -89,6 +89,7 @@ _PHASE_KEYS = {
     "contrast",
     "contrast_only",
     "lam_contrast",
+    "context",
 }
 
 
@@ -183,10 +184,10 @@ def run_fixsweep(cfg: dict[str, Any]) -> dict[str, Any]:
     scfg = dict((cfg.get("shell") or {}).get("steer") or {})
     bsz = int(fcfg.get("bsz", scfg.get("n_sample", 128)))
 
-    prefix = None
+    context = None
     prefix_info: dict[str, Any] = {"requested": False}
     if any(bool(v.get("burnin")) and not bool(v.get("start_from_noise")) for v in variants.values()):
-        prefix, prefix_info = donor_prefix(cfg, x_cond, cond_ch, burn_bins)
+        context, prefix_info = donor_context(cfg, x_cond, cond_ch, burn_bins)
 
     dens: dict[str, tuple[Any, Any, Any]] = {}
 
@@ -246,6 +247,8 @@ def run_fixsweep(cfg: dict[str, Any]) -> dict[str, Any]:
             common["start_from_noise"] = True
             if bool(spec.get("burnin")):
                 common["burnin_bins"] = burn_bins
+                if str(spec.get("context", "before")) == "both":
+                    common["burnin_bins_end"] = burn_bins
             if bool(spec.get("matched_noise")):
                 common["noise_init_mean"], common["noise_init_std"] = channel_moments(
                     x_cond, cond_ch, scaler
@@ -283,7 +286,8 @@ def run_fixsweep(cfg: dict[str, Any]) -> dict[str, Any]:
                     seed=fseed,
                     kind_order=KIND_ORDER,
                     slice_lam_anom=slice_lam_anom,
-                    prefix=prefix if (bool(spec.get("burnin")) and not bool(spec.get("start_from_noise"))) else None,
+                    prefix=context[0] if (context is not None and bool(spec.get("burnin")) and not bool(spec.get("start_from_noise"))) else None,
+                    suffix=context[1] if (context is not None and bool(spec.get("burnin")) and str(spec.get("context", "before")) == "both" and not bool(spec.get("start_from_noise"))) else None,
                     proto_shift_max=int(spec.get("proto_shift_max", 0) or 0),
                     contrast=_contrast_plan(
                         spec, kind_lab, fold_a, fold_id, x_a, ch_a, scaler, KIND_ORDER
@@ -412,6 +416,7 @@ def _generate_slices(
     slice_lam_anom: Any,
     prefix: np.ndarray | None,
     proto_shift_max: int,
+    suffix: np.ndarray | None = None,
     contrast: dict[str, Any] | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """``kindmix._stratified`` with per-donor arrays (prefix) sliced per kind.
@@ -434,6 +439,8 @@ def _generate_slices(
         kw = dict(common)
         if prefix is not None:
             kw["burnin_prefix"] = prefix[idx]
+        if suffix is not None:
+            kw["burnin_suffix"] = suffix[idx]
         if use_proto:
             kw.update(
                 lam_anom=lam_k,
@@ -711,13 +718,13 @@ def channel_moments(x: np.ndarray, ch: np.ndarray, scaler: Any) -> tuple[np.ndar
     return mean, std
 
 
-def donor_prefix(
+def donor_context(
     cfg: dict[str, Any],
     x_cond: np.ndarray,
     cond_ch: np.ndarray,
     bins: int,
 ) -> tuple[np.ndarray, dict[str, Any]]:
-    """Real telemetry immediately preceding each S3 donor, for burn-in.
+    """Real telemetry immediately before and after each S3 donor, for burn-in.
 
     S3 drew the donors with ``default_rng(seed).choice`` per channel from
     ``nominal_index.csv``; the same draw is replayed here and checked against
@@ -768,7 +775,9 @@ def donor_prefix(
     occ = occupancy_mask(panel, events, guard_bins=int(proto["guard_bins"]), occupy_rares=False)
     b = int(bins)
     prefix = np.empty((len(starts), b), dtype=np.float32)
-    fallback = np.zeros(len(starts), dtype=bool)
+    suffix = np.empty((len(starts), b), dtype=np.float32)
+    fb_pre = np.zeros(len(starts), dtype=bool)
+    fb_post = np.zeros(len(starts), dtype=bool)
     for i, (s, c) in enumerate(zip(starts, chans, strict=True)):
         lo = int(s) - b
         ok = lo >= 0 and window_finite(panel.Y, panel.counts, lo, int(c), b) and not occ[lo : int(s)].any()
@@ -776,11 +785,23 @@ def donor_prefix(
             prefix[i] = panel.Y[lo : int(s), int(c)]
         else:
             prefix[i] = np.asarray(x_cond[i, 1 : b + 1])[::-1]
-            fallback[i] = True
-    return prefix, {
+            fb_pre[i] = True
+        hi0 = int(s) + width
+        ok = (
+            hi0 + b <= panel.T
+            and window_finite(panel.Y, panel.counts, hi0, int(c), b)
+            and not occ[hi0 : hi0 + b].any()
+        )
+        if ok:
+            suffix[i] = panel.Y[hi0 : hi0 + b, int(c)]
+        else:
+            suffix[i] = np.asarray(x_cond[i, width - b - 1 : width - 1])[::-1]
+            fb_post[i] = True
+    return (prefix, suffix), {
         "requested": True,
         "bins": b,
         "n": int(len(prefix)),
-        "fallback_reflect": int(fallback.sum()),
-        "note": "real preceding telemetry; reflect fallback where unavailable or anomalous",
+        "fallback_reflect_prefix": int(fb_pre.sum()),
+        "fallback_reflect_suffix": int(fb_post.sum()),
+        "note": "real neighbouring telemetry; reflect fallback where unavailable, anomalous or past the cut",
     }
