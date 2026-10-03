@@ -132,6 +132,27 @@ x̂₀ error at t=40 (ν=0.2 edit time), MSE first 16 / middle 16 / last 16 bins
 | fixed (flip_ramp, x0, final 0.25) | step contrast | 0.75 | 0.302 | 0.301 | 0.021 | 0.047 | 0.14 | 0.10 |
 | fixed (flip_ramp, x0, final 0.25) | proto + step contrast | 1.00 | 0.293 | 0.261 | 0.075 | 0.083 | 0.02 | 0.03 |
 
+### E7 what φ sees
+
+Share of the pairwise squared φ distance between real nominal windows, by component:
+
+| z_mean | z_std | z_min | z_max | dz_mean | dz_std | peak_abs_z | longest_excursion | fft_band1 | fft_band2 | fft_band3 | fft_band4 |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 0.000 | 0.000 | 0.080 | 0.079 | 0.000 | 0.001 | 0.060 | 0.000 | 0.000 | 0.262 | 0.262 | 0.256 |
+
+Unguided regeneration of real nominal windows (no steering): mean shift of the three
+high-frequency band energies, in real-nominal standard deviations:
+
+| gallery | fft_band2 | fft_band3 | fft_band4 | ARP vs held-out real nominals |
+|---|---:|---:|---:|---:|
+| bidir nu=1.0 steps=20 | -1.12 | -1.37 | -1.55 | 0.756 |
+| bidir nu=1.0 steps=100 | -0.99 | -1.36 | -1.57 | 0.756 |
+| bidir nu=0.2 steps=50 | -0.89 | -1.28 | -1.48 | 0.744 |
+| causal nu=1.0 steps=20 | +1.20 | +1.38 | +1.42 | 0.757 |
+| causal nu=1.0 steps=100 | +1.30 | +1.46 | +1.49 | 0.750 |
+| causal nu=0.2 steps=50 | +0.55 | +0.70 | +0.72 | 0.793 |
+| donor (real nominal) | +0.00 | +0.00 | +0.00 | 0.811 |
+
 ## Reading
 
 **E1 — the sampler alone.** The best possible causal denoiser puts the
@@ -187,3 +208,19 @@ The contrast must use whole-window segments: a ±64-bin contrast was
 satisfied by local bumps and produced no shelves. On ESA this is the
 `flip_x0_contrast` (proto + contrast) and `flip_x0_contrast_only` variants
 in `fixsweep`.
+
+**E7 — what φ sees.** `feature_pack_v1` z-scores every window, so `z_mean`
+and `z_std` are constants and φ is effectively 10-D. It is also not scaled
+across features. Among real nominal windows here, **78 %** of the pairwise
+squared φ distance comes from the three upper log-FFT band energies, i.e.
+from high-frequency texture relative to the window's own spread. Regenerating
+nominal windows with *no* steering moves exactly these components by 1–1.6
+nominal standard deviations. An exact bidirectional denoiser lowers them
+(DDIM's last x̂₀ removes some high-frequency texture), and an exact causal
+one raises them. So galleries can differ in ARP purely through sampler
+texture, and an anomaly window whose z-scoring is dominated by a large
+low-frequency excursion also has low relative high-frequency energy. That
+offers a candidate explanation for unguided DDIM (0.568) beating real
+nominal donors (0.320) on ESA with no anomaly information. It is a
+hypothesis for ESA, testable with the φ attribution and the standardized-φ
+column in `scripts/audit_metrics.py`.

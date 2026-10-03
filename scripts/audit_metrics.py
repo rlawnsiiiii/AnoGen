@@ -38,7 +38,9 @@ from anogen.shell.evaluation import (
     peak_positions,
     position_report,
     prdc,
+    phi_standardizer,
     query_keep_mask,
+    standardize_phi,
 )
 from anogen.shell.features import embed_windows
 from anogen.shell.realism import channel_span_normalize
@@ -131,6 +133,7 @@ def main() -> None:
         return spec["fold"].get(k)
 
     ref_names = ("donor (real nominal)", "unguided nu=1")
+    phi_stats = phi_standardizer(embed_windows(np.asarray(gals["donor (real nominal)"]["all"][0])))
     rows = {}
     for name, spec in gals.items():
         per = []
@@ -142,6 +145,13 @@ def main() -> None:
             qm = query_keep_mask(ch_a, fold_a, fold_tab, fold_id=k)
             q_emb, g_emb = embed_windows(x_a[qm]), embed_windows(x)
             r = arp_coverage_ci(q_emb, g_emb, ev[qm], tau=tau, n_boot=args.n_boot, seed=k, resample_gallery=True)
+            # Sensitivity: ARP in a per-feature standardized φ (constants dropped),
+            # standardized on the real nominal donors. Not the frozen protocol.
+            r["arp_phi_std"] = float(
+                1.0 / (1.0 + np.mean(np.min(np.linalg.norm(
+                    standardize_phi(q_emb, phi_stats)[:, None, :] - standardize_phi(g_emb, phi_stats)[None, :, :], axis=2
+                ), axis=1)))
+            )
             r.update({f"prdc_{k}": v for k, v in prdc(q_emb, g_emb).items()})
             r["phi_attribution"] = feature_attribution(q_emb, g_emb, PHI_NAMES)
             u = channel_span_normalize(x, ch, scaler)
@@ -173,14 +183,14 @@ def main() -> None:
         return f"[{np.mean([v[0] for v in vals]):.3f}, {np.mean([v[1] for v in vals]):.3f}]" if vals else ""
 
     lines = [
-        "| gallery | ARP | ARP 95% CI | ARP − donor | ARP − unguided | Cov@τ | precision | density | coverage(PRDC) | start | end | env exit |",
-        "|---|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
-        f"| real anomalies (target) | | | | | | | | | {target['peak_at_start']:.3f} | {target['peak_at_end']:.3f} | {target['exit_frac']:.3f} |",
+        "| gallery | ARP | ARP 95% CI | ARP − donor | ARP − unguided | ARP (std φ) | Cov@τ | precision | density | coverage(PRDC) | start | end | env exit |",
+        "|---|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+        f"| real anomalies (target) | | | | | | | | | | {target['peak_at_start']:.3f} | {target['peak_at_end']:.3f} | {target['exit_frac']:.3f} |",
     ]
     for name, per in rows.items():
         lines.append(
             f"| {name} | {m(per, 'arp'):.3f} | {ci(per, 'arp_ci')} | {m(per, 'arp_minus_donor'):+.3f} | "
-            f"{m(per, 'arp_minus_unguided'):+.3f} | {m(per, 'coverage'):.3f} | {m(per, 'prdc_precision'):.3f} | "
+            f"{m(per, 'arp_minus_unguided'):+.3f} | {m(per, 'arp_phi_std'):.3f} | {m(per, 'coverage'):.3f} | {m(per, 'prdc_precision'):.3f} | "
             f"{m(per, 'prdc_density'):.3f} | {m(per, 'prdc_coverage'):.3f} | "
             f"{m(per, 'peak_at_start'):.3f} | {m(per, 'peak_at_end'):.3f} | {m(per, 'exit_frac'):.3f} |"
         )

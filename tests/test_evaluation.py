@@ -155,3 +155,15 @@ def test_eval_scores_and_rank_fuse():
     assert r["event_hits"]["a"] and 0.005 <= r["nominal_far"] <= 0.02 and r["auroc"] > 0.6
     f = rank_fuse(np.array([0.0, 10.0]), np.array([100.0, -100.0]), reference=[s_n, s_n * 100])
     assert f.shape == (2,) and 0.0 <= f.min() <= f.max() <= 1.0
+
+
+def test_phi_standardizer_drops_constants():
+    from anogen.shell.evaluation import phi_standardizer, standardize_phi
+    from anogen.shell.features import embed_windows
+
+    rng = np.random.default_rng(0)
+    phi = embed_windows(rng.normal(size=(200, 64)).cumsum(axis=1))
+    stats = phi_standardizer(phi)
+    z = standardize_phi(phi, stats)
+    assert z.shape[1] == 10  # z_mean and z_std are constant after per-window z-scoring
+    assert np.allclose(z.std(axis=0), 1.0)

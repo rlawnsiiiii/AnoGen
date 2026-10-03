@@ -66,3 +66,18 @@ if p6.is_file():
         s, t = (k.split(" | ") + ["(target)"])[:2]
         print(f"| {s} | {t} | {r['shelf_rate']:.2f} | {r['step_amp_mean']:.3f} | {r['step_pos_std']:.3f} | "
               f"{r['step_pos_w1_to_real']:.3f} | {r['diff_p999']:.3f} | {r['peak_at_start']:.2f} | {r['peak_at_end']:.2f} |")
+p7 = d / "e7_phi.json"
+if p7.is_file():
+    e7 = json.loads(p7.read_text())
+    print("\n### E7 what φ sees\n")
+    print("Share of the pairwise squared φ distance between real nominal windows, by component:\n")
+    print("| " + " | ".join(e7["share_of_pairwise_sq_distance"]) + " |")
+    print("|" + "---:|" * len(e7["share_of_pairwise_sq_distance"]))
+    print("| " + " | ".join(f"{v:.3f}" for v in e7["share_of_pairwise_sq_distance"].values()) + " |")
+    print("\nUnguided regeneration of real nominal windows (no steering): mean shift of the three")
+    print("high-frequency band energies, in real-nominal standard deviations:\n")
+    print("| gallery | fft_band2 | fft_band3 | fft_band4 | ARP vs held-out real nominals |")
+    print("|---|---:|---:|---:|---:|")
+    for k, r in e7["galleries"].items():
+        sh = r.get("mean_shift_in_real_sd") or {}
+        print(f"| {k} | {sh.get('fft_band2', 0):+.2f} | {sh.get('fft_band3', 0):+.2f} | {sh.get('fft_band4', 0):+.2f} | {r['arp_real_queries']:.3f} |")

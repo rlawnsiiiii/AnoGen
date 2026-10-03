@@ -362,3 +362,24 @@ def query_keep_mask(
     idx = np.asarray(channel_idx)
     names = np.array([channels[int(c)] if channels else f"channel_{41 + int(c)}" for c in idx])
     return (np.asarray(folds) == int(fold_id)) & np.array([n not in dropped for n in names], dtype=bool)
+
+
+def phi_standardizer(reference_emb: np.ndarray, *, min_sd: float = 1e-6) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """(mean, sd, keep) for a per-feature standardized φ (sensitivity analysis only).
+
+    ``feature_pack_v1`` z-scores each window, so its first two components are
+    constant, and it is not scaled across features: in the testbed the three
+    log FFT band energies carry ~78 % of the pairwise squared distance
+    (docs/TESTBED.md, E7). Standardizing on a nominal reference and dropping
+    constant features shows whether a ranking survives a neutral weighting.
+    This is *not* the frozen protocol; report it next to it, never instead.
+    """
+    r = np.asarray(reference_emb, dtype=np.float64)
+    sd = r.std(axis=0)
+    keep = sd > float(min_sd)
+    return r.mean(axis=0), np.where(keep, sd, 1.0), keep
+
+
+def standardize_phi(emb: np.ndarray, stats: tuple[np.ndarray, np.ndarray, np.ndarray]) -> np.ndarray:
+    mu, sd, keep = stats
+    return ((np.asarray(emb, dtype=np.float64) - mu) / sd)[:, keep]
