@@ -27,8 +27,9 @@ few_amp, _ = measure_contrast("step", protos_x)           # the 6 "labelled" exa
 pos, delta, wts = sample_targets("step", N, W, few_amp, rng=np.random.default_rng(3))
 
 def contrast_fn(x):
+    """Projection edit (d - delta) w / |w|^2, as steer.guided_ddim applies it."""
     d = (x * wts).sum(axis=1)
-    return (d - delta) ** 2, 2.0 * (d - delta)[:, None] * wts
+    return (d - delta) ** 2, ((d - delta) / (wts * wts).sum(axis=1))[:, None] * wts
 
 def report(x):
     amp, p = measure_contrast("step", x)
@@ -46,8 +47,8 @@ samplers = {"repo (causal, x, final 1)": dict(kind="causal", space="x", final=1.
 for sname, sk in samplers.items():
     den = LinearDenoiser(ch, W, sch, sk["kind"])
     for tname, extra in (("proto (6 shared)", [GuideTerm(1.0, lambda x: proto_energy(enc, x, protos[pidx]))]),
-                         ("step contrast", [GuideTerm(1.0, contrast_fn)]),
-                         ("proto + step contrast", [GuideTerm(1.0, lambda x: proto_energy(enc, x, protos[pidx])), GuideTerm(1.0, contrast_fn)])):
+                         ("step contrast", [GuideTerm(1.0, contrast_fn, project=True)]),
+                         ("proto + step contrast", [GuideTerm(1.0, lambda x: proto_energy(enc, x, protos[pidx])), GuideTerm(1.0, contrast_fn, project=True)])):
         terms = [GuideTerm(0.3, lambda x: shell.band(x))] + extra
         x = guided_ddim(den, donor, terms, rng=np.random.default_rng(1), space=sk["space"], final_scale=sk["final"])
         rows[f"{sname} | {tname}"] = report(x)

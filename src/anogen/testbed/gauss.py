@@ -266,6 +266,10 @@ class GuideTerm:
 
     lam: float
     fn: Callable[[np.ndarray], tuple[np.ndarray, np.ndarray]]
+    # project=True: fn returns (value, edit) and lam·edit is applied as is, in
+    # x̂₀ coordinates (no unit normalization, no denoiser VJP), as
+    # steer.guided_ddim does for the contrast term.
+    project: bool = False
 
 
 def guided_ddim(
@@ -327,6 +331,9 @@ def guided_ddim(
             _, g_win = term.fn(x0h[:, crop:])
             g = np.zeros_like(x0h)
             g[:, crop:] = g_win
+            if term.project:
+                tot += term.lam * g
+                continue
             if through_denoiser:
                 g = den.vjp(g, t)
             tot += term.lam * _unit(g, c_max, normalize_grad)

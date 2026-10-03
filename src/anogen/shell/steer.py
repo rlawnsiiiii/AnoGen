@@ -390,9 +390,10 @@ def guided_ddim(
                        invisible to ARP / EDI. None keeps the locked N(0, I).
     contrast_weights   (N, W) linear contrasts from ``shell/contrast.py`` (step /
                        spike at a sampled position) with ``contrast_target``
-                       (N,) amplitudes in *scaled* units; adds
-                       lam_contrast · unit(∇ (x̂₀·w − δ)²). A prototype-free
-                       type target with no position collapse.
+                       (N,) amplitudes in *scaled* units. Each step adds the
+                       projection edit lam_contrast·(x̂₀·w − δ)·w/‖w‖² (λ = 1
+                       lands exactly on w·x̂₀ = δ). A prototype-free type
+                       target with no position collapse.
     lam_repel          particle-guidance repulsion between samples of the same
                        call (Corso et al., ICLR 2024): RBF kernel on encoder
                        embeddings, median bandwidth. With repel_project the
@@ -507,10 +508,17 @@ def guided_ddim(
             terms.append((float(lam_cls), (-classifier(x0_enc)).mean(), "cls"))
         if use_repel:
             terms.append((float(lam_repel), _repulsion(z), "repel"))
-        if use_contrast:
-            d = (x0_win.squeeze(1) * cw).sum(dim=-1)
-            terms.append((float(lam_contrast), ((d - ct) ** 2).mean(), "contrast"))
         return terms, h
+
+    def contrast_edit(x0_win: "torch.Tensor") -> "torch.Tensor":
+        """λ·(d − δ)·w/‖w‖²: the step that lands x̂₀ on w·x = δ when λ = 1.
+
+        Not unit-normalized (a unit step only keeps the sign of d − δ and
+        dithers around the target); not taken through the denoiser Jacobian.
+        """
+        d = (x0_win.detach().squeeze(1) * cw).sum(dim=-1)
+        scale = (d - ct) / (cw * cw).sum(dim=-1).clamp(min=1e-12)
+        return float(lam_contrast) * (scale.unsqueeze(-1) * cw).unsqueeze(1)
 
     def guidance(target: "torch.Tensor", terms: list[tuple[float, "torch.Tensor", str]]) -> "torch.Tensor":
         """Σ λ_k prep(∇_target loss_k); repulsion optionally projected off ∇band."""
@@ -544,6 +552,8 @@ def guided_ddim(
                 x0_win = x0_hat[..., crop:]
                 terms, h = objective_terms(x0_win)
                 total = guidance(xt, terms) if (active and terms) else torch.zeros_like(xt)
+                if use_contrast and active:
+                    total = total + F.pad(contrast_edit(x0_win), (crop, 0))
                 if float(lam_parent) != 0.0 and not start_from_noise and active:
                     pull = _parent_pull(
                         x0_win - xt0[..., crop:], kind=parent_leash, delta=parent_delta
@@ -559,6 +569,8 @@ def guided_ddim(
                 leaf = x0_hat[..., crop:].detach().requires_grad_(True)
                 terms, h = objective_terms(leaf)
                 total = guidance(leaf, terms) if (active and terms) else torch.zeros_like(leaf)
+                if use_contrast and active:
+                    total = total + contrast_edit(leaf)
                 if float(lam_parent) != 0.0 and not start_from_noise and active:
                     total = total + float(lam_parent) * _parent_pull(
                         leaf.detach() - xt0[..., crop:], kind=parent_leash, delta=parent_delta

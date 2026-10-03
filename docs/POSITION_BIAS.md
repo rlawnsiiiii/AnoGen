@@ -101,7 +101,7 @@ is still a donor edit and not a draw from the prior.
 | `burnin: true` (+`burnin_bins`, 256) | `steer.guided_ddim`, `fixsweep.donor_prefix` | the chain runs on the real preceding 256 bins + the window; objectives see only the window | no | 1a–b for a causal backbone |
 | `proto_shift_max: 16` | `steer.shift_time_embedding` | per-sample time shift of the prototype embedding (edge-replicate, ±16 encoder steps = ±128 bins) | no | 3 |
 | `lam_repel` (+`repel_project`) | `steer._repulsion` | particle-guidance RBF repulsion inside a batch, projected off the band gradient (P2a) | no | 3 |
-| `contrast: {kind: step\|spike}` (+`contrast_only`) | `shell/contrast.py`, `steer.guided_ddim` | type energy (x̂₀·w − δ)² at a uniformly sampled position, δ resampled from the train-fold examples; no prototype, no position collapse | no | 3, L1, L5 |
+| `contrast: {kind: step\|spike}` (+`contrast_only`) | `shell/contrast.py`, `steer.guided_ddim` | projection onto x̂₀·w = δ (step: whole-window mean difference; spike: centre vs flanks) at a uniformly sampled position, δ resampled from the train-fold examples; no prototype, no position collapse | no | 3, L1, L5 |
 | `noise_init_mean/std` (`matched_noise: true`) | `steer.guided_ddim` | x_T ~ N(√ᾱ_T m_c, (1−ᾱ_T+ᾱ_T s_c²)I) | no | 4 |
 | `guidance_t_window` | `steer.guided_ddim` | guidance only on part of the trajectory (P2.2) | no | 2 |
 
@@ -126,8 +126,8 @@ What the testbed says to expect, in order of cost:
    bins is not enough (0.35 / 0.18 start share).
 4. The step contrast (testbed E6) is the stronger answer to the six
    shared prototypes. It reproduces the real step-position distribution
-   (W1 0.011 vs 0.076 for the prototypes) at the right edge sharpness, with
-   somewhat fewer clean shelves (0.79 vs 0.90 real). Run it with and without
+   (W1 0.021 vs 0.076 for the prototypes) and amplitude at the right edge
+   sharpness, with somewhat fewer clean shelves (0.75 vs 0.90 real). Run it with and without
    the prototype (`flip_x0_contrast`, `flip_x0_contrast_only`).
 5. `proto_shift_max` widens the step-position spread toward the real one
    (sd 0.20 → 0.23, real 0.24), at the cost of a lower shelf rate. On ESA,

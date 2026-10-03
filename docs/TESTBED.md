@@ -126,11 +126,11 @@ x̂₀ error at t=40 (ν=0.2 edit time), MSE first 16 / middle 16 / last 16 bins
 |---|---|---:|---:|---:|---:|---:|---:|---:|
 | real level shifts | (target) | 0.90 | 0.280 | 0.315 | 0.000 | 0.050 | 0.08 | 0.09 |
 | repo (causal, x, final 1) | proto (6 shared) | 1.00 | 0.262 | 0.261 | 0.075 | 0.150 | 0.28 | 0.03 |
-| repo (causal, x, final 1) | step contrast | 0.69 | 0.289 | 0.318 | 0.103 | 0.058 | 0.40 | 0.02 |
-| repo (causal, x, final 1) | proto + step contrast | 0.94 | 0.298 | 0.265 | 0.069 | 0.072 | 0.19 | 0.01 |
+| repo (causal, x, final 1) | step contrast | 0.84 | 0.326 | 0.304 | 0.132 | 0.056 | 0.26 | 0.01 |
+| repo (causal, x, final 1) | proto + step contrast | 0.99 | 0.301 | 0.262 | 0.074 | 0.137 | 0.10 | 0.00 |
 | fixed (flip_ramp, x0, final 0.25) | proto (6 shared) | 1.00 | 0.271 | 0.261 | 0.076 | 0.068 | 0.02 | 0.07 |
-| fixed (flip_ramp, x0, final 0.25) | step contrast | 0.79 | 0.325 | 0.313 | 0.011 | 0.055 | 0.12 | 0.10 |
-| fixed (flip_ramp, x0, final 0.25) | proto + step contrast | 1.00 | 0.300 | 0.263 | 0.072 | 0.090 | 0.01 | 0.03 |
+| fixed (flip_ramp, x0, final 0.25) | step contrast | 0.75 | 0.302 | 0.301 | 0.021 | 0.047 | 0.14 | 0.10 |
+| fixed (flip_ramp, x0, final 0.25) | proto + step contrast | 1.00 | 0.293 | 0.261 | 0.075 | 0.083 | 0.02 | 0.03 |
 
 ## Reading
 
@@ -174,13 +174,16 @@ removes the bias. φ cannot see this (it z-scores every window).
 
 **E6 — prototype-free level shifts.** Six shared prototypes reproduce six
 step positions (position sd 0.26 vs 0.32 real, W1 0.076). A parametric step
-contrast does better on position: `shell/contrast.py`, (mean right − mean
-left − δ)² at a uniformly sampled split, with δ resampled from the six
-labelled examples. Under the fixed sampler it matches the real
-step-position distribution (W1 0.011, sd 0.313 vs 0.315). Sharpness is
-right (0.055 vs 0.050), the edges are uniform (0.12 / 0.10), and the
-amplitude is close (0.325 vs 0.280). The cost is fewer clean shelves
-(0.79 vs 0.90 real, against 1.00 for the prototypes). The contrast needs
-the whole-window segments: a ±64-bin contrast was satisfied by local bumps
-and produced no shelves at all. On ESA this is the `flip_x0_contrast`
-(proto + contrast) and `flip_x0_contrast_only` variants in `fixsweep`.
+contrast does better on position: `shell/contrast.py`, mean right − mean
+left = δ at a uniformly sampled split, with δ resampled from the six
+labelled examples. Each step applies the exact projection
+(d − δ)·w/‖w‖² rather than a unit-normalized gradient, which would only
+keep the sign of d − δ and dither around the target. Under the fixed
+sampler this matches the real step-position distribution (W1 0.021, sd
+0.301 vs 0.315) and the amplitude (0.302 vs 0.280, W1 0.029). Sharpness is
+right (0.047 vs 0.050) and the edges are uniform (0.14 / 0.10). The cost is
+fewer clean shelves (0.75 vs 0.90 real, against 1.00 for the prototypes).
+The contrast must use whole-window segments: a ±64-bin contrast was
+satisfied by local bumps and produced no shelves. On ESA this is the
+`flip_x0_contrast` (proto + contrast) and `flip_x0_contrast_only` variants
+in `fixsweep`.

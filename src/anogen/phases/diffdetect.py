@@ -7,9 +7,18 @@ labels (DDPM-based TSAD in the spirit of ImDiffusion / DiffusionAD):
     s(x) = mean over t ∈ T_eval and K noise draws of
            mean_i ( ε_θ(√ᾱ_t x + √(1−ᾱ_t) ε, t, c)[i] − ε[i] )²
 
-computed in the scaled units the score was trained in, then standardized per
-channel against *training-fold* donors (index % 3 ≠ k), so channels with
-different noise floors share one threshold. With the frozen causal backbone,
+computed in the scaled units the score was trained in.
+
+Held-out negatives. S1 trained on every window of ``train_index.csv``: all
+S3 donors and all labelled Rare Events. Scoring those would be in-sample
+and would deflate the false-alarm threshold. Nominal negatives are therefore
+*fresh* windows drawn from the panel: same channels, before the sealed cut,
+no overlap with any anomaly or rare span (+ guard), and no overlap with any
+training window of the same channel. Fresh windows are split by index % 3:
+the other two thirds standardize the score per channel (so channels with
+different noise floors share one threshold), the matching third is the
+fold's test negatives. Every labelled Rare Event was in S1's training set,
+so ``rare_far`` is reported but flagged as in-sample. With the frozen causal backbone,
 the first ``skip_start`` bins are excluded (they are the worst-estimated, see
 docs/POSITION_BIAS.md), or the score is computed through ``FlipEnsemble``.
 
@@ -79,8 +88,14 @@ def run_diffdetect(cfg: dict[str, Any]) -> dict[str, Any]:
     ch_a, ch_r = np.asarray(lab["anomaly_channel"]), np.asarray(lab["rare_channel"])
     event_a = anom["event_id"].astype(str).to_numpy()
     kind_a = kinds_for_windows(x_a, anom, types_from_cfg(cfg))
-    gal = np.load(s3 / "galleries.npz")
-    x_d, ch_d = np.asarray(gal["cond"]), np.asarray(gal["channel_idx"], dtype=np.int64)
+    n_fresh = int(dcfg.get("n_fresh_per_channel", 512))
+    fresh_path = out / "fresh_nominal.npz"
+    if fresh_path.is_file() and not bool(dcfg.get("force", False)):
+        fb = np.load(fresh_path)
+        x_d, ch_d = np.asarray(fb["x"]), np.asarray(fb["channel_idx"], dtype=np.int64)
+    else:
+        x_d, ch_d, fresh_info = heldout_nominal_windows(cfg, s0, n_fresh, seed=int(cfg.get("seed", 0)))
+        np.savez_compressed(fresh_path, x=x_d, channel_idx=ch_d, **{k: np.asarray(v) for k, v in fresh_info.items()})
 
     variants = dict(
         dcfg.get("variants")
@@ -106,15 +121,18 @@ def run_diffdetect(cfg: dict[str, Any]) -> dict[str, Any]:
         sched = DiffusionSchedule.linear(int(den["n_times"])).to(torch.device(device))
         kw = dict(t_eval=t_eval, n_draws=n_draws, bsz=bsz, skip=int(spec.get("skip_start", 0)), seed=seed)
         cache = out / f"{vname}_scores.npz"
-        if cache.is_file() and not bool(dcfg.get("force", False)):
-            blob = np.load(cache)
-            sa, sr, sd = blob["anomaly"], blob["rare"], blob["donor"]
+        key = json.dumps({**kw, "denoiser": str(den_path), "flip": spec.get("flip"), "n_fresh": int(len(x_d))}, sort_keys=True)
+        blob = np.load(cache) if cache.is_file() else None
+        if blob is not None and str(blob["key"]) == key and not bool(dcfg.get("force", False)):
+            sa, sr, sd = blob["anomaly"], blob["rare"], blob["fresh"]
         else:
             print(f"diffdetect {vname}", flush=True)
             sa = denoising_scores(model, sched, scaler, x_a, ch_a, device=device, **kw)
             sr = denoising_scores(model, sched, scaler, x_r, ch_r, device=device, **kw)
             sd = denoising_scores(model, sched, scaler, x_d, ch_d, device=device, **kw)
-            np.savez_compressed(cache, anomaly=sa, rare=sr, donor=sd, t_eval=np.asarray(t_eval))
+            np.savez_compressed(
+                cache, anomaly=sa, rare=sr, fresh=sd, fresh_channel=ch_d, key=np.asarray(key)
+            )
         rows = []
         for k in folds:
             train_d = np.arange(len(x_d)) % 3 != k
@@ -138,7 +156,7 @@ def run_diffdetect(cfg: dict[str, Any]) -> dict[str, Any]:
             "event_recall": float(np.mean(list(hits[0].values()))),
             "ap_mean": float(np.mean([r["ap"] for r in rows])),
             "auroc_mean": float(np.mean([r["auroc"] for r in rows])),
-            "rare_far_mean": float(np.mean([r["rare_far"] for r in rows])),
+            "rare_far_mean_in_sample": float(np.mean([r["rare_far"] for r in rows])),
             "window_recall_mean": float(np.mean([r["window_recall"] for r in rows])),
             "folds": rows,
             "_hits": hits,
@@ -156,10 +174,75 @@ def run_diffdetect(cfg: dict[str, Any]) -> dict[str, Any]:
         "t_eval": t_eval,
         "n_draws": n_draws,
         "results": results,
-        "note": "Scores standardized per channel on training-fold donors; test donors index % 3 == k.",
+        "note": (
+            "Negatives are fresh nominal windows held out from S1 (no overlap with any training "
+            "window of the channel or any labelled span). Per-channel standardization on fresh "
+            "index % 3 != k; test negatives fresh index % 3 == k. Rare FAR is in-sample (S1 trained "
+            "on every labelled rare)."
+        ),
     }
     (out / "summary.json").write_text(json.dumps(_jsonable(report), indent=2) + "\n")
     return {"ok": True, "skipped": False, "dir": str(out), "variants": list(results)}
+
+
+def heldout_nominal_windows(
+    cfg: dict[str, Any],
+    s0: Path,
+    n_per_channel: int,
+    *,
+    seed: int = 0,
+    max_tries_factor: int = 200,
+) -> tuple[np.ndarray, np.ndarray, dict[str, Any]]:
+    """Nominal windows S1 never trained on (see module docstring)."""
+    from anogen.config import data_root, panel_path
+    from anogen.shell.data import load_metadata, load_panel
+    from anogen.shell.events import assign_splits, build_event_table
+    from anogen.shell.windows import load_train_index, occupancy_mask, window_finite
+
+    proto = json.loads((s0 / "protocol.json").read_text())
+    width = int(proto["W"])
+    splits = cfg.get("splits") or {}
+    panel = load_panel(
+        panel_path(cfg),
+        channels=list(cfg.get("channels") or []),
+        official_train_end=splits.get("official_train_end", "2007-01-01"),
+        allow_test_telemetry=False,
+        bin_seconds=int(cfg.get("bin_seconds", 30)),
+    )
+    meta = load_metadata(data_root(cfg))
+    events = assign_splits(
+        build_event_table(meta["labels"], meta["anomaly_types"]),
+        path_train_end=splits.get("path_train_end", "2006-10-01"),
+        official_train_end=splits.get("official_train_end", "2007-01-01"),
+    )
+    occ = occupancy_mask(panel, events, guard_bins=int(proto["guard_bins"]), occupy_rares=True)
+    train = load_train_index(s0)
+    rng = np.random.default_rng(int(seed) + 7919)
+    xs, chs = [], []
+    found = {}
+    for c in range(panel.k):
+        used = np.zeros(panel.T, dtype=bool)
+        for st in train.loc[train["channel_idx"] == c, "start"].to_numpy(dtype=np.int64):
+            used[st : st + width] = True
+        blocked = occ | used
+        taken = np.zeros(panel.T, dtype=bool)
+        got = 0
+        for _ in range(int(n_per_channel) * int(max_tries_factor)):
+            if got >= int(n_per_channel):
+                break
+            st = int(rng.integers(0, panel.T - width + 1))
+            if blocked[st : st + width].any() or taken[st : st + width].any():
+                continue
+            if not window_finite(panel.Y, panel.counts, st, c, width):
+                continue
+            taken[st : st + width] = True
+            xs.append(panel.Y[st : st + width, c].astype(np.float32))
+            chs.append(c)
+            got += 1
+        found[panel.channels[c]] = got
+    if not xs:
+        raise RuntimeError("no held-out nominal windows found; lower n_fresh_per_channel")
+    return np.stack(xs), np.asarray(chs, dtype=np.int64), {"found_per_channel": json.dumps(found)}
 
 
 def _channel_stats(scores: np.ndarray, ch: np.ndarray) -> tuple[np.ndarray, np.ndarray]:

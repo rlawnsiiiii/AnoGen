@@ -108,9 +108,18 @@ def run_augdetect(cfg: dict[str, Any]) -> dict[str, Any]:
     diff_scores = None
     if acfg.get("fuse_diffscore"):
         dpath = _abs(acfg["fuse_diffscore"], root)
-        if dpath.is_file():
-            blob = np.load(dpath)
-            diff_scores = {k: np.asarray(blob[k]) for k in ("anomaly", "rare", "donor")}
+        if not dpath.is_file():
+            raise FileNotFoundError(f"fuse_diffscore configured but missing: {dpath}")
+        blob = np.load(dpath)
+        fresh = np.load(dpath.parent / "fresh_nominal.npz")
+        diff_scores = {k: np.asarray(blob[k]) for k in ("anomaly", "rare", "fresh")}
+        diff_scores["fresh_x"] = np.asarray(fresh["x"])
+        diff_scores["fresh_ch"] = np.asarray(fresh["channel_idx"], dtype=np.int64)
+        _lab = np.load(s0 / "labeled_arrays.npz")
+        if len(diff_scores["anomaly"]) != len(_lab["anomaly"]) or len(diff_scores["rare"]) != len(_lab["rare"]):
+            raise ValueError("diffdetect scores are not aligned with S0 labeled_arrays")
+        if len(diff_scores["fresh"]) != len(diff_scores["fresh_x"]):
+            raise ValueError("diffdetect fresh scores and fresh windows differ in length")
 
     lab = np.load(s0 / "labeled_arrays.npz")
     gal = np.load(s3 / "galleries.npz")
@@ -323,8 +332,15 @@ def _run_one(
     if len(x_pos) == 0:
         raise RuntimeError(f"{arm} produced no train positives")
 
-    x_neg = np.concatenate([x_nom_tr, x_r[train_r]], axis=0) if int(train_r.sum()) else x_nom_tr
-    ch_neg = np.concatenate([ch_nom_tr, ch_r[train_r]], axis=0) if int(train_r.sum()) else ch_nom_tr
+    ref_nom = np.zeros(len(x_nom_tr), dtype=bool)
+    if diff_scores is not None:
+        # 20 % of the training nominals are kept out of fitting and serve as the
+        # CNN's reference distribution for rank fusion (training negatives would
+        # sit below every test score and saturate the empirical CDF).
+        ref_nom[rng.choice(len(x_nom_tr), size=max(1, len(x_nom_tr) // 5), replace=False)] = True
+    x_fit_nom, ch_fit_nom = x_nom_tr[~ref_nom], ch_nom_tr[~ref_nom]
+    x_neg = np.concatenate([x_fit_nom, x_r[train_r]], axis=0) if int(train_r.sum()) else x_fit_nom
+    ch_neg = np.concatenate([ch_fit_nom, ch_r[train_r]], axis=0) if int(train_r.sum()) else ch_fit_nom
 
     x_pos_s = scaler.transform(x_pos, ch_pos)
     x_neg_s = scaler.transform(x_neg, ch_neg)
@@ -366,22 +382,35 @@ def _run_one(
 
         from anogen.phases.diffdetect import _channel_stats
 
-        # Per-channel standardization of the diffusion score on training donors.
-        mu, sdv = _channel_stats(diff_scores["donor"][nom_train_m], ch_nom_tr)
+        # Negatives for the fused evaluation are diffdetect's fresh windows (held
+        # out from S1 and never seen by the CNN): index % 3 == k is the test part,
+        # the rest standardizes the diffusion score per channel.
+        fx, fch, fs = diff_scores["fresh_x"], diff_scores["fresh_ch"], diff_scores["fresh"]
+        f_test = np.arange(len(fx)) % 3 == fold_id
+        mu, sdv = _channel_stats(fs[~f_test], fch[~f_test])
 
         def zd(s: np.ndarray, c: np.ndarray) -> np.ndarray:
             return (s - mu[c]) / sdv[c]
 
-        ref_cnn = predict_logits(clf, scaler.transform(x_nom_tr, ch_nom_tr), device=device)
-        ref_diff = zd(diff_scores["donor"][nom_train_m], ch_nom_tr)
+        ref_cnn = predict_logits(clf, scaler.transform(x_nom_tr[ref_nom], ch_nom_tr[ref_nom]), device=device)
+        ref_diff = zd(fs[~f_test], fch[~f_test])
 
         def fuse(xs: np.ndarray, ds: np.ndarray) -> np.ndarray:
             return rank_fuse(predict_logits(clf, xs, device=device), ds, reference=[ref_cnn, ref_diff])
 
         evf = eval_scores(
             fuse(x_te_a, zd(diff_scores["anomaly"][test_a], ch_a[test_a])),
-            fuse(x_te_n, zd(diff_scores["donor"][nom_te_idx], cond_ch[nom_te_idx])),
+            fuse(scaler.transform(fx[f_test], fch[f_test]), zd(fs[f_test], fch[f_test])),
             fuse(x_te_r, zd(diff_scores["rare"][test_r], ch_r[test_r])) if int(test_r.sum()) else np.zeros(0),
+            event_id=event_a[test_a],
+            kind=kind_a[test_a],
+            far=far,
+        )
+        # CNN alone on the same fresh negatives, so fused-vs-CNN is like for like.
+        evc = eval_scores(
+            predict_logits(clf, x_te_a, device=device),
+            predict_logits(clf, scaler.transform(fx[f_test], fch[f_test]), device=device),
+            predict_logits(clf, x_te_r, device=device) if int(test_r.sum()) else np.zeros(0),
             event_id=event_a[test_a],
             kind=kind_a[test_a],
             far=far,
@@ -391,6 +420,9 @@ def _run_one(
             "ap_fused": evf["ap"],
             "rare_far_fused": evf["rare_far"],
             "event_hits_fused": evf["event_hits"],
+            "event_recall_cnn_freshneg": evc["event_recall"],
+            "ap_cnn_freshneg": evc["ap"],
+            "event_hits_cnn_freshneg": evc["event_hits"],
         }
     flipped: dict[str, Any] = {}
     if flip_test:
@@ -408,10 +440,28 @@ def _run_one(
             n_boot=0,
             seed=seed,
         )
+        half = x_te_a.shape[1] // 2
+        evr = eval_detector(
+            clf,
+            x_anom=np.roll(x_te_a, half, axis=1),
+            x_nom=np.roll(x_te_n, half, axis=1),
+            x_rare=np.roll(x_te_r, half, axis=1),
+            event_id=event_a[test_a],
+            kind=kind_a[test_a],
+            far=far,
+            device=device,
+            n_boot=0,
+            seed=seed,
+        )
+        # flip moves the event *and* reverses its shape (an up-step becomes a
+        # down-step); roll by W/2 moves it with the shape kept, at the price of
+        # a seam. A drop in both is position reliance.
         flipped = {
             "event_recall_flipped": evf["event_recall"],
             "window_recall_flipped": evf["window_recall"],
             "ap_flipped": evf["ap"],
+            "event_recall_rolled": evr["event_recall"],
+            "ap_rolled": evr["ap"],
         }
     row = {
         "arm": arm,
@@ -568,13 +618,15 @@ def _aggregate(
         }
         if any("event_hits_fused" in r for r in pool):
             fused_by_seed: dict[int, dict[str, bool]] = {}
+            cnn_fresh_by_seed: dict[int, dict[str, bool]] = {}
             for r in pool:
                 fused_by_seed.setdefault(int(r["seed"]), {}).update(r.get("event_hits_fused") or {})
+                cnn_fresh_by_seed.setdefault(int(r["seed"]), {}).update(r.get("event_hits_cnn_freshneg") or {})
             out[arm]["event_recall_fused_median"] = float(
                 np.nanmedian([event_recall_safe(h) for h in fused_by_seed.values()])
             )
             out[arm]["ap_fused_mean"] = float(np.nanmean([r.get("ap_fused", float("nan")) for r in pool]))
-            out[arm]["fused_vs_cnn"] = paired_event_bootstrap(fused_by_seed, by_seed)
+            out[arm]["fused_vs_cnn"] = paired_event_bootstrap(fused_by_seed, cnn_fresh_by_seed)
         out[arm]["_hits_by_seed"] = by_seed
     ref = out.get("real_only", {}).get("_hits_by_seed")
     for arm in list(out):
@@ -596,7 +648,15 @@ def _write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
         d = {
             k: v
             for k, v in r.items()
-            if k not in {"event_hits", "event_hits_fused", "train_events", "test_events", "per_kind_recall"}
+            if k
+            not in {
+                "event_hits",
+                "event_hits_fused",
+                "event_hits_cnn_freshneg",
+                "train_events",
+                "test_events",
+                "per_kind_recall",
+            }
         }
         for k, v in (r.get("per_kind_recall") or {}).items():
             d[f"kind::{k}"] = v

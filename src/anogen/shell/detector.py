@@ -95,10 +95,10 @@ def fit_detector(
 ) -> Any:
     """BCE, balanced batches. Returns a trained AnomalyClassifier.
 
-    ``shift_aug`` > 0 circularly shifts every training window (both classes)
-    by an independent U{-s..s} offset per batch, so the detector cannot key on
-    where in the window an excursion sits. Both classes get the same wrap
-    seam, so the seam itself carries no label information. 0 = unchanged.
+    ``shift_aug`` > 0 translates every training window (both classes) by an
+    independent U{-s..s} offset per batch: reflect-pad by s, then crop W at a
+    random offset. Unlike a circular roll there is no wrap seam, which would
+    turn a level shift's Δ into a fake step at the seam. 0 = unchanged.
     """
     from anogen.shell.adapters import AnomalyClassifier
     import torch
@@ -123,8 +123,10 @@ def fit_detector(
         inn = torch.randint(0, len(xn), (n_neg,))
         xb = torch.cat([xa[ia], xn[inn]], dim=0).to(device_t)
         if int(shift_aug) > 0:
-            shifts = torch.randint(-int(shift_aug), int(shift_aug) + 1, (xb.size(0),))
-            xb = torch.stack([torch.roll(xb[i], int(shifts[i]), dims=-1) for i in range(xb.size(0))])
+            s_aug = min(int(shift_aug), xb.size(-1) - 1)
+            padded = F.pad(xb, (s_aug, s_aug), mode="reflect")
+            offs = torch.randint(0, 2 * s_aug + 1, (xb.size(0),))
+            xb = torch.stack([padded[i, :, int(o) : int(o) + xb.size(-1)] for i, o in enumerate(offs)])
         yb = torch.cat(
             [
                 torch.ones(n_pos, device=device_t),
