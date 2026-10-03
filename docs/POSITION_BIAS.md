@@ -169,7 +169,7 @@ What the testbed says to expect, in order of cost:
 # 1. minutes, numpy only: re-score every saved gallery with CIs, controls, PRDC
 .venv/bin/python scripts/audit_metrics.py -c configs/shell_mission1.yaml
 
-# 2. zero-retrain sweep (14 variants × 3 folds × 1536 windows; x0-space variants
+# 2. zero-retrain sweep (15 variants × 3 folds × 1536 windows; x0-space variants
 #    skip the backward pass through the denoiser and are faster than C1)
 .venv/bin/anogen -c configs/shell_mission1.yaml fixsweep
 

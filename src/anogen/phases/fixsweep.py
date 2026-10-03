@@ -47,6 +47,12 @@ DEFAULT_VARIANTS: dict[str, dict[str, Any]] = {
     "flip_x0": {"flip": "ramp", "guidance_space": "x0"},
     "flip_x0_final025": {"flip": "ramp", "guidance_space": "x0", "final_grad_scale": 0.25},
     "burnin_x0": {"burnin": True, "guidance_space": "x0"},
+    "context_both_x0_final025": {
+        "burnin": True,
+        "context": "both",
+        "guidance_space": "x0",
+        "final_grad_scale": 0.25,
+    },
     "flip_x0_shift": {"flip": "ramp", "guidance_space": "x0", "proto_shift_max": 16},
     "flip_x0_shift_repel": {
         "flip": "ramp",
