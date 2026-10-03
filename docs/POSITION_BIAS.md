@@ -136,14 +136,23 @@ strength in the testbed. It is left in the testbed only to document that.
 What the testbed says to expect, in order of cost:
 
 1. **Zero-retrain:** `flip: ramp` + `guidance_space: x0` +
-   `final_grad_scale: 0.25` fixes the start bias of the sampler (0.41 → 0.15
-   at ν = 0.2, unguided) and of guidance (level-shift slice 0.27 → 0.04). It
-   brings edge sharpness to within 1.2× of the target (0.163 → 0.058 against
-   0.050). The testbed's envelope numbers are not informative, because its
+   `final_grad_scale: 0.25` fixes the start bias of the sampler (exact: 0.41
+   → 0.15 at ν = 0.2, unguided; trained causal net: 0.87 → 0.10) and of
+   guidance (level-shift slice 0.27 → 0.04; trained net 0.34 → 0.02). With
+   exact denoisers it also brings edge sharpness to within 1.2× of the
+   target (0.163 → 0.058 against 0.050). With trained nets x̂₀-space edges
+   came out *sharper* (0.083 → 0.114–0.128), because the x-space VJP through
+   a conv net low-pass filters the encoder gradient. So sharpness is the
+   number to watch in fixsweep: compare `x0_final025` with `final025`
+   (x-space). The testbed's envelope numbers are not informative, because its
    step sizes are synthetic, so judge envelope frequency on ESA only.
-2. **Retrain S1 bidirectional** (`anogen s1bidir`, same 20k steps): the
-   clean version of the same fix. In the testbed it is the only option with
-   start ≈ end ≈ 0.10 in every slice and no time-reversibility assumption.
+2. **Retrain S1 bidirectional** (`anogen s1bidir`, same 20k steps), **but
+   always with context on both sides** (`burnin: true, context: both`). With
+   exact estimators bidirectional is clean, but a *trained* bidirectional
+   CNN still puts ~1/3 of peaks in each edge tenth: it sees nothing beyond
+   the window (testbed E8). Real telemetry on both sides removes that
+   (E8c: 0.09–0.12). The flip ensemble of a trained causal net is also
+   clean (0.10 / 0.11–0.13) and needs no retrain.
 3. `burnin` (256 bins) is an alternative to `flip` for parent starts. 128
    bins is not enough (0.35 / 0.18 start share).
 4. The step contrast (testbed E6) is the stronger answer to the six

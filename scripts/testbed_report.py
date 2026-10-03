@@ -91,3 +91,35 @@ if p10.is_file():
     for k, r in e10.items():
         tex, name, steps = [x.strip() for x in k.split("|")]
         print(f"| {tex.split()[-1]} | {name} | {steps.split()[0]} | {r['var_ratio']:.2f} | {r['diff_var_ratio']:.2f} |")
+p8 = d / "e8_trained_nets.json"
+if p8.is_file():
+    e8 = json.loads(p8.read_text())
+    print("\n### E8 trained nonlinear denoisers (numpy dilated CNN, causal vs 'same' padding, same size)\n")
+    print("| denoiser | x̂₀ MSE first 16 / middle / last 16 (t=40) | guidance VJP centroid | unguided ν=1 start / end | ν=0.2 start / end |")
+    print("|---|---|---:|---|---|")
+    for name, err in e8["x0_err_t40"].items():
+        u1 = e8["unguided"][f"{name} nu=1.0"]
+        u2 = e8["unguided"][f"{name} nu=0.2"]
+        vj = e8["vjp_centroid_t40"].get(name)
+        print(f"| {name} | {err['first16']:.4f} / {err['mid']:.4f} / {err['last16']:.4f} | {'' if vj is None else f'{vj:.2f}'} | "
+              f"{u1['peak_at_start']:.3f} / {u1['peak_at_end']:.3f} | {u2['peak_at_start']:.3f} / {u2['peak_at_end']:.3f} |")
+    if e8.get("level_shift"):
+        print("\nLevel-shift prototype slice with the trained nets:\n")
+        print("| sampler | start | end | diff p99.9 |")
+        print("|---|---:|---:|---:|")
+        for k, r in e8["level_shift"].items():
+            print(f"| {k} | {r['peak_at_start']:.2f} | {r['peak_at_end']:.2f} | {r['diff_p999']:.3f} |")
+    if e8.get("detection"):
+        print("\nLabel-free detection by denoising error (spikes of 0.15 at uniform positions vs nominal):\n")
+        print("| denoiser | AUROC | spike in first 10 % | spike elsewhere |")
+        print("|---|---:|---:|---:|")
+        for k, r in e8["detection"].items():
+            print(f"| {k} | {r['auroc']:.3f} | {r['auroc_spike_in_first_10pct']:.3f} | {r['auroc_spike_elsewhere']:.3f} |")
+p8c = d / "e8c_context.json"
+if p8c.is_file():
+    e8c = json.loads(p8c.read_text())
+    print("\n### E8c trained nets with real context around the window (generate W + context, keep W)\n")
+    print("| configuration | start | end |")
+    print("|---|---:|---:|")
+    for k, r in e8c.items():
+        print(f"| {k} | {r['peak_at_start']:.3f} | {r['peak_at_end']:.3f} |")

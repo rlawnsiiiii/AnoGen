@@ -184,6 +184,59 @@ Generated / true variance, total and of first differences (texture), determinist
 | 0.05 | geometric sigma 0.001..80 | 50 | 0.89 | 0.89 |
 | 0.05 | geometric sigma 0.001..80 | 200 | 0.97 | 0.97 |
 
+### E8 trained nonlinear denoisers (numpy dilated CNN, causal vs 'same' padding, same size)
+
+| denoiser | x̂₀ MSE first 16 / middle / last 16 (t=40) | guidance VJP centroid | unguided ν=1 start / end | ν=0.2 start / end |
+|---|---|---:|---|---|
+| causal net | 0.0064 / 0.0034 / 0.0030 | 0.42 | 0.746 / 0.047 | 0.871 / 0.020 |
+| bidir net | 0.0041 / 0.0026 / 0.0036 | 0.50 | 0.352 / 0.316 | 0.344 / 0.324 |
+| causal net + flip ramp | 0.0032 / 0.0021 / 0.0036 |  | 0.102 / 0.133 | 0.098 / 0.105 |
+
+Level-shift prototype slice with the trained nets:
+
+| sampler | start | end | diff p99.9 |
+|---|---:|---:|---:|
+| causal net, x-space, final 1.0 | 0.34 | 0.03 | 0.083 |
+| causal net, x0-space, final 0.25 | 0.07 | 0.05 | 0.128 |
+| causal net + flip ramp, x0-space, final 0.25 | 0.02 | 0.06 | 0.114 |
+| bidir net, x-space, final 1.0 | 0.06 | 0.08 | 0.075 |
+| bidir net, x0-space, final 0.25 | 0.07 | 0.07 | 0.087 |
+
+Label-free detection by denoising error (spikes of 0.15 at uniform positions vs nominal):
+
+| denoiser | AUROC | spike in first 10 % | spike elsewhere |
+|---|---:|---:|---:|
+| causal net | 0.634 | 0.660 | 0.632 |
+| causal net, skip first 32 | 0.637 | 0.605 | 0.641 |
+| bidir net | 0.854 | 0.865 | 0.853 |
+
+### E8c trained nets with real context around the window (generate W + context, keep W)
+
+| configuration | start | end |
+|---|---:|---:|
+| causal net, context 0 bins (none), nu=1.0 | 0.766 | 0.047 |
+| causal net, context 0 bins (none), nu=0.2 | 0.870 | 0.021 |
+| bidir net, context 0 bins (none), nu=1.0 | 0.349 | 0.292 |
+| bidir net, context 0 bins (none), nu=0.2 | 0.354 | 0.359 |
+| causal net, context 32 bins (start), nu=1.0 | 0.135 | 0.151 |
+| causal net, context 32 bins (start), nu=0.2 | 0.125 | 0.125 |
+| causal net, context 32 bins (both), nu=1.0 | 0.115 | 0.073 |
+| causal net, context 32 bins (both), nu=0.2 | 0.094 | 0.089 |
+| bidir net, context 32 bins (both), nu=1.0 | 0.104 | 0.078 |
+| bidir net, context 32 bins (both), nu=0.2 | 0.104 | 0.104 |
+| causal net, context 64 bins (start), nu=1.0 | 0.068 | 0.083 |
+| causal net, context 64 bins (start), nu=0.2 | 0.062 | 0.115 |
+| causal net, context 64 bins (both), nu=1.0 | 0.120 | 0.130 |
+| causal net, context 64 bins (both), nu=0.2 | 0.068 | 0.120 |
+| bidir net, context 64 bins (both), nu=1.0 | 0.089 | 0.125 |
+| bidir net, context 64 bins (both), nu=0.2 | 0.073 | 0.109 |
+| causal net, context 128 bins (start), nu=1.0 | 0.089 | 0.109 |
+| causal net, context 128 bins (start), nu=0.2 | 0.094 | 0.125 |
+| causal net, context 128 bins (both), nu=1.0 | 0.104 | 0.068 |
+| causal net, context 128 bins (both), nu=0.2 | 0.089 | 0.099 |
+| bidir net, context 128 bins (both), nu=1.0 | 0.120 | 0.104 |
+| bidir net, context 128 bins (both), nu=0.2 | 0.130 | 0.104 |
+
 ## Reading
 
 **E1 — the sampler alone.** The best possible causal denoiser puts the
@@ -272,3 +325,38 @@ than real telemetry. This texture is also what dominates φ (E7). Fixing it
 needs an S1 retrain: `anogen s1v2` (bidirectional + geometric). `fixsweep`
 then maps ν to the same *noise level* as the frozen edit, because ν is a
 fraction of the schedule.
+
+**E8 — trained nonlinear denoisers.** The exact estimators show what the
+*information* allows. To check what training does, I trained two tiny
+numpy dilated CNNs (`testbed/npnet.py`, gradient-checked, receptive field
+129 bins, 2500 Adam steps on the testbed GP), identical except for causal
+vs centred ("same", zero) padding.
+
+- **The trained causal net is worse than the causal bound.** 75 % / 87 % of
+  unguided peaks land in the first tenth (exact causal 61 % / 41 %), and its
+  start x̂₀ error is 2× its middle error.
+- **The trained bidirectional net is *not* clean on its own.** It puts about a
+  third of the peaks in *each* edge tenth (0.35 / 0.32). It also has an edge
+  problem, at both ends, from zero padding: a backbone that is bidirectional
+  inside still sees nothing beyond the window.
+- **Two fixes work on trained nets.** The zero-retrain flip ensemble of the
+  trained causal net is uniform (0.10 / 0.13 at ν = 1, 0.10 / 0.11 at
+  ν = 0.2), with the flattest x̂₀ error profile of the three. Real context on
+  both sides of the window also works (E8c): 32 bins already gives
+  0.09–0.12 for either backbone, because this net's receptive field is 129
+  bins. The S4-D backbone's is the whole window, which is why the exact
+  estimator needed 256 (E1).
+- **Guided level-shift slice.** x̂₀-space guidance removes the start bias
+  (0.34 → 0.07, flip: 0.02). But with trained nets it makes edges *sharper*,
+  not softer (diff p99.9 0.083 → 0.128). The x-space VJP through a conv net
+  low-pass filters the encoder gradient, while x̂₀-space applies it raw.
+  The block encoder here has blocky gradients, so this is partly an artefact
+  of the testbed encoder. The sharpness effect of `guidance_space: x0` is
+  backbone- and encoder-dependent and must be judged on ESA, not assumed.
+  Leaving the last 10–20 % of steps unguided made edges sharper still, so it
+  is not adopted.
+- **Label-free detection.** As a denoising-error anomaly score (the
+  `diffdetect` idea), the bidirectional net reaches AUROC 0.854 on spikes at
+  uniform positions. The causal net reaches 0.634, and skipping its first 32
+  bins does not help. A causal backbone is a much weaker detector, so run
+  `diffdetect` with `flip: ramp` or the retrained bidirectional S1.

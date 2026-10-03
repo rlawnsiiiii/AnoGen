@@ -6,7 +6,7 @@ from anogen.testbed.gauss import GPChannel, Schedule, guided_ddim
 from anogen.testbed.npnet import NetDenoiser
 from anogen.testbed.metrics import gallery_report
 
-OUT = Path("results/testbed"); W, N = 512, 256
+OUT = Path("results/testbed"); W, N = 512, 192
 ch, sch = GPChannel(), Schedule()
 rng = np.random.default_rng(0)
 train = ch.sample(4096, W, rng); lo, hi = float(train.min()), float(train.max())
@@ -27,4 +27,5 @@ for B in (0, 32, 64, 128):
                 key = f"{kind} net, context {B} bins ({side if B else 'none'}), nu={nu}"
                 res[key] = r
                 print(f"{key:52s} start {r['peak_at_start']:.3f} end {r['peak_at_end']:.3f}", flush=True)
+                (OUT / "e8c_context.json").write_text(json.dumps(res, indent=1))
 (OUT / "e8c_context.json").write_text(json.dumps(res, indent=1))
