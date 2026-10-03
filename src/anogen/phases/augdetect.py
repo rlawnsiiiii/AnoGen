@@ -104,6 +104,13 @@ def run_augdetect(cfg: dict[str, Any]) -> dict[str, Any]:
     donor_disjoint = bool(acfg.get("donor_disjoint", True))
     shift_aug = int(acfg.get("shift_aug", 0))
     flip_test = bool(acfg.get("flip_test", True))
+    # Optional label-free score from `anogen diffdetect`, rank-fused with the CNN.
+    diff_scores = None
+    if acfg.get("fuse_diffscore"):
+        dpath = _abs(acfg["fuse_diffscore"], root)
+        if dpath.is_file():
+            blob = np.load(dpath)
+            diff_scores = {k: np.asarray(blob[k]) for k in ("anomaly", "rare", "donor")}
 
     lab = np.load(s0 / "labeled_arrays.npz")
     gal = np.load(s3 / "galleries.npz")
@@ -182,6 +189,7 @@ def run_augdetect(cfg: dict[str, Any]) -> dict[str, Any]:
                         donor_disjoint=donor_disjoint,
                         shift_aug=shift_aug,
                         flip_test=flip_test,
+                        diff_scores=diff_scores,
                     )
                 except FileNotFoundError as exc:
                     row = {
@@ -265,6 +273,7 @@ def _run_one(
     donor_disjoint: bool = False,
     shift_aug: int = 0,
     flip_test: bool = False,
+    diff_scores: dict[str, np.ndarray] | None = None,
 ) -> dict[str, Any]:
     rng = np.random.default_rng(seed + 1000 * fold_id)
     train_a = fold_a != fold_id
@@ -280,9 +289,11 @@ def _run_one(
     nom_train_m = ~nom_test_m
     x_nom_tr, ch_nom_tr = x_cond[nom_train_m], cond_ch[nom_train_m]
     x_nom_te, ch_nom_te = x_cond[nom_test_m], cond_ch[nom_test_m]
+    nom_te_idx = np.flatnonzero(nom_test_m)
     if len(x_nom_te) > n_nom_test:
         pick = rng.choice(len(x_nom_te), size=n_nom_test, replace=False)
         x_nom_te, ch_nom_te = x_nom_te[pick], ch_nom_te[pick]
+        nom_te_idx = nom_te_idx[pick]
     if not len(x_nom_tr) or not len(x_nom_te):
         raise RuntimeError("nominal split is empty")
 
@@ -349,6 +360,38 @@ def _run_one(
         seed=seed,
     )
     kind_hits = ev.pop("event_hits")
+    fused: dict[str, Any] = {}
+    if diff_scores is not None:
+        from anogen.shell.detector import eval_scores, predict_logits, rank_fuse
+
+        from anogen.phases.diffdetect import _channel_stats
+
+        # Per-channel standardization of the diffusion score on training donors.
+        mu, sdv = _channel_stats(diff_scores["donor"][nom_train_m], ch_nom_tr)
+
+        def zd(s: np.ndarray, c: np.ndarray) -> np.ndarray:
+            return (s - mu[c]) / sdv[c]
+
+        ref_cnn = predict_logits(clf, scaler.transform(x_nom_tr, ch_nom_tr), device=device)
+        ref_diff = zd(diff_scores["donor"][nom_train_m], ch_nom_tr)
+
+        def fuse(xs: np.ndarray, ds: np.ndarray) -> np.ndarray:
+            return rank_fuse(predict_logits(clf, xs, device=device), ds, reference=[ref_cnn, ref_diff])
+
+        evf = eval_scores(
+            fuse(x_te_a, zd(diff_scores["anomaly"][test_a], ch_a[test_a])),
+            fuse(x_te_n, zd(diff_scores["donor"][nom_te_idx], cond_ch[nom_te_idx])),
+            fuse(x_te_r, zd(diff_scores["rare"][test_r], ch_r[test_r])) if int(test_r.sum()) else np.zeros(0),
+            event_id=event_a[test_a],
+            kind=kind_a[test_a],
+            far=far,
+        )
+        fused = {
+            "event_recall_fused": evf["event_recall"],
+            "ap_fused": evf["ap"],
+            "rare_far_fused": evf["rare_far"],
+            "event_hits_fused": evf["event_hits"],
+        }
     flipped: dict[str, Any] = {}
     if flip_test:
         # Position-sensitivity check: the same test set read backwards. A
@@ -397,6 +440,7 @@ def _run_one(
         "donor_disjoint": bool(donor_disjoint),
         "shift_aug": int(shift_aug),
         **flipped,
+        **fused,
     }
     return row
 
@@ -522,6 +566,15 @@ def _aggregate(
                 np.nanmean([r.get("event_recall_flipped", float("nan")) for r in pool])
             ),
         }
+        if any("event_hits_fused" in r for r in pool):
+            fused_by_seed: dict[int, dict[str, bool]] = {}
+            for r in pool:
+                fused_by_seed.setdefault(int(r["seed"]), {}).update(r.get("event_hits_fused") or {})
+            out[arm]["event_recall_fused_median"] = float(
+                np.nanmedian([event_recall_safe(h) for h in fused_by_seed.values()])
+            )
+            out[arm]["ap_fused_mean"] = float(np.nanmean([r.get("ap_fused", float("nan")) for r in pool]))
+            out[arm]["fused_vs_cnn"] = paired_event_bootstrap(fused_by_seed, by_seed)
         out[arm]["_hits_by_seed"] = by_seed
     ref = out.get("real_only", {}).get("_hits_by_seed")
     for arm in list(out):
@@ -543,7 +596,7 @@ def _write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
         d = {
             k: v
             for k, v in r.items()
-            if k not in {"event_hits", "train_events", "test_events", "per_kind_recall"}
+            if k not in {"event_hits", "event_hits_fused", "train_events", "test_events", "per_kind_recall"}
         }
         for k, v in (r.get("per_kind_recall") or {}).items():
             d[f"kind::{k}"] = v

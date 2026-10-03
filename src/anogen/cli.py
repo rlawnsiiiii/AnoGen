@@ -40,6 +40,7 @@ _PHASES = (
     "fixsweep",
     "geniasfair",
     "s1bidir",
+    "diffdetect",
 )
 
 
@@ -52,7 +53,7 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument(
         "phase",
         choices=_PHASES,
-        help="s0–s6, tune, enc, encscore, plots, xfer, hanom, kindproto, kindmix, kindmixscore, kindmixscorehybrid, kindmixhtune, noisescore, ablatelambda, quiettune, genbase, augdetect, editor, timeleash, hashfix, realism, fixsweep, geniasfair, s1bidir",
+        help="s0–s6, tune, enc, encscore, plots, xfer, hanom, kindproto, kindmix, kindmixscore, kindmixscorehybrid, kindmixhtune, noisescore, ablatelambda, quiettune, genbase, augdetect, editor, timeleash, hashfix, realism, fixsweep, geniasfair, s1bidir, diffdetect",
     )
     args = parser.parse_args(argv)
     cfg = load_config(args.config)
@@ -187,6 +188,10 @@ def _dispatch(phase: str, cfg: dict) -> dict:
         from anogen.phases.geniasfair import run_geniasfair
 
         return run_geniasfair(cfg)
+    if phase == "diffdetect":
+        from anogen.phases.diffdetect import run_diffdetect
+
+        return run_diffdetect(cfg)
     if phase == "s1bidir":
         from anogen.phases.s1 import run_s1
 

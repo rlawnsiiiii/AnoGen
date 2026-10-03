@@ -248,3 +248,55 @@ def paired_event_bootstrap(
 
 def needs_torch() -> bool:
     return bool(torch_available())
+
+
+def eval_scores(
+    s_anom: np.ndarray,
+    s_nom: np.ndarray,
+    s_rare: np.ndarray,
+    *,
+    event_id: np.ndarray,
+    kind: np.ndarray,
+    far: float = 0.01,
+) -> dict[str, Any]:
+    """Same metrics as ``eval_detector`` for precomputed scores (higher = more anomalous)."""
+    s_a = np.asarray(s_anom, dtype=np.float64)
+    s_n = np.asarray(s_nom, dtype=np.float64)
+    s_r = np.asarray(s_rare, dtype=np.float64)
+    t = threshold_at_far(s_n, far)
+    hits = event_hits(s_a, event_id, t)
+    kind = np.asarray(kind).astype(str)
+    per_kind = {k: float(np.mean(s_a[kind == k] >= t)) for k in sorted(set(kind.tolist()))}
+    y = np.concatenate([np.ones(len(s_a)), np.zeros(len(s_n))])
+    s = np.concatenate([s_a, s_n])
+    ap = auroc = float("nan")
+    if average_precision_score is not None and len(s_a) and len(s_n):
+        ap = float(average_precision_score(y, s))
+        auroc = float(roc_auc_score(y, s))
+    return {
+        "threshold": t,
+        "nominal_far": float(np.mean(s_n >= t)) if len(s_n) else float("nan"),
+        "window_recall": float(np.mean(s_a >= t)) if len(s_a) else float("nan"),
+        "event_recall": event_recall(hits),
+        "event_hits": hits,
+        "rare_far": float(np.mean(s_r >= t)) if len(s_r) else float("nan"),
+        "ap": ap,
+        "auroc": auroc,
+        "per_kind_recall": per_kind,
+    }
+
+
+def rank_fuse(*scores: np.ndarray, reference: list[np.ndarray] | None = None) -> np.ndarray:
+    """Average of per-score empirical CDF values (rank fusion).
+
+    Each score is mapped through the empirical CDF of its own ``reference``
+    sample (e.g. the scores of training nominals), so detectors on different
+    scales are combined without fitting anything on test data. Without a
+    reference the score's own ranks are used.
+    """
+    out = np.zeros(len(np.asarray(scores[0])), dtype=np.float64)
+    for i, s in enumerate(scores):
+        s = np.asarray(s, dtype=np.float64)
+        ref = np.sort(np.asarray(reference[i] if reference is not None else s, dtype=np.float64))
+        out += np.searchsorted(ref, s, side="right") / max(len(ref), 1)
+    return out / len(scores)

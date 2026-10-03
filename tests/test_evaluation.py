@@ -142,3 +142,16 @@ def test_paired_event_bootstrap():
     assert abs(r["diff"] - 0.2) < 1e-12 and r["lo"] >= 0.0 and r["p_le_zero"] < 0.2
     same = paired_event_bootstrap(a, a, n_boot=100)
     assert same["diff"] == 0.0 and same["p_le_zero"] == 1.0
+
+
+def test_eval_scores_and_rank_fuse():
+    from anogen.shell.detector import eval_scores, rank_fuse
+
+    rng = np.random.default_rng(0)
+    s_n = rng.normal(size=1000)
+    s_a = np.concatenate([rng.normal(5, 1, 10), rng.normal(0, 1, 10)])
+    ev = np.repeat(["a", "b"], 10)
+    r = eval_scores(s_a, s_n, np.zeros(0), event_id=ev, kind=np.array(["k"] * 20), far=0.01)
+    assert r["event_hits"]["a"] and 0.005 <= r["nominal_far"] <= 0.02 and r["auroc"] > 0.6
+    f = rank_fuse(np.array([0.0, 10.0]), np.array([100.0, -100.0]), reference=[s_n, s_n * 100])
+    assert f.shape == (2,) and 0.0 <= f.min() <= f.max() <= 1.0
