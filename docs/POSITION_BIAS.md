@@ -103,6 +103,11 @@ and hashfix are 0.75–0.77×. Two consequences:
 
 A log-spaced schedule (σ 1e-3 → 10) reproduces 89–97 % of the texture and
 puts the terminal SNR near zero (fixing §4 too). It needs an S1 retrain.
+One caution for that retrain: with ε-prediction, the lowest noise levels
+have an ε-loss near 1, since there is almost no noise to find, while
+contributing almost nothing to x̂₀. Compare `loss_by_t` against the frozen
+S1 in the mid-noise bins. If the mid-noise fit is worse, raise
+`diffusion_v2.sigma_min` to 3e-3 before changing anything else.
 
 ---
 
