@@ -271,6 +271,11 @@ shift widens the step-position spread toward the real one (sd 0.20 → 0.23
 against 0.24), at the cost of fewer clean shelves (0.70 against 0.86 real).
 Noise-space steering is inert: no shelves at 1× or 3× strength. In a dense
 DDIM chain the x̂₀ shift and the ε shift cancel to first order.
+Leaving the last 10–20 % of the trajectory unguided (`guidance_t_window`,
+table E2b, exact denoisers) does not soften edges: it makes them sharper
+(flip_ramp 0.069 → 0.099–0.112, bidirectional 0.044 → 0.070–0.094) and
+moves the samples away from the prototypes (0.18 → 0.24–0.49). It is not
+adopted.
 
 **E5 — from noise.** x_T ~ N(0, I) is off the training marginal because
 √ᾱ_T = 0.36. Generated levels are biased by −0.16 to −0.32 nominal standard
@@ -289,7 +294,8 @@ sampler this matches the real step-position distribution (W1 0.021, sd
 right (0.047 vs 0.050) and the edges are uniform (0.14 / 0.10). The cost is
 fewer clean shelves (0.75 vs 0.90 real, against 1.00 for the prototypes).
 The contrast must use whole-window segments: a ±64-bin contrast was
-satisfied by local bumps and produced no shelves. On ESA this is the
+satisfied by local bumps and produced almost no shelves (table E6b: shelf
+rate 0.00–0.05, step amplitude 0.042 against 0.280 real). On ESA this is the
 `flip_x0_contrast` (proto + contrast) and `flip_x0_contrast_only` variants
 in `fixsweep`.
 
@@ -353,8 +359,6 @@ vs centred ("same", zero) padding.
   The block encoder here has blocky gradients, so this is partly an artefact
   of the testbed encoder. The sharpness effect of `guidance_space: x0` is
   backbone- and encoder-dependent and must be judged on ESA, not assumed.
-  Leaving the last 10–20 % of steps unguided made edges sharper still, so it
-  is not adopted.
 - **Label-free detection.** As a denoising-error anomaly score (the
   `diffdetect` idea), the bidirectional net reaches AUROC 0.854 on spikes at
   uniform positions. The causal net reaches 0.634, and skipping its first 32

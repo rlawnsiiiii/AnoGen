@@ -141,3 +141,12 @@ if p6l.is_file():
     for k, r in e6l.items():
         s, t = (k.split(" | ") + ["(target)"])[:2]
         print(f"| {s} | {t} | {r['shelf_rate']:.2f} | {r['step_amp_mean']:.3f} | {r['step_pos_w1_to_real']:.3f} |")
+p10b = d / "e10b_trained_geo.json"
+if p10b.is_file():
+    e10b = json.loads(p10b.read_text())
+    print("\n### E10b trained bidirectional nets: linear vs geometric schedule (32 bins of context each side)\n")
+    print("| net | run | variance ratio | first-difference variance ratio | high-band log10 power shift | start | end |")
+    print("|---|---|---:|---:|---:|---:|---:|")
+    for k, r in e10b.items():
+        net, run = k.split(" | ")
+        print(f"| {net} | {run} | {r['var_ratio']:.2f} | {r['diff_var_ratio']:.2f} | {r['hf_logpower_shift']:+.2f} | {r['peak_at_start']:.2f} | {r['peak_at_end']:.2f} |")
