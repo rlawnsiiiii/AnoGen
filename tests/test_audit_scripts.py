@@ -62,3 +62,18 @@ def test_diagnose_causality_numpy_part(tmp_path, monkeypatch, capsys):
     runpy.run_path(str(ROOT / "scripts/diagnose_causality.py"), run_name="__main__")
     out = capsys.readouterr().out
     assert "real anomalies" in out and "unguided nu=1" in out
+
+
+def test_plot_fixsweep_runs(tmp_path, monkeypatch):
+    cfg = _fake(tmp_path)
+    fs = tmp_path / "fixsweep"
+    fs.mkdir()
+    rng = np.random.default_rng(1)
+    kinds = np.array(["real level shift", "real ESA global subsequence"] * 45)
+    for name in ("c1_repro", "flip_x0_final025"):
+        np.savez(fs / f"{name}_fold0.npz", x=0.5 + 0.1 * rng.standard_normal((90, 64)),
+                 channel_idx=np.repeat(np.arange(6), 15), kind_alloc=kinds)
+    out = tmp_path / "figs"
+    monkeypatch.setattr(sys, "argv", ["plot_fixsweep.py", "-c", str(cfg), "--dir", str(fs), "--out", str(out)])
+    runpy.run_path(str(ROOT / "scripts/plot_fixsweep.py"), run_name="__main__")
+    assert (out / "positions.png").is_file() and (out / "kind_level_shift.png").is_file()
