@@ -184,8 +184,10 @@ What the testbed says to expect, in order of cost:
 
 # 3. retrain S1 (same steps/backbone size): bidirectional only, and bidirectional +
 #    log-spaced schedule. Then add under shell.fixsweep.variants
-#      bidir_x0: {denoiser: results/shell_s1_bidir/denoiser.pt, guidance_space: x0, final_grad_scale: 0.25}
-#      v2_x0:    {denoiser: results/shell_s1_v2/denoiser.pt,    guidance_space: x0, final_grad_scale: 0.25}
+#      bidir_x0: {denoiser: results/shell_s1_bidir/denoiser.pt, guidance_space: x0, final_grad_scale: 0.25,
+#                 burnin: true, context: both}
+#      v2_x0:    {denoiser: results/shell_s1_v2/denoiser.pt,    guidance_space: x0, final_grad_scale: 0.25,
+#                 burnin: true, context: both}
 #    and rerun fixsweep (cached variants are reused)
 .venv/bin/anogen -c configs/shell_mission1.yaml s1bidir
 .venv/bin/anogen -c configs/shell_mission1.yaml s1v2

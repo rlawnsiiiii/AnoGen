@@ -110,7 +110,10 @@ shell:
     # adding the bidirectional backbone once `anogen s1bidir` has run:
     # variants:
     #   c1_repro: {}
-    #   bidir_x0: {denoiser: results/shell_s1_bidir/denoiser.pt, guidance_space: x0}
+    #   bidir_x0: {denoiser: results/shell_s1_bidir/denoiser.pt, guidance_space: x0,
+    #              final_grad_scale: 0.25, burnin: true, context: both}
+    #   v2_x0:    {denoiser: results/shell_s1_v2/denoiser.pt, guidance_space: x0,
+    #              final_grad_scale: 0.25, burnin: true, context: both}
   # Label-free detection with the nominal diffusion score. results/shell_diffdetect.
   diffdetect:
     t_eval: [10, 20, 40]
