@@ -103,7 +103,7 @@ shell:
     encoder: time_both
     recipe: hybrid_needles
     folds: [0, 1, 2]
-    burnin_bins: 128
+    burnin_bins: 256
     n_boot: 1000
     baseline: c1_repro
     # variants: omit to use DEFAULT_VARIANTS in phases/fixsweep.py. Example of

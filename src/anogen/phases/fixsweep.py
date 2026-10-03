@@ -159,7 +159,7 @@ def run_fixsweep(cfg: dict[str, Any]) -> dict[str, Any]:
     if only:
         variants = {k: v for k, v in variants.items() if k in set(only)}
     folds = [int(f) for f in (fcfg.get("folds") or sorted({int(f) for f in fold_a if int(f) >= 0}))]
-    burn_bins = int(fcfg.get("burnin_bins", 128))
+    burn_bins = int(fcfg.get("burnin_bins", 256))
     n_boot = int(fcfg.get("n_boot", 1000))
     force = bool(fcfg.get("force", False))
     device = "cuda" if torch.cuda.is_available() else "cpu"

@@ -37,6 +37,8 @@ src/anogen/
     hashfix.py           last Tweedie / 20 DDIM / clip-in-box ∇
     realism.py           raw-window fidelity audit on saved galleries
     augdetect.py         supervised augmentation of a 1-D CNN (dev only)
+    fixsweep.py          C1 under the position-bias / guidance fixes, CIs (POSITION_BIAS.md)
+    geniasfair.py        GenIAS with its published objective + Alg. 2 (REVIEW §2.3)
     plots.py             S4-era gallery PNGs
     plot_tune.py         tune / encoder×recipe strips
     plot_from_noise.py   time_recon+combined from x_T ~ N(0,I)
@@ -57,9 +59,11 @@ src/anogen/
     windows.py / data.py / baselines.py  (posthoc, CutAddPaste, Lai taxonomy)
     editor.py            residual copy + deviation-patch on a donor
     realism.py           published fidelity measures + anomaly diagnostics
+    evaluation.py        event-cluster bootstrap CIs, paired diffs, PRDC, position reports
+  testbed/               torch-free exact Gaussian denoisers + numpy guided_ddim mirror (TESTBED.md)
     xfer_panel.py        slice G1 panel or mean-bin pickles (sealed crop)
     folds.py             event OOF + keep_fold_mask (named channels)
-docs/                    PAPER_CANDIDATES, RESULTS, STEERING_MATH, ESA_LABELS, S5, XFER, DISCRETE_CHANNELS, COMBINED_VS_REFS, H_ANOM, LEVEL_SHIFT, KIND_PROTO, KIND_MIX, HYBRID, KIND_MIX_HTUNE, FINDINGS, QUIET_TUNE, GEN_BASELINES, EDITOR, TIME_LEASH, HASHFIX, REALISM, COMPARISON, CHANMIX, NEXT_STEPS_2026-09-30, AUGDETECT, this file
+docs/                    REVIEW_2026-10-03, POSITION_BIAS, TESTBED, PAPER_CANDIDATES, RESULTS, STEERING_MATH, ESA_LABELS, S5, XFER, DISCRETE_CHANNELS, COMBINED_VS_REFS, H_ANOM, LEVEL_SHIFT, KIND_PROTO, KIND_MIX, HYBRID, KIND_MIX_HTUNE, FINDINGS, QUIET_TUNE, GEN_BASELINES, EDITOR, TIME_LEASH, HASHFIX, REALISM, COMPARISON, CHANMIX, NEXT_STEPS_2026-09-30, AUGDETECT, this file
 configs/shell_mission1.yaml
 configs/xfer*.yaml       Mission 2 + M1 extra (not 41–46)
 results/                 gitignored artifacts
@@ -105,6 +109,9 @@ All generation-quality numbers in `PAPER_CANDIDATES.md` §2 use **the same** `φ
 | time leash on hybrid_needles | `timeleash.py` `lam_parent` in `guided_ddim` | same | `shell_timeleash/time_both_{l2,gm}_fold{k}.npz` |
 | hash knobs on hybrid_needles | `hashfix.py` `apply_final_grad=False`, 20 DDIM, clip-in-box | same | `shell_hashfix/time_both_hashfix_fold{k}.npz` |
 | raw-window realism audit | `realism.py` reads saved galleries only; no φ/S4 change | published raw fidelity + diagnostics | `shell_realism/{metrics,diagnostics,c2st}.csv` |
+| fix sweep (flip / x0 / final scale / burn-in / proto shift / matched noise) | `fixsweep.py` → `chunked_guided_ddim` | fold-wise `_score_gallery` + `evaluation.py` CIs + realism diagnostics | `shell_fixsweep/{variant}_fold{k}.npz`, `TABLE.md` |
+| GenIAS, published objective | `geniasfair.py` → `train_genias(faithful=True)` | same scorer as fixsweep | `shell_genias_fair/galleries.npz` |
+| CIs / PRDC / controls for every saved gallery | `scripts/audit_metrics.py` (numpy) | `evaluation.py` | `shell_metric_audit/{audit.json,TABLE.md}` |
 | hybrid_needles, channel-stratified kinds | `kindmixscore.py` with `shell.kindmixscore.channel_stratified` | same | `shell_chanmix/{variant}_hybrid_needles_fold{k}.npz` |
 | time_* + hybrid / combined from noise | `noisescore.py` `start_from_noise` | same | `shell_noise_score/{variant}_{recipe}_fold{k}.npz` |
 | time_* + morphology stratified (freeze) | same script, old kinds | same | `shell_kindmix_score/` |
@@ -118,6 +125,7 @@ EDI for **CutAddPaste / taxonomy**: `genbase.py` → `shell_genbase/summary.json
 EDI for **editor**: `editor.py` → `shell_editor/summary.json` `edi_table_union` (mark **e**). Do not mix with \* / † / unmarked / ¶ / ‡.  
 EDI for **time leash**: `timeleash.py` → `shell_timeleash/summary.json` `edi_table_union` (mark **t**). Do not mix with **e** / \* / † / unmarked / ¶ / ‡.  
 EDI for **hash knobs**: `hashfix.py` → `shell_hashfix/summary.json` `edi_table_union` (mark **h**). Do not mix with **t** / **e** / \* / † / unmarked / ¶ / ‡.  
+EDI for **fixsweep**: `fixsweep.py` → `shell_fixsweep/summary.json` `_edi_f` (mark **f**; all fold-0 fixsweep galleries + donor/genias/posthoc). Do not mix with any other partition.  
 EDI for **chanmix**: `kindmixscore.py` with `channel_stratified` → `shell_chanmix/summary.json` `edi_table_union` (mark **c**; 11 members, no `hybrid` recipe). Same recipe name as \* but a different partition — do not mix with **h** / **t** / **e** / \* / † / unmarked / ¶ / ‡.  
 Div is always `coverage.mean_pairwise_distance` on fold-0 / single 1536 gallery — comparable across tables.
 

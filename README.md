@@ -2,6 +2,8 @@
 
 Univariate **shell-steering diffusion** for ESA-ADB Mission 1 channels 41–46, with **GenIAS** and a handcrafted **post-hoc** injector as references.
 
+**Start here (03.10.2026):** [docs/REVIEW_2026-10-03.md](docs/REVIEW_2026-10-03.md) (what the current results do and do not support), [docs/POSITION_BIAS.md](docs/POSITION_BIAS.md) (root causes + fixes + run order), [docs/TESTBED.md](docs/TESTBED.md) (torch-free mechanism evidence).
+
 Core sampling math and how Anomalies / Rare Events are used: [docs/STEERING_MATH.md](docs/STEERING_MATH.md) (§0). ESA-ADB `Length` / `Locality` map plus the invented level-shift overlay: [docs/ESA_LABELS.md](docs/ESA_LABELS.md). Paper-candidate overview (architectures, locked S4 vs GenIAS): [docs/PAPER_CANDIDATES.md](docs/PAPER_CANDIDATES.md). Which script scored which row: [docs/REPO.md](docs/REPO.md). Adapters: [docs/S5.md](docs/S5.md). Other channels / Mission 2: [docs/XFER.md](docs/XFER.md). Hybrid slices (band vs proto per kind): [docs/HYBRID.md](docs/HYBRID.md). Recommended \(\lambda,\lambda_\mathrm{anom}\): [docs/KIND_MIX_HTUNE.md](docs/KIND_MIX_HTUNE.md). Shortlist eyes (`time_recon` / `time_both` × hybrid / needles): [docs/FINDINGS.md](docs/FINDINGS.md).
 
 CausalDiscovery is the data and sealed-split repo. This project reads `panel_light.npz` and labels from there; it does not copy telemetry. There is no SCM, PCMCI+, or intervention code here.
@@ -28,6 +30,11 @@ uv run anogen -c configs/shell_mission1.yaml noisescore  # same recipes from x_T
 uv run anogen -c configs/shell_mission1.yaml ablatelambda  # λ_shell=0 and no-steer
 uv run anogen -c configs/shell_mission1.yaml kindmixhtune  # λ / λ_anom + hybrid slices
 uv run anogen -c configs/xfer.yaml xfer   # M2 + extra M1 channels (isolated)
+uv run python scripts/diagnose_causality.py -c configs/shell_mission1.yaml  # 5 min: causal backbone check
+uv run python scripts/audit_metrics.py -c configs/shell_mission1.yaml       # CIs, controls, PRDC on saved galleries
+uv run anogen -c configs/shell_mission1.yaml fixsweep    # position-bias / guidance fixes (docs/POSITION_BIAS.md)
+uv run anogen -c configs/shell_mission1.yaml s1bidir     # bidirectional S4-D into results/shell_s1_bidir
+uv run anogen -c configs/shell_mission1.yaml geniasfair  # GenIAS with its published objective
 uv run pytest -q
 ```
 
