@@ -215,9 +215,8 @@ across features. Among real nominal windows here, **78 %** of the pairwise
 squared φ distance comes from the three upper log-FFT band energies, i.e.
 from high-frequency texture relative to the window's own spread. Regenerating
 nominal windows with *no* steering moves exactly these components by 1–1.6
-nominal standard deviations. An exact bidirectional denoiser lowers them
-(DDIM's last x̂₀ removes some high-frequency texture), and an exact causal
-one raises them. So galleries can differ in ARP purely through sampler
+nominal standard deviations: an exact bidirectional denoiser lowers them
+and an exact causal one raises them, at 20 and at 100 DDIM steps alike. So galleries can differ in ARP purely through sampler
 texture, and an anomaly window whose z-scoring is dominated by a large
 low-frequency excursion also has low relative high-frequency energy. That
 offers a candidate explanation for unguided DDIM (0.568) beating real
