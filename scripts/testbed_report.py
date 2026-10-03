@@ -55,3 +55,14 @@ print("|---:|---|---|---:|---:|")
 for k, r in e5.items():
     m, kind, init = k.split("_", 2)
     print(f"| {m[4:]} | {kind} | {init} | {r['level_mean']:.3f} | {r['level_bias_in_sd']:+.2f} |")
+p6 = d / "e6_contrast.json"
+if p6.is_file():
+    e6 = json.loads(p6.read_text())
+    real = e6["real level shifts"]
+    print("\n### E6 level shifts: 6 shared prototypes vs a parametric step contrast\n")
+    print(f"| sampler | target | shelf rate | step amp mean | step pos sd | pos W1 to real | diff p99.9 | start | end |")
+    print("|---|---|---:|---:|---:|---:|---:|---:|---:|")
+    for k, r in e6.items():
+        s, t = (k.split(" | ") + ["(target)"])[:2]
+        print(f"| {s} | {t} | {r['shelf_rate']:.2f} | {r['step_amp_mean']:.3f} | {r['step_pos_std']:.3f} | "
+              f"{r['step_pos_w1_to_real']:.3f} | {r['diff_p999']:.3f} | {r['peak_at_start']:.2f} | {r['peak_at_end']:.2f} |")

@@ -328,6 +328,9 @@ def guided_ddim(
     repel_project: bool = True,
     noise_init_mean: np.ndarray | None = None,
     noise_init_std: np.ndarray | None = None,
+    contrast_weights: np.ndarray | None = None,
+    contrast_target: np.ndarray | None = None,
+    lam_contrast: float = 0.0,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Noise nominal windows to ν, DDIM with clipped constraint gradients.
 
@@ -385,6 +388,11 @@ def guided_ddim(
                        the denoiser never saw (Lin et al., WACV 2024); since
                        φ z-scores every window, the resulting level bias is
                        invisible to ARP / EDI. None keeps the locked N(0, I).
+    contrast_weights   (N, W) linear contrasts from ``shell/contrast.py`` (step /
+                       spike at a sampled position) with ``contrast_target``
+                       (N,) amplitudes in *scaled* units; adds
+                       lam_contrast · unit(∇ (x̂₀·w − δ)²). A prototype-free
+                       type target with no position collapse.
     lam_repel          particle-guidance repulsion between samples of the same
                        call (Corso et al., ICLR 2024): RBF kernel on encoder
                        embeddings, median bandwidth. With repel_project the
@@ -470,6 +478,12 @@ def guided_ddim(
     use_rare = ref_r is not None and lam_rare != 0.0
     use_cls = classifier is not None and lam_cls != 0.0
     use_repel = float(lam_repel) != 0.0 and xt0.size(0) > 1
+    use_contrast = contrast_weights is not None and float(lam_contrast) != 0.0
+    if use_contrast:
+        cw = torch.as_tensor(np.asarray(contrast_weights, dtype=np.float32), device=device_t)
+        ct = torch.as_tensor(np.asarray(contrast_target, dtype=np.float32), device=device_t)
+        if cw.shape != (xt0.size(0), width) or ct.shape != (xt0.size(0),):
+            raise ValueError(f"contrast weights {tuple(cw.shape)} / target {tuple(ct.shape)} do not match ({xt0.size(0)}, {width})")
 
     def objective_terms(x0_win: "torch.Tensor") -> tuple[list[tuple[float, "torch.Tensor", str]], "torch.Tensor"]:
         """(weight, scalar loss, name) per active term, and h_soft (for occupancy)."""
@@ -493,6 +507,9 @@ def guided_ddim(
             terms.append((float(lam_cls), (-classifier(x0_enc)).mean(), "cls"))
         if use_repel:
             terms.append((float(lam_repel), _repulsion(z), "repel"))
+        if use_contrast:
+            d = (x0_win.squeeze(1) * cw).sum(dim=-1)
+            terms.append((float(lam_contrast), ((d - ct) ** 2).mean(), "contrast"))
         return terms, h
 
     def guidance(target: "torch.Tensor", terms: list[tuple[float, "torch.Tensor", str]]) -> "torch.Tensor":
@@ -595,6 +612,8 @@ def chunked_guided_ddim(
     shift_seed = int(kwargs.pop("anom_proto_shift_seed", 0) or 0)
     proto_shift = kwargs.pop("anom_proto_shift", None)
     prefix = kwargs.pop("burnin_prefix", None)
+    c_w = kwargs.pop("contrast_weights", None)
+    c_t = kwargs.pop("contrast_target", None)
     if str(kwargs.get("anom_energy_kind", "soft")).lower() == "proto":
         ref_a = kwargs.get("ref_anom")
         if ref_a is None:
@@ -623,6 +642,9 @@ def chunked_guided_ddim(
             extra["anom_proto_shift"] = proto_shift[i : i + step]
         if prefix is not None:
             extra["burnin_prefix"] = np.asarray(prefix)[i : i + step]
+        if c_w is not None:
+            extra["contrast_weights"] = np.asarray(c_w)[i : i + step]
+            extra["contrast_target"] = np.asarray(c_t)[i : i + step]
         s, h = guided_ddim(model, encoder, x0[i : i + step], ch[i : i + step], schedule, **extra)
         xs.append(s)
         hs.append(h)

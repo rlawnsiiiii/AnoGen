@@ -55,6 +55,19 @@ DEFAULT_VARIANTS: dict[str, dict[str, Any]] = {
         "lam_repel": 0.3,
     },
     "flip_x0_from_noise": {"flip": "ramp", "guidance_space": "x0", "start_from_noise": True},
+    "flip_x0_contrast": {
+        "flip": "ramp",
+        "guidance_space": "x0",
+        "final_grad_scale": 0.25,
+        "contrast": {"real level shift": "step", "real ESA Point / Global": "spike"},
+    },
+    "flip_x0_contrast_only": {
+        "flip": "ramp",
+        "guidance_space": "x0",
+        "final_grad_scale": 0.25,
+        "contrast": {"real level shift": "step", "real ESA Point / Global": "spike"},
+        "contrast_only": True,
+    },
     "flip_x0_from_matched_noise": {
         "flip": "ramp",
         "guidance_space": "x0",
@@ -73,6 +86,9 @@ _PHASE_KEYS = {
     "encoder",
     "recipe",
     "matched_noise",
+    "contrast",
+    "contrast_only",
+    "lam_contrast",
 }
 
 
@@ -268,6 +284,9 @@ def run_fixsweep(cfg: dict[str, Any]) -> dict[str, Any]:
                     slice_lam_anom=slice_lam_anom,
                     prefix=prefix if (bool(spec.get("burnin")) and not bool(spec.get("start_from_noise"))) else None,
                     proto_shift_max=int(spec.get("proto_shift_max", 0) or 0),
+                    contrast=_contrast_plan(
+                        spec, kind_lab, fold_a, fold_id, x_a, ch_a, scaler, KIND_ORDER
+                    ),
                 )
                 np.savez_compressed(
                     cache, x=x, h=h, channel_idx=cond_ch, kind_alloc=alloc.astype(str), spec=json.dumps(spec)
@@ -392,6 +411,7 @@ def _generate_slices(
     slice_lam_anom: Any,
     prefix: np.ndarray | None,
     proto_shift_max: int,
+    contrast: dict[str, Any] | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """``kindmix._stratified`` with per-donor arrays (prefix) sliced per kind.
 
@@ -424,6 +444,22 @@ def _generate_slices(
             )
         else:
             kw.update(lam_anom=0.0, lam_rare=0.0)
+        plan = (contrast or {}).get(kind)
+        if plan is not None:
+            from anogen.shell.contrast import sample_targets
+
+            _, delta, wts = sample_targets(
+                plan["kind"],
+                len(idx),
+                x0.shape[1],
+                plan["amplitudes"],
+                rng=np.random.default_rng(seed + 53 * (1 + kind_order.index(kind))),
+            )
+            kw.update(contrast_weights=wts, contrast_target=delta, lam_contrast=plan["lam"])
+            if plan["only"]:
+                for key in ("ref_anom", "anom_energy_kind", "anom_proto_seed", "anom_proto_shift_max", "anom_proto_shift_seed"):
+                    kw.pop(key, None)
+                kw["lam_anom"] = 0.0
         x, h = chunked(model, enc, x0[idx], ch[idx], schedule, **kw)
         out_x[idx] = x
         out_h[idx] = h
@@ -604,6 +640,47 @@ def fixsweep_table(results: dict[str, Any]) -> str:
     if edi:
         lines += ["", "EDI (partition **f**): " + ", ".join(f"{k} {v:.2f}" for k, v in edi.items())]
     return "\n".join(lines) + "\n"
+
+
+def _contrast_plan(
+    spec: dict[str, Any],
+    kind_lab: np.ndarray,
+    fold_a: np.ndarray,
+    fold_id: int,
+    x_a: np.ndarray,
+    ch_a: np.ndarray,
+    scaler: Any,
+    kind_order: tuple[str, ...],
+) -> dict[str, Any] | None:
+    """Per-kind contrast targets with amplitudes read off train-fold examples.
+
+    Uses the same reference rule as the proto term (``kind_ref_indices``:
+    event-OOF, falling back to in-fold with ``leaked``), measured in the
+    denoiser's scaled units.
+    """
+    mapping = spec.get("contrast")
+    if not mapping:
+        return None
+    from anogen.shell.contrast import measure_contrast
+    from anogen.shell.morphology import kind_ref_indices
+
+    plan: dict[str, Any] = {}
+    for kind, ckind in dict(mapping).items():
+        if kind not in kind_order:
+            raise ValueError(f"contrast kind {kind!r} is not an ESA kind")
+        idx, leaked = kind_ref_indices(kind_lab, fold_a, kind, query_fold=fold_id)
+        if len(idx) == 0:
+            continue
+        xs = scaler.transform(x_a[idx], ch_a[idx]) if scaler is not None else x_a[idx]
+        amps, _ = measure_contrast(str(ckind), xs)
+        plan[kind] = {
+            "kind": str(ckind),
+            "amplitudes": amps,
+            "lam": float(spec.get("lam_contrast", 1.0)),
+            "only": bool(spec.get("contrast_only", False)),
+            "leaked": bool(leaked),
+        }
+    return plan
 
 
 def channel_moments(x: np.ndarray, ch: np.ndarray, scaler: Any) -> tuple[np.ndarray, np.ndarray]:

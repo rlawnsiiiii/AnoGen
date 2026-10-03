@@ -90,6 +90,8 @@ def test_x0_space_burnin_and_shift_run():
         ddim_steps=8, normalize_grad=True, scaler=scaler, device="cpu", guidance_space="x0",
         burnin_prefix=pre, ref_anom=ref[:3], lam_anom=1.0, anom_energy_kind="proto",
         anom_proto_seed=0, anom_proto_shift_max=3, anom_proto_shift_seed=1, lam_repel=0.2,
+        contrast_weights=np.eye(6, W, k=10) - np.eye(6, W, k=5), contrast_target=np.full(6, 0.1),
+        lam_contrast=1.0,
     )
     assert out.shape == x0.shape and np.isfinite(out).all() and h.shape == (6,)
 
