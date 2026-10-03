@@ -88,7 +88,7 @@ def test_x0_space_burnin_and_shift_run():
     out, h = chunked_guided_ddim(
         model, enc, x0, ch, sched, bsz=4, ref=ref, Q_q=0.5, tau=1.0, nu=0.3, lam=0.3, c_max=1.0,
         ddim_steps=8, normalize_grad=True, scaler=scaler, device="cpu", guidance_space="x0",
-        burnin_prefix=pre, ref_anom=ref[:3], lam_anom=1.0, anom_energy_kind="proto",
+        burnin_prefix=pre, burnin_suffix=pre[:, ::-1].copy(), ref_anom=ref[:3], lam_anom=1.0, anom_energy_kind="proto",
         anom_proto_seed=0, anom_proto_shift_max=3, anom_proto_shift_seed=1, lam_repel=0.2,
         contrast_weights=np.eye(6, W, k=10) - np.eye(6, W, k=5), contrast_target=np.full(6, 0.1),
         lam_contrast=1.0,
@@ -154,3 +154,12 @@ def test_geometric_schedule_and_from_ckpt():
     assert torch.allclose(torch.cumprod(geo.alphas, 0), geo.alpha_bar, atol=1e-6)
     nu = nu_for_noise_level(geo.alpha_bar, float(lin.alpha_bar[40]))
     assert 0.5 < nu < 0.75
+
+
+def test_context_crop_keeps_the_window_in_x_space():
+    model, enc, sched, x0, ch, ref, scaler = _setup()
+    pre = np.repeat(x0[:, :1], 8, axis=1)
+    common = dict(ref=ref, Q_q=0.5, tau=1.0, nu=0.3, lam=0.3, c_max=1.0, ddim_steps=6, normalize_grad=True, device="cpu", scaler=scaler)
+    torch.manual_seed(5)
+    out, _ = guided_ddim(model, enc, x0, ch, sched, burnin_prefix=pre, burnin_suffix=pre, **common)
+    assert out.shape == x0.shape and np.isfinite(out).all()
