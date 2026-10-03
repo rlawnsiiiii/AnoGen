@@ -134,6 +134,11 @@ def main() -> None:
 
     ref_names = ("donor (real nominal)", "unguided nu=1")
     phi_stats = phi_standardizer(embed_windows(np.asarray(gals["donor (real nominal)"]["all"][0])))
+    # Oracle: real anomaly windows of the *other* folds as the gallery (the
+    # honest ceiling for "reproduces known faults").
+    gals["oracle (real anomalies, other folds)"] = {
+        "fold": {k: (x_a[fold_a != k], ch_a[fold_a != k]) for k in sorted({int(f) for f in fold_a if int(f) >= 0})}
+    }
     rows = {}
     for name, spec in gals.items():
         per = []

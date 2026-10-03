@@ -128,7 +128,7 @@ class DiffusionSchedule:
         ``sigma_max``. The linear β ∈ [1e-4, 2e-2] schedule starts at σ = 0.01
         and jumps through the low-noise range in a few steps, so components of
         the data whose variance sits below ~σ_min² (fine telemetry texture) are
-        never resolved: with *exact* denoisers it reproduces under half of the
+        never resolved: with *exact* denoisers it reproduces only 36–68 % of the
         first-difference variance of a Gaussian telemetry model at any step
         count (docs/TESTBED.md, E10). Log spacing fixes that, and a large
         ``sigma_max`` also brings the terminal SNR near zero, so x_T ~ N(0, I)

@@ -3,7 +3,7 @@
 Written 03.10.2026. Addresses L1–L4 and P2–P4 of
 [NEXT_STEPS_2026-09-30.md](NEXT_STEPS_2026-09-30.md). Mechanism evidence is
 from the torch-free testbed ([TESTBED.md](TESTBED.md)); the ESA numbers still
-have to come from `fixsweep` (§5). Every switch below defaults to the frozen
+have to come from `fixsweep` (§6). Every switch below defaults to the frozen
 behaviour, and `tests/test_steer_equivalence.py` checks bit-for-bit
 equality of the refactored sampler with the old one.
 
@@ -29,7 +29,7 @@ restriction has three consequences, all of which match symptoms already in
 the repo.
 
 **(a) The first bins are the worst-estimated.** At bin 0 the network sees one
-noisy sample. In the testbed the best possible causal estimator has 5.7× the
+noisy sample. In the testbed the best possible causal estimator has 5.5× the
 x̂₀ error of a bidirectional one in the first 16 bins at the edit time t = 40,
 and the same error in the last 16 bins.
 
@@ -38,8 +38,8 @@ end.** In the testbed, with exact Gaussian denoisers and no steering, the
 dominant peak lands in the first 10 % of the window in **0.61** of samples at
 ν = 1 and **0.41** at ν = 0.2. In the last 10 % it lands in 0.006 and 0.014.
 The bidirectional estimator gives 0.10 / 0.07. The repo measured 0.425 for
-unguided and 0.392 for hashfix (the final gradient is off there, so this is
-the sampler alone). L2 is therefore the backbone, not the steering, as
+unguided and 0.392 for hashfix (final kick off, 20 steps, clip-in-box ∇:
+almost no steering is left there). L2 is therefore the backbone, not the steering, as
 NEXT_STEPS suspected.
 
 **(c) Every x-space guidance step is smeared toward the start.** Guidance
@@ -58,15 +58,16 @@ than a shelf.
 `guided_ddim` subtracts `λ · unit(∇)` (clipped to ±c_max) at **every** step,
 whatever the noise level. The last step writes `x̂₀ − λ·unit(∇)` with no
 further denoising. With unit normalization the per-step magnitude never
-shrinks as the constraint is met. The last raw kick is a 0.3-norm vector
-that can sit on a handful of bins, which matches C1's edges being 3× too
-sharp (diff p99.9 0.475 vs 0.169) and the envelope being exited 15× too
+shrinks as the constraint is met. The last raw kick has norm 0.3 on the band slices and up to 1.3 on the
+proto slices, and it can sit on a handful of bins, which matches C1's
+edges being 2.8× too sharp (diff p99.9 0.475 vs 0.169) and the envelope being exited 15× too
 often.
 
-hashfix showed the binary version of this (L3): turning the last kick off
-drops envelope exits from 0.68 to 0.007. The testbed reproduces the
+hashfix is consistent with this (L3): turning the last kick off, together
+with 20 DDIM steps and clip-in-box ∇, drops envelope exits from 0.68 to
+0.007. The last-kick knob alone was never isolated. The testbed reproduces the
 sharpness ratio. On the level-shift slice, diff p99.9 is 0.163 under the
-repo sampler against 0.050 for the target, and 0.064 with the last edit
+repo sampler against 0.050 for the target, and 0.065 with the last edit
 scaled to 0.25.
 
 ## 3. Few prototypes, one position
@@ -84,7 +85,7 @@ a zero-mean input at t = T−1, but `start_from_noise=True` feeds it
 N(0, I) (the terminal-SNR flaw of Lin et al., WACV 2024). The level offset
 this creates is invisible to φ, which z-scores every window, so the "from
 noise without degrading ARP/EDI" result cannot see it. In the testbed the
-generated level is biased by −0.2 to −0.3 nominal standard deviations. The
+generated level is biased by −0.16 to −0.32 nominal standard deviations. The
 same fact means "unguided ν = 1" keeps 36 % of the donor amplitude, so it
 is still a donor edit and not a draw from the prior.
 
@@ -101,7 +102,8 @@ and hashfix are 0.75–0.77×. Two consequences:
 - every DDIM gallery is too smooth before any steering, and
 - that texture is what dominates φ, so ARP is sensitive to it (E7, REVIEW §2.1).
 
-A log-spaced schedule (σ 1e-3 → 10) reproduces 89–97 % of the texture and
+A log-spaced schedule (σ 1e-3 → 10) reproduces 89–98 % of the texture at
+50–200 steps and
 puts the terminal SNR near zero (fixing §4 too). It needs an S1 retrain.
 One caution for that retrain: with ε-prediction, the lowest noise levels
 have an ε-loss near 1, since there is almost no noise to find, while
@@ -123,7 +125,7 @@ S1 in the mid-noise bins. If the mid-noise fit is worse, raise
 | `burnin: true` (+`burnin_bins`, 256; `context: both`) | `steer.guided_ddim` (`burnin_prefix` / `burnin_suffix`), `fixsweep.donor_context` | the chain runs on the real neighbouring telemetry + the window; objectives see only the window, which is cropped out at the end. `context: both` adds the following bins too, which a *bidirectional* backbone needs (its edge effects sit at both ends) | no | 1a–b; edges of any backbone |
 | `proto_shift_max: 16` | `steer.shift_time_embedding` | per-sample time shift of the prototype embedding (edge-replicate, ±16 encoder steps = ±128 bins) | no | 3 |
 | `lam_repel` (+`repel_project`) | `steer._repulsion` | particle-guidance RBF repulsion inside a batch, projected off the band gradient (P2a) | no | 3 |
-| `contrast: {kind: step\|spike}` (+`contrast_only`) | `shell/contrast.py`, `steer.guided_ddim` | projection onto x̂₀·w = δ (step: whole-window mean difference; spike: centre vs flanks) at a uniformly sampled position, δ resampled from the train-fold examples; no prototype, no position collapse | no | 3, L1, L5 |
+| `contrast: {"real level shift": step, "real ESA Point / Global": spike}` (+`contrast_only`) | `shell/contrast.py`, `steer.guided_ddim` | projection onto x̂₀·w = δ (step: whole-window mean difference; spike: centre vs flanks) at a uniformly sampled position, δ resampled from the train-fold examples; no prototype, no position collapse | no | 3, L1, L5 |
 | `noise_init_mean/std` (`matched_noise: true`) | `steer.guided_ddim` | x_T ~ N(√ᾱ_T m_c, (1−ᾱ_T+ᾱ_T s_c²)I) | no | 4 |
 | `guidance_t_window` | `steer.guided_ddim` | guidance only on part of the trajectory (P2.2) | no | 2 |
 
@@ -151,7 +153,7 @@ What the testbed says to expect, in order of cost:
    exact estimators bidirectional is clean, but a *trained* bidirectional
    CNN still puts ~1/3 of peaks in each edge tenth: it sees nothing beyond
    the window (testbed E8). Real telemetry on both sides removes that
-   (E8c: 0.09–0.12). The flip ensemble of a trained causal net is also
+   (E8c: 0.07–0.13 at 32–128 bins). The flip ensemble of a trained causal net is also
    clean (0.10 / 0.11–0.13) and needs no retrain.
 3. `burnin` (256 bins) is an alternative to `flip` for parent starts. 128
    bins is not enough (0.35 / 0.18 start share).

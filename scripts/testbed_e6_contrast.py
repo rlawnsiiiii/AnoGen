@@ -24,7 +24,11 @@ protos = enc.encode(protos_x); pidx = np.random.default_rng(17).integers(0, 6, N
 real = level_shift(ch.sample(N, W, rng), rng.integers(40, 470, N), np.full(N, size))
 real_amp, real_pos = measure_contrast("step", real)
 few_amp, _ = measure_contrast("step", protos_x)           # the 6 "labelled" examples
-pos, delta, wts = sample_targets("step", N, W, few_amp, rng=np.random.default_rng(3))
+LOCAL = len(sys.argv) > 2 and sys.argv[2] == "local"   # +-64-bin contrast instead of whole-window
+kw = {"step_span": 64} if LOCAL else {}
+if LOCAL:
+    few_amp, _ = measure_contrast("step", protos_x, **kw)
+pos, delta, wts = sample_targets("step", N, W, few_amp, rng=np.random.default_rng(3), **kw)
 
 def contrast_fn(x):
     """Projection edit (d - delta) w / |w|^2, as steer.guided_ddim applies it."""
@@ -58,4 +62,4 @@ for k, r in rows.items():
     s, t = (k.split(" | ") + [""])[:2]
     print(f"| {s} | {t} | {r['shelf_rate']:.2f} | {r['step_amp_mean']:.3f} | {r['step_amp_w1_to_real']:.3f} | {r['step_pos_std']:.3f} | "
           f"{r['step_pos_w1_to_real']:.3f} | {r['diff_p999']:.3f} | {r['peak_at_start']:.2f} | {r['peak_at_end']:.2f} |")
-(OUT / "e6_contrast.json").write_text(json.dumps(rows, indent=1))
+(OUT / ("e6_contrast_local64.json" if LOCAL else "e6_contrast.json")).write_text(json.dumps(rows, indent=1))

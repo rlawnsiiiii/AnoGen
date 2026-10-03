@@ -13,13 +13,13 @@ does the best possible causal estimator E[x₀[i] | x_t[0..i]], via the
 innovations of the Cholesky factor. Replacing the trained ε-network with
 these exact estimators isolates what the *information structure* of the
 backbone does, with exact Jacobians and no training noise. The sampler is a
-line-for-line numpy mirror of `steer.guided_ddim` (same schedule, ν, DDIM
+numpy mirror of `steer.guided_ddim` (same schedule, ν, DDIM
 times, unit-norm clipped gradients, final kick). The diagnostics are the
 repo's own `shell/realism.py` functions.
 
 Setup: one channel, mean 0.5 in scaled units, random-phase harmonics with
 periods of 200, 100 and 66.7 bins (sd 0.10 / 0.04 / 0.02) plus AR(1) texture
-(ρ 0.9, sd 0.02). W = 512, T = 200, linear β. The envelope is the min/max of
+(ρ 0.9, sd 0.02). W = 512 (E10: 128), T = 200, linear β. The envelope is the min/max of
 4096 nominal windows. 512 samples for E1 and 384 for E2/E3. The encoder for
 guidance is a fixed temporal block encoder (64 blocks × [mean, std]). The
 shell band uses soft energy against 512 nominal embeddings at q = 0.99,
@@ -241,8 +241,8 @@ Label-free detection by denoising error (spikes of 0.15 at uniform positions vs 
 
 **E1 — the sampler alone.** The best possible causal denoiser puts the
 dominant peak in the first 10 % of the window 4–6× more often than a
-bidirectional one, and almost never in the last 10 %. Its first-bin x̂₀ error
-is 5.7× the bidirectional one; at the end the two are equal. The flip
+bidirectional one, and almost never in the last 10 %. Its x̂₀ error in the
+first 16 bins is 5.5× the bidirectional one; at the end the two are equal. The flip
 ensemble with a ramp blend (`FlipEnsemble`, zero retrain) and a 256-bin
 burn-in prefix both remove most of the asymmetry. A 128-bin burn-in is not
 enough, and the plain 50/50 flip average moves the bias to both edges. The
@@ -312,11 +312,11 @@ column in `scripts/audit_metrics.py`.
 denoiser is a linear map, so the generated covariance can be computed in
 closed form. Under the frozen linear schedule (σ from 0.010 to 2.56 in
 scaled units, crossing the low-noise range in a handful of steps) it
-reproduces 95–99 % of the total variance but only **36–68 % of the
+reproduces 87–99 % of the total variance but only **36–68 % of the
 first-difference variance**, whatever the step count. Components whose
 variance sits below ~σ_min² are never resolved and come out shrunk. A
 log-spaced schedule (`DiffusionSchedule.geometric`, σ 1e-3 → 10)
-reproduces 89–97 % of both at 50–200 steps. A larger σ_max also brings the
+reproduces 89–98 % of both at 50–200 steps. A larger σ_max also brings the
 terminal SNR close to zero, which makes N(0, I) a valid from-noise start.
 On ESA, the unguided gallery's first-difference p99.9 is 0.041 against the
 donors' 0.058 (0.71×), and shell ZS and hashfix show 0.75–0.77×. That is
@@ -334,16 +334,16 @@ vs centred ("same", zero) padding.
 
 - **The trained causal net is worse than the causal bound.** 75 % / 87 % of
   unguided peaks land in the first tenth (exact causal 61 % / 41 %), and its
-  start x̂₀ error is 2× its middle error.
+  start x̂₀ error is 1.9× its middle error.
 - **The trained bidirectional net is *not* clean on its own.** It puts about a
   third of the peaks in *each* edge tenth (0.35 / 0.32). It also has an edge
   problem, at both ends, from zero padding: a backbone that is bidirectional
   inside still sees nothing beyond the window.
 - **Two fixes work on trained nets.** The zero-retrain flip ensemble of the
   trained causal net is uniform (0.10 / 0.13 at ν = 1, 0.10 / 0.11 at
-  ν = 0.2), with the flattest x̂₀ error profile of the three. Real context on
+  ν = 0.2), with the lowest start and middle x̂₀ error of the three. Real context on
   both sides of the window also works (E8c): 32 bins already gives
-  0.09–0.12 for either backbone, because this net's receptive field is 129
+  start 0.09–0.12, end 0.07–0.10 for either backbone, because this net's receptive field is 129
   bins. The S4-D backbone's is the whole window, which is why the exact
   estimator needed 256 (E1).
 - **Guided level-shift slice.** x̂₀-space guidance removes the start bias

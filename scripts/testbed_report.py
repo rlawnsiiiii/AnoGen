@@ -123,3 +123,21 @@ if p8c.is_file():
     print("|---|---:|---:|")
     for k, r in e8c.items():
         print(f"| {k} | {r['peak_at_start']:.3f} | {r['peak_at_end']:.3f} |")
+p2b = d / "e2b_twindow.json"
+if p2b.is_file():
+    e2b = json.loads(p2b.read_text())
+    print("\n### E2b leaving the end of the trajectory unguided (level-shift slice, exact denoisers, x̂₀-space)\n")
+    print("| denoiser | final scale | guided t / t* window | diff p99.9 | start | end | proto dist. |")
+    print("|---|---:|---|---:|---:|---:|---:|")
+    for k, r in e2b.items():
+        parts = k.split(" ")
+        print(f"| {parts[0]} | {parts[3]} | {' '.join(parts[5:])} | {r['diff_p999']:.3f} | {r['peak_at_start']:.2f} | {r['peak_at_end']:.2f} | {r['proto_dist']:.2f} |")
+p6l = d / "e6_contrast_local64.json"
+if p6l.is_file():
+    e6l = json.loads(p6l.read_text())
+    print("\n### E6b ±64-bin step contrast instead of whole-window segments\n")
+    print("| sampler | target | shelf rate | step amp mean | pos W1 to real |")
+    print("|---|---|---:|---:|---:|")
+    for k, r in e6l.items():
+        s, t = (k.split(" | ") + ["(target)"])[:2]
+        print(f"| {s} | {t} | {r['shelf_rate']:.2f} | {r['step_amp_mean']:.3f} | {r['step_pos_w1_to_real']:.3f} |")

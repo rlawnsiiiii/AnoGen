@@ -339,10 +339,12 @@ def guided_ddim(
         xt = np.sqrt(ab) * x0 + np.sqrt(1.0 - ab) * rng.standard_normal(x0.shape)
     times = np.linspace(t_start, 0, max(1, int(ddim_steps)), dtype=int)
 
-    def total_grad(x0h: np.ndarray, t: int, through_denoiser: bool) -> np.ndarray:
+    def total_grad(x0h: np.ndarray, t: int, through_denoiser: bool, project: bool = False) -> np.ndarray:
+        """Sum of the unit-normalized gradient terms, or (project=True) of the
+        projection terms only (x̂₀ units, applied as is)."""
         tot = np.zeros_like(x0h)
         for term in terms:
-            if term.lam == 0.0:
+            if term.lam == 0.0 or bool(term.project) != bool(project):
                 continue
             end = x0h.shape[1] - crop_end
             _, g_win = term.fn(x0h[:, crop:end])
@@ -365,7 +367,9 @@ def guided_ddim(
         frac = t / max(t_start, 1)
         active = t_window[0] <= frac <= t_window[1]
         edit = np.zeros_like(xt)
+        proj = np.zeros_like(xt)
         if active and terms:
+            proj = total_grad(x0h, t, False, project=True)
             if space == "x":
                 edit = total_grad(x0h, t, True)
             elif space == "x0":
@@ -375,6 +379,7 @@ def guided_ddim(
                 eps = eps + np.sqrt(1.0 - ab) * g
                 x0h = (xt - np.sqrt(1.0 - ab) * eps) / np.sqrt(ab)
         if t_prev < 0:
+            edit = edit + proj
             if final_denoise:
                 xt = x0h - final_scale * edit
             else:
@@ -389,9 +394,11 @@ def guided_ddim(
         c_eps = np.sqrt(max(1.0 - abp - sig**2, 0.0))
         noise = sig * rng.standard_normal(xt.shape) if sig > 0 else 0.0
         if space == "x0":
-            xt = np.sqrt(abp) * (x0h - edit) + c_eps * eps + noise
+            xt = np.sqrt(abp) * (x0h - edit - proj) + c_eps * eps + noise
         else:
-            xt = np.sqrt(abp) * x0h + c_eps * eps - edit + noise
+            # as steer.guided_ddim: projection edits are in x̂₀ units, so they are
+            # scaled by sqrt(ab') when subtracted from x_{t'}
+            xt = np.sqrt(abp) * x0h + c_eps * eps - edit - np.sqrt(abp) * proj + noise
     return xt[:, crop : xt.shape[1] - crop_end]
 
 
