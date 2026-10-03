@@ -102,6 +102,9 @@ def run_s1(cfg: dict[str, Any]) -> dict[str, Any]:
         d_state=int(dcfg.get("d_state", 64)),
         scaler=scaler,
         bidirectional=bool(dcfg.get("bidirectional", False)),
+        schedule_kind=str(dcfg.get("schedule", "linear")),
+        sigma_min=float(dcfg.get("sigma_min", 1e-3)),
+        sigma_max=float(dcfg.get("sigma_max", 10.0)),
     )
     model = trained.pop("model")
     schedule = trained.pop("schedule")
@@ -147,6 +150,9 @@ def run_s1(cfg: dict[str, Any]) -> dict[str, Any]:
         "n_layers": int(dcfg.get("n_layers", 6)),
         "d_state": int(dcfg.get("d_state", 64)),
         "bidirectional": bool(dcfg.get("bidirectional", False)),
+        "schedule": str(dcfg.get("schedule", "linear")),
+        "sigma_min": float(dcfg.get("sigma_min", 1e-3)),
+        "sigma_max": float(dcfg.get("sigma_max", 10.0)),
         "n_channels": panel.k,
         "n_times": int(dcfg.get("n_times", 200)),
         "W": width,

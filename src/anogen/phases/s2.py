@@ -93,7 +93,7 @@ def run_s2(cfg: dict[str, Any]) -> dict[str, Any]:
     device_t = torch.device(enc_out["device"])
     model = denoiser_from_ckpt(ckpt, device=device_t)
     scaler = resolve_scaler(ckpt, s0)
-    schedule = DiffusionSchedule.linear(int(ckpt["n_times"])).to(device_t)
+    schedule = DiffusionSchedule.from_ckpt(ckpt).to(device_t)
 
     n_show = min(int(scfg.get("n_sample", 128)), len(val_idx))
     pick = val_idx[:n_show]

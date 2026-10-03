@@ -41,6 +41,7 @@ _PHASES = (
     "geniasfair",
     "s1bidir",
     "diffdetect",
+    "s1v2",
 )
 
 
@@ -53,7 +54,7 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument(
         "phase",
         choices=_PHASES,
-        help="s0–s6, tune, enc, encscore, plots, xfer, hanom, kindproto, kindmix, kindmixscore, kindmixscorehybrid, kindmixhtune, noisescore, ablatelambda, quiettune, genbase, augdetect, editor, timeleash, hashfix, realism, fixsweep, geniasfair, s1bidir, diffdetect",
+        help="s0–s6, tune, enc, encscore, plots, xfer, hanom, kindproto, kindmix, kindmixscore, kindmixscorehybrid, kindmixhtune, noisescore, ablatelambda, quiettune, genbase, augdetect, editor, timeleash, hashfix, realism, fixsweep, geniasfair, s1bidir, s1v2, diffdetect",
     )
     args = parser.parse_args(argv)
     cfg = load_config(args.config)
@@ -192,6 +193,21 @@ def _dispatch(phase: str, cfg: dict) -> dict:
         from anogen.phases.diffdetect import run_diffdetect
 
         return run_diffdetect(cfg)
+    if phase == "s1v2":
+        from anogen.phases.s1 import run_s1
+
+        # Bidirectional S4-D *and* the log-spaced schedule (docs/TESTBED.md E10),
+        # into its own directory. Frozen S1 untouched.
+        cfg = dict(cfg)
+        shell = dict(cfg.get("shell") or {})
+        diff = dict(shell.get("diffusion") or {})
+        diff.update(bidirectional=True, schedule="geometric")
+        diff.update(dict(shell.get("diffusion_v2") or {}))
+        shell["diffusion"] = diff
+        cfg["shell"] = shell
+        cfg["s1_dir"] = cfg.get("s1_v2_dir", "results/shell_s1_v2")
+        cfg["_keep_s0_scaler"] = True
+        return run_s1(cfg)
     if phase == "s1bidir":
         from anogen.phases.s1 import run_s1
 

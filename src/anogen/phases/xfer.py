@@ -158,7 +158,7 @@ def run_xfer_dataset(cfg: dict[str, Any]) -> dict[str, Any]:
     den = torch.load(s1 / "denoiser.pt", map_location=device, weights_only=False)
     model = denoiser_from_ckpt(den, device=device_t)
     scaler = resolve_scaler(den, s0)
-    schedule = DiffusionSchedule.linear(int(den["n_times"])).to(device_t)
+    schedule = DiffusionSchedule.from_ckpt(den).to(device_t)
     gal = np.load(s3 / "galleries.npz")
     x_cond = np.asarray(gal["cond"])
     cond_ch = np.asarray(gal["channel_idx"])

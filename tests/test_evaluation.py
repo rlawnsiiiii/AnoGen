@@ -167,3 +167,15 @@ def test_phi_standardizer_drops_constants():
     z = standardize_phi(phi, stats)
     assert z.shape[1] == 10  # z_mean and z_std are constant after per-window z-scoring
     assert np.allclose(z.std(axis=0), 1.0)
+
+
+def test_nu_for_noise_level():
+    from anogen.shell.diffusion import nu_for_noise_level
+
+    lin = np.cumprod(1 - np.linspace(1e-4, 2e-2, 200))
+    assert abs(nu_for_noise_level(lin, lin[40]) - 40 / 199) < 1e-12
+    sig = np.geomspace(1e-3, 10.0, 200)
+    geo = 1 / (1 + sig**2)
+    nu = nu_for_noise_level(geo, lin[40])
+    t = round(nu * 199)
+    assert abs(geo[t] - lin[40]) < 0.01 and t > 100

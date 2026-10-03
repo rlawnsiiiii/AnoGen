@@ -81,3 +81,13 @@ if p7.is_file():
     for k, r in e7["galleries"].items():
         sh = r.get("mean_shift_in_real_sd") or {}
         print(f"| {k} | {sh.get('fft_band2', 0):+.2f} | {sh.get('fft_band3', 0):+.2f} | {sh.get('fft_band4', 0):+.2f} | {r['arp_real_queries']:.3f} |")
+p10 = d / "e10_schedule.json"
+if p10.is_file():
+    e10 = json.loads(p10.read_text())
+    print("\n### E10 texture the schedule can reproduce (closed form, exact bidirectional denoiser)\n")
+    print("Generated / true variance, total and of first differences (texture), deterministic DDIM from t = T−1:\n")
+    print("| texture sd | schedule | steps | variance | first-difference variance |")
+    print("|---:|---|---:|---:|---:|")
+    for k, r in e10.items():
+        tex, name, steps = [x.strip() for x in k.split("|")]
+        print(f"| {tex.split()[-1]} | {name} | {steps.split()[0]} | {r['var_ratio']:.2f} | {r['diff_var_ratio']:.2f} |")

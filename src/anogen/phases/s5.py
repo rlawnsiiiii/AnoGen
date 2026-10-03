@@ -125,7 +125,7 @@ def run_s5(cfg: dict[str, Any]) -> dict[str, Any]:
     backbone = denoiser_from_ckpt(den, device=device_t)
     backbone.eval()
     scaler = resolve_scaler(den, s0)
-    schedule = DiffusionSchedule.linear(int(den["n_times"])).to(device_t)
+    schedule = DiffusionSchedule.from_ckpt(den).to(device_t)
     n_channels = int(den["n_channels"])
     width = int(den.get("W", x_cond.shape[1]))
 

@@ -118,6 +118,42 @@ class DiffusionSchedule:
         alpha_bar = torch.cumprod(alphas, dim=0)
         return cls(betas=betas, alphas=alphas, alpha_bar=alpha_bar)
 
+    @classmethod
+    def geometric(
+        cls, n_steps: int, sigma_min: float = 1e-3, sigma_max: float = 10.0
+    ) -> DiffusionSchedule:
+        """Variance-preserving schedule with log-spaced noise-to-signal ratios.
+
+        σ_t = sqrt((1 − ᾱ_t) / ᾱ_t) runs geometrically from ``sigma_min`` to
+        ``sigma_max``. The linear β ∈ [1e-4, 2e-2] schedule starts at σ = 0.01
+        and jumps through the low-noise range in a few steps, so components of
+        the data whose variance sits below ~σ_min² (fine telemetry texture) are
+        never resolved: with *exact* denoisers it reproduces under half of the
+        first-difference variance of a Gaussian telemetry model at any step
+        count (docs/TESTBED.md, E10). Log spacing fixes that, and a large
+        ``sigma_max`` also brings the terminal SNR near zero, so x_T ~ N(0, I)
+        is on-distribution for from-noise generation. Needs an S1 retrain.
+        """
+        _require_torch()
+        sig = torch.exp(torch.linspace(math.log(float(sigma_min)), math.log(float(sigma_max)), int(n_steps)))
+        alpha_bar = 1.0 / (1.0 + sig**2)
+        prev = torch.cat([torch.ones(1), alpha_bar[:-1]])
+        alphas = alpha_bar / prev
+        return cls(betas=1.0 - alphas, alphas=alphas, alpha_bar=alpha_bar)
+
+    @classmethod
+    def from_ckpt(cls, ckpt: dict[str, Any]) -> DiffusionSchedule:
+        """The schedule a checkpoint was trained with (linear for every frozen one)."""
+        kind = str(ckpt.get("schedule", "linear")).lower()
+        n = int(ckpt["n_times"])
+        if kind == "geometric":
+            return cls.geometric(
+                n, float(ckpt.get("sigma_min", 1e-3)), float(ckpt.get("sigma_max", 10.0))
+            )
+        if kind != "linear":
+            raise ValueError(f"unknown schedule {kind!r} in checkpoint")
+        return cls.linear(n)
+
     def to(self, device: Any) -> DiffusionSchedule:
         return DiffusionSchedule(
             betas=self.betas.to(device),
@@ -168,6 +204,18 @@ def ddim_sample(
         ab_prev = schedule.alpha_bar[t_prev]
         xt = ab_prev.sqrt() * x0 + (1.0 - ab_prev).sqrt() * eps
     return xt
+
+
+def nu_for_noise_level(alpha_bar: Any, target_alpha_bar: float) -> float:
+    """ν whose t* = round(ν (T−1)) has ᾱ closest to ``target_alpha_bar``.
+
+    ν is a *fraction of the schedule*, so the same ν is a different noise level
+    under a different schedule. The frozen edit (ν = 0.2 on the linear
+    schedule) is t* = 40, ᾱ = 0.917, i.e. noise-to-signal σ ≈ 0.30.
+    """
+    ab = np.asarray(alpha_bar.detach().cpu().numpy() if hasattr(alpha_bar, "detach") else alpha_bar, dtype=np.float64)
+    t = int(np.argmin(np.abs(ab - float(target_alpha_bar))))
+    return float(t) / float(max(len(ab) - 1, 1))
 
 
 def flip_blend_weights(length: int, mode: str = "ramp") -> np.ndarray:
@@ -300,6 +348,9 @@ def train_denoiser(
     d_state: int = 64,
     scaler: Any | None = None,
     bidirectional: bool = False,
+    schedule_kind: str = "linear",
+    sigma_min: float = 1e-3,
+    sigma_max: float = 10.0,
 ) -> dict[str, Any]:
     """Train ε-prediction. Returns model, schedule, and scalar logs."""
     _require_torch()
@@ -324,7 +375,9 @@ def train_denoiser(
         d_state=d_state,
         bidirectional=bidirectional,
     ).to(device_t)
-    schedule = DiffusionSchedule.linear(n_times).to(device_t)
+    schedule = DiffusionSchedule.from_ckpt(
+        {"schedule": schedule_kind, "n_times": n_times, "sigma_min": sigma_min, "sigma_max": sigma_max}
+    ).to(device_t)
     opt = torch.optim.Adam(model.parameters(), lr=lr)
 
     def _loader(idx: np.ndarray, shuffle: bool) -> DataLoader:
@@ -384,6 +437,9 @@ def train_denoiser(
         "n_layers": int(n_layers),
         "d_state": int(d_state),
         "bidirectional": bool(bidirectional),
+        "schedule": str(schedule_kind),
+        "sigma_min": float(sigma_min),
+        "sigma_max": float(sigma_max),
         "steps": steps,
         "train_loss": last_loss,
         "train_loss_ema": float(ema),

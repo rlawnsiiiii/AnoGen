@@ -88,6 +88,22 @@ generated level is biased by −0.2 to −0.3 nominal standard deviations. The
 same fact means "unguided ν = 1" keeps 36 % of the donor amplitude, so it
 is still a donor edit and not a draw from the prior.
 
+## 4b. The schedule cannot reproduce fine texture
+
+The linear schedule's smallest noise level is σ = 0.01 in scaled units, and
+it crosses the low-noise range in a few steps. With *exact* denoisers,
+deterministic DDIM then reproduces almost all of the total variance of a
+Gaussian telemetry model but only 36–68 % of its first-difference variance,
+at any step count (testbed E10, closed form). ESA shows the same signature:
+unguided first-difference p99.9 is 0.71× that of the donors, and shell ZS
+and hashfix are 0.75–0.77×. Two consequences:
+
+- every DDIM gallery is too smooth before any steering, and
+- that texture is what dominates φ, so ARP is sensitive to it (E7, REVIEW §2.1).
+
+A log-spaced schedule (σ 1e-3 → 10) reproduces 89–97 % of the texture and
+puts the terminal SNR near zero (fixing §4 too). It needs an S1 retrain.
+
 ---
 
 ## 5. Fixes (all opt-in; defaults reproduce the frozen runs)
@@ -95,6 +111,7 @@ is still a donor edit and not a draw from the prior.
 | Switch | Where | What it does | Retrain? | Targets |
 |---|---|---|---|---|
 | `diffusion.bidirectional: true` / `anogen s1bidir` | `tsdiff.S4D` | second S4-D kernel on the time-reversed input, summed (standard bidirectional S4) | **yes** (S1, into `results/shell_s1_bidir`) | 1a–c at the root |
+| `anogen s1v2` (`diffusion.schedule: geometric`, `sigma_min/max`, + bidirectional) | `diffusion.DiffusionSchedule.geometric`, `from_ckpt` | log-spaced noise levels; checkpoints record their schedule and every phase rebuilds it from the checkpoint; fixsweep keeps the frozen edit's *noise level* (ν is a fraction of the schedule) | **yes** (S1, into `results/shell_s1_v2`) | 4, 4b, and 1 at the root |
 | `flip: ramp` (fixsweep) | `diffusion.FlipEnsemble` | ε = w⊙ε_θ(x) + (1−w)⊙flip(ε_θ(flip x)), w = i/(L−1) | no | 1a–c, assumes nominal ≈ time-reversible |
 | `guidance_space: x0` | `steer.guided_ddim` | ∇ w.r.t. x̂₀, edit x̂₀, re-noise with the same ε (MPGD-style); no backward pass through the denoiser | no | 1c, and halves guidance cost |
 | `final_grad_scale: 0.25` | `steer.guided_ddim` | continuous version of `apply_final_grad` (P3) | no | 2 |
@@ -151,10 +168,13 @@ What the testbed says to expect, in order of cost:
 #    skip the backward pass through the denoiser and are faster than C1)
 .venv/bin/anogen -c configs/shell_mission1.yaml fixsweep
 
-# 3. bidirectional S1 (same recipe as S1; writes results/shell_s1_bidir), then add
-#    `bidir_x0: {denoiser: results/shell_s1_bidir/denoiser.pt, guidance_space: x0}`
-#    under shell.fixsweep.variants and rerun fixsweep (cached variants are reused)
+# 3. retrain S1 (same steps/backbone size): bidirectional only, and bidirectional +
+#    log-spaced schedule. Then add under shell.fixsweep.variants
+#      bidir_x0: {denoiser: results/shell_s1_bidir/denoiser.pt, guidance_space: x0, final_grad_scale: 0.25}
+#      v2_x0:    {denoiser: results/shell_s1_v2/denoiser.pt,    guidance_space: x0, final_grad_scale: 0.25}
+#    and rerun fixsweep (cached variants are reused)
 .venv/bin/anogen -c configs/shell_mission1.yaml s1bidir
+.venv/bin/anogen -c configs/shell_mission1.yaml s1v2
 
 # 4. honest GenIAS baseline (P6), then the downstream check with the leak fixed
 .venv/bin/anogen -c configs/shell_mission1.yaml geniasfair

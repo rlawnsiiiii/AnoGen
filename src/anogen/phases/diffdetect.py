@@ -118,7 +118,7 @@ def run_diffdetect(cfg: dict[str, Any]) -> dict[str, Any]:
         den = torch.load(den_path, map_location=device, weights_only=False)
         model = wrap_denoiser(denoiser_from_ckpt(den, device=torch.device(device)), spec.get("flip"))
         scaler = resolve_scaler(den, s0)
-        sched = DiffusionSchedule.linear(int(den["n_times"])).to(torch.device(device))
+        sched = DiffusionSchedule.from_ckpt(den).to(torch.device(device))
         kw = dict(t_eval=t_eval, n_draws=n_draws, bsz=bsz, skip=int(spec.get("skip_start", 0)), seed=seed)
         cache = out / f"{vname}_scores.npz"
         key = json.dumps({**kw, "denoiser": str(den_path), "flip": spec.get("flip"), "n_fresh": int(len(x_d))}, sort_keys=True)

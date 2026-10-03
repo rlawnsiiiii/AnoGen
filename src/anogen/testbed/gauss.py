@@ -288,8 +288,14 @@ def guided_ddim(
     crop: int = 0,
     t_window: tuple[float, float] = (0.0, 1.0),
     noise_init: tuple[float, float] | None = None,
+    eta: float = 0.0,
+    final_denoise: bool = True,
 ) -> np.ndarray:
-    """Numpy mirror of ``steer.guided_ddim`` (eta = 0).
+    """Numpy mirror of ``steer.guided_ddim`` (eta = 0 by default).
+
+    eta > 0 adds DDIM's stochastic term (eta = 1 ~ ancestral DDPM sampling):
+    sigma = eta sqrt((1-ab')/(1-ab)) sqrt(1 - ab/ab'), and the eps coefficient
+    becomes sqrt(1 - ab' - sigma^2).
 
     space="x"   repo behaviour: g = unit(J^T grad f) subtracted from x_{t'} at every
                 step, and from the final x0_hat (scaled by ``final_scale``, which
@@ -358,13 +364,23 @@ def guided_ddim(
                 eps = eps + np.sqrt(1.0 - ab) * g
                 x0h = (xt - np.sqrt(1.0 - ab) * eps) / np.sqrt(ab)
         if t_prev < 0:
-            xt = x0h - final_scale * edit
+            if final_denoise:
+                xt = x0h - final_scale * edit
+            else:
+                # Keep the last state's residual noise instead of the Tweedie
+                # mean: x_t / sqrt(ab) = x0_hat + sqrt(1-ab)/sqrt(ab) eps_hat.
+                xt = (xt / np.sqrt(ab)) - final_scale * edit
             break
         abp = float(sch.alpha_bar[t_prev])
+        sig = 0.0
+        if eta > 0.0 and t_prev != t:
+            sig = float(eta) * np.sqrt((1.0 - abp) / (1.0 - ab)) * np.sqrt(max(1.0 - ab / abp, 0.0))
+        c_eps = np.sqrt(max(1.0 - abp - sig**2, 0.0))
+        noise = sig * rng.standard_normal(xt.shape) if sig > 0 else 0.0
         if space == "x0":
-            xt = np.sqrt(abp) * (x0h - edit) + np.sqrt(1.0 - abp) * eps
+            xt = np.sqrt(abp) * (x0h - edit) + c_eps * eps + noise
         else:
-            xt = np.sqrt(abp) * x0h + np.sqrt(1.0 - abp) * eps - edit
+            xt = np.sqrt(abp) * x0h + c_eps * eps - edit + noise
     return xt[:, crop:]
 
 

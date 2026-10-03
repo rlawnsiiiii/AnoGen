@@ -199,7 +199,7 @@ def run_fixsweep(cfg: dict[str, Any]) -> dict[str, Any]:
             dens[key] = (
                 model,
                 resolve_scaler(den, s0),
-                DiffusionSchedule.linear(int(den["n_times"])).to(device_t),
+                DiffusionSchedule.from_ckpt(den).to(device_t),
             )
         return dens[key]
 
@@ -241,6 +241,7 @@ def run_fixsweep(cfg: dict[str, Any]) -> dict[str, Any]:
             **_PARENT50,
         )
         common.update(guided_kw)
+        common["nu"] = edit_nu(schedule, float(common["nu"]))
         if bool(spec.get("start_from_noise")):
             common["start_from_noise"] = True
             if bool(spec.get("burnin")):
@@ -681,6 +682,23 @@ def _contrast_plan(
             "leaked": bool(leaked),
         }
     return plan
+
+
+def edit_nu(schedule: Any, nu: float) -> float:
+    """ν giving the frozen edit's *noise level* under ``schedule``.
+
+    Identity for the linear schedule (every frozen checkpoint). For another
+    schedule (s1v2 is geometric), ν = 0.2 would be a much lighter edit, so the
+    ν whose ᾱ matches the linear schedule's ᾱ at ν is returned instead.
+    """
+    from anogen.shell.diffusion import DiffusionSchedule, nu_for_noise_level
+
+    n = int(schedule.betas.numel())
+    lin = DiffusionSchedule.linear(n).alpha_bar
+    if np.allclose(schedule.alpha_bar.detach().cpu().numpy(), lin.numpy()):
+        return float(nu)
+    target = float(lin[int(round(float(nu) * (n - 1)))])
+    return nu_for_noise_level(schedule.alpha_bar, target)
 
 
 def channel_moments(x: np.ndarray, ch: np.ndarray, scaler: Any) -> tuple[np.ndarray, np.ndarray]:

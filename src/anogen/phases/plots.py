@@ -288,7 +288,7 @@ def _maybe_sample_diffusion(
     den = torch.load(s1 / "denoiser.pt", map_location=device, weights_only=False)
     model = denoiser_from_ckpt(den, device=device)
     scaler = resolve_scaler(den)
-    schedule = DiffusionSchedule.linear(int(den["n_times"])).to(torch.device(device))
+    schedule = DiffusionSchedule.from_ckpt(den).to(torch.device(device))
     dcfg = dict((cfg.get("shell") or {}).get("diffusion") or {})
     scfg = dict((cfg.get("shell") or {}).get("steer") or {})
     unguided = unguided_from_nominal(

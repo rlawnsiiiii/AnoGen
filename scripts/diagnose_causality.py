@@ -94,7 +94,7 @@ def main() -> None:
             scaler = resolve_scaler(den, s0)
             if scaler is not None:
                 xs = scaler.transform(xs, ch)
-            sched = DiffusionSchedule.linear(int(den["n_times"]))
+            sched = DiffusionSchedule.from_ckpt(den)
             x0 = torch.from_numpy(xs).unsqueeze(1)
             cb = torch.from_numpy(ch)
             by_t = {}

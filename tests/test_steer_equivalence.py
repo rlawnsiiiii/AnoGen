@@ -138,3 +138,16 @@ def test_flip_ensemble_sees_both_sides_and_skips_bidirectional():
     bidir, *_ = _setup(bidirectional=True)
     assert wrap_denoiser(bidir, "ramp") is bidir
     assert wrap_denoiser(model, None) is model
+
+
+def test_geometric_schedule_and_from_ckpt():
+    from anogen.shell.diffusion import nu_for_noise_level
+
+    lin = DiffusionSchedule.from_ckpt({"n_times": 200})
+    assert torch.allclose(lin.alpha_bar, DiffusionSchedule.linear(200).alpha_bar)
+    geo = DiffusionSchedule.from_ckpt({"n_times": 200, "schedule": "geometric", "sigma_min": 1e-3, "sigma_max": 10.0})
+    sig = ((1 - geo.alpha_bar) / geo.alpha_bar).sqrt()
+    assert abs(float(sig[0]) - 1e-3) < 1e-6 and abs(float(sig[-1]) - 10.0) < 1e-3
+    assert torch.allclose(torch.cumprod(geo.alphas, 0), geo.alpha_bar, atol=1e-6)
+    nu = nu_for_noise_level(geo.alpha_bar, float(lin.alpha_bar[40]))
+    assert 0.5 < nu < 0.75

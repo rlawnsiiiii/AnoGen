@@ -148,7 +148,7 @@ def run_tune(cfg: dict[str, Any]) -> dict[str, Any]:
     encoder.load_state_dict(enc_blob["state_dict"])
     encoder.to(device_t)
     encoder.eval()
-    schedule = DiffusionSchedule.linear(int(den["n_times"])).to(device_t)
+    schedule = DiffusionSchedule.from_ckpt(den).to(device_t)
     q_q = float(enc_blob["Q_q"])
     delta = float(enc_blob["delta"])
     tau_e = float(enc_blob["tau"])

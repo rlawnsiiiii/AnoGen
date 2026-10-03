@@ -85,3 +85,45 @@ def test_final_scale_only_changes_the_last_step():
     diff = np.linalg.norm(a - b, axis=1)
     # unit-normalized, clipped kick: per-sample L2 norm is exactly lam = 1
     assert np.allclose(diff, 1.0, atol=1e-6)
+
+
+def test_tiny_eps_net_gradients_and_causality():
+    from anogen.testbed.npnet import TinyEpsNet
+
+    for causal in (True, False):
+        net = TinyEpsNet(hidden=4, k=3, dilations=(1, 2), causal=causal, seed=1)
+        rng = np.random.default_rng(0)
+        x = rng.normal(size=(2, 16))
+        t = np.array([3, 50])
+        g_out = rng.normal(size=(2, 16))
+        net.forward(x, t)
+        gx, grads = net.backward(g_out)
+        f = lambda xx: float((net.forward(xx, t) * g_out).sum())  # noqa: E731
+        eps = 1e-6
+        for (i, j) in ((0, 0), (1, 7), (0, 15)):
+            xp, xm = x.copy(), x.copy()
+            xp[i, j] += eps
+            xm[i, j] -= eps
+            assert abs((f(xp) - f(xm)) / (2 * eps) - gx[i, j]) < 1e-5
+        w = net.blocks[1].W
+        old = w[1, 2, 0]
+        w[1, 2, 0] = old + eps
+        fp = f(x)
+        w[1, 2, 0] = old - eps
+        fm = f(x)
+        w[1, 2, 0] = old
+        assert abs((fp - fm) / (2 * eps) - grads["blk1"][0][1, 2, 0]) < 1e-5
+        wt = net.Wt[0]
+        old = wt[3, 2]
+        wt[3, 2] = old + eps
+        fp = f(x)
+        wt[3, 2] = old - eps
+        fm = f(x)
+        wt[3, 2] = old
+        assert abs((fp - fm) / (2 * eps) - grads["wt0"][3, 2]) < 1e-5
+        # causality: output at bin 5 must not change when x[:, 10] changes
+        base = net.forward(x, t)
+        x2 = x.copy()
+        x2[:, 10] += 1.0
+        d = np.abs(net.forward(x2, t) - base)
+        assert (d[:, :10].max() == 0.0) == causal

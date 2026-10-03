@@ -65,7 +65,7 @@ def run_s1_recon(cfg: dict[str, Any]) -> dict[str, Any]:
     model = denoiser_from_ckpt(ckpt, device=device)
     scaler = resolve_scaler(ckpt, s0)
     model.eval()
-    schedule = DiffusionSchedule.linear(int(ckpt["n_times"])).to(torch.device(device))
+    schedule = DiffusionSchedule.from_ckpt(ckpt).to(torch.device(device))
     n_times = int(ckpt["n_times"])
     ddim_steps = int(dcfg.get("ddim_steps", 20))
 

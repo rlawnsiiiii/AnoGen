@@ -153,6 +153,37 @@ high-frequency band energies, in real-nominal standard deviations:
 | causal nu=0.2 steps=50 | +0.55 | +0.70 | +0.72 | 0.793 |
 | donor (real nominal) | +0.00 | +0.00 | +0.00 | 0.811 |
 
+### E10 texture the schedule can reproduce (closed form, exact bidirectional denoiser)
+
+Generated / true variance, total and of first differences (texture), deterministic DDIM from t = T−1:
+
+| texture sd | schedule | steps | variance | first-difference variance |
+|---:|---|---:|---:|---:|
+| 0.02 | linear (frozen; sigma 0.010..2.56) | 20 | 0.89 | 0.36 |
+| 0.02 | linear (frozen; sigma 0.010..2.56) | 50 | 0.95 | 0.42 |
+| 0.02 | linear (frozen; sigma 0.010..2.56) | 200 | 0.99 | 0.48 |
+| 0.02 | geometric sigma 0.001..2.56 | 20 | 0.83 | 0.80 |
+| 0.02 | geometric sigma 0.001..2.56 | 50 | 0.93 | 0.91 |
+| 0.02 | geometric sigma 0.001..2.56 | 200 | 0.98 | 0.96 |
+| 0.02 | geometric sigma 0.001..10 | 20 | 0.78 | 0.77 |
+| 0.02 | geometric sigma 0.001..10 | 50 | 0.91 | 0.89 |
+| 0.02 | geometric sigma 0.001..10 | 200 | 0.98 | 0.96 |
+| 0.02 | geometric sigma 0.001..80 | 20 | 0.74 | 0.73 |
+| 0.02 | geometric sigma 0.001..80 | 50 | 0.89 | 0.88 |
+| 0.02 | geometric sigma 0.001..80 | 200 | 0.97 | 0.95 |
+| 0.05 | linear (frozen; sigma 0.010..2.56) | 20 | 0.87 | 0.37 |
+| 0.05 | linear (frozen; sigma 0.010..2.56) | 50 | 0.94 | 0.52 |
+| 0.05 | linear (frozen; sigma 0.010..2.56) | 200 | 0.98 | 0.68 |
+| 0.05 | geometric sigma 0.001..2.56 | 20 | 0.83 | 0.81 |
+| 0.05 | geometric sigma 0.001..2.56 | 50 | 0.93 | 0.92 |
+| 0.05 | geometric sigma 0.001..2.56 | 200 | 0.98 | 0.98 |
+| 0.05 | geometric sigma 0.001..10 | 20 | 0.78 | 0.78 |
+| 0.05 | geometric sigma 0.001..10 | 50 | 0.91 | 0.91 |
+| 0.05 | geometric sigma 0.001..10 | 200 | 0.98 | 0.97 |
+| 0.05 | geometric sigma 0.001..80 | 20 | 0.74 | 0.74 |
+| 0.05 | geometric sigma 0.001..80 | 50 | 0.89 | 0.89 |
+| 0.05 | geometric sigma 0.001..80 | 200 | 0.97 | 0.97 |
+
 ## Reading
 
 **E1 — the sampler alone.** The best possible causal denoiser puts the
@@ -223,3 +254,21 @@ offers a candidate explanation for unguided DDIM (0.568) beating real
 nominal donors (0.320) on ESA with no anomaly information. It is a
 hypothesis for ESA, testable with the φ attribution and the standardized-φ
 column in `scripts/audit_metrics.py`.
+
+**E10 — the schedule loses texture.** Deterministic DDIM with an *exact*
+denoiser is a linear map, so the generated covariance can be computed in
+closed form. Under the frozen linear schedule (σ from 0.010 to 2.56 in
+scaled units, crossing the low-noise range in a handful of steps) it
+reproduces 95–99 % of the total variance but only **36–68 % of the
+first-difference variance**, whatever the step count. Components whose
+variance sits below ~σ_min² are never resolved and come out shrunk. A
+log-spaced schedule (`DiffusionSchedule.geometric`, σ 1e-3 → 10)
+reproduces 89–97 % of both at 50–200 steps. A larger σ_max also brings the
+terminal SNR close to zero, which makes N(0, I) a valid from-noise start.
+On ESA, the unguided gallery's first-difference p99.9 is 0.041 against the
+donors' 0.058 (0.71×), and shell ZS and hashfix show 0.75–0.77×. That is
+the same direction and a similar size, so DDIM output is visibly smoother
+than real telemetry. This texture is also what dominates φ (E7). Fixing it
+needs an S1 retrain: `anogen s1v2` (bidirectional + geometric). `fixsweep`
+then maps ν to the same *noise level* as the frozen edit, because ν is a
+fraction of the schedule.

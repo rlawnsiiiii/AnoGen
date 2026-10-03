@@ -256,7 +256,7 @@ def _generate_encoder_tune(
     den = torch.load(s1 / "denoiser.pt", map_location=device, weights_only=False)
     model = denoiser_from_ckpt(den, device=device_t)
     scaler = resolve_scaler(den, s0)
-    schedule = DiffusionSchedule.linear(int(den["n_times"])).to(device_t)
+    schedule = DiffusionSchedule.from_ckpt(den).to(device_t)
     scfg = dict((cfg.get("shell") or {}).get("steer") or {})
     n = min(256, len(parent))
     x0 = have.get("parent", parent[:n])

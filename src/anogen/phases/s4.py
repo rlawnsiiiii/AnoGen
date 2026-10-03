@@ -69,7 +69,7 @@ def run_s4(cfg: dict[str, Any]) -> dict[str, Any]:
     )
     encoder.load_state_dict(enc_blob["state_dict"])
     encoder.to(device_t)
-    schedule = DiffusionSchedule.linear(int(den["n_times"])).to(device_t)
+    schedule = DiffusionSchedule.from_ckpt(den).to(device_t)
     ref = torch.from_numpy(
         embed_encoder(encoder, gal["cond"][: min(512, len(gal["cond"]))], device)
     )

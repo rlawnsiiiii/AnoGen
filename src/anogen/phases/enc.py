@@ -90,7 +90,7 @@ def run_enc(cfg: dict[str, Any]) -> dict[str, Any]:
         den = torch.load(s1 / "denoiser.pt", map_location=device, weights_only=False)
         model_den = denoiser_from_ckpt(den, device=device)
         scaler = resolve_scaler(den, s0)
-        schedule = DiffusionSchedule.linear(int(den["n_times"])).to(torch.device(device))
+        schedule = DiffusionSchedule.from_ckpt(den).to(torch.device(device))
 
     rng = np.random.default_rng(int(cfg.get("seed", 0)))
     n_ref = min(int(scfg.get("n_ref", 512)), len(x_nom))
