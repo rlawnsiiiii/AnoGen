@@ -37,6 +37,9 @@ _PHASES = (
     "timeleash",
     "hashfix",
     "realism",
+    "fixsweep",
+    "geniasfair",
+    "s1bidir",
 )
 
 
@@ -49,7 +52,7 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument(
         "phase",
         choices=_PHASES,
-        help="s0–s6, tune, enc, encscore, plots, xfer, hanom, kindproto, kindmix, kindmixscore, kindmixscorehybrid, kindmixhtune, noisescore, ablatelambda, quiettune, genbase, augdetect, editor, timeleash, hashfix, realism",
+        help="s0–s6, tune, enc, encscore, plots, xfer, hanom, kindproto, kindmix, kindmixscore, kindmixscorehybrid, kindmixhtune, noisescore, ablatelambda, quiettune, genbase, augdetect, editor, timeleash, hashfix, realism, fixsweep, geniasfair, s1bidir",
     )
     args = parser.parse_args(argv)
     cfg = load_config(args.config)
@@ -176,6 +179,27 @@ def _dispatch(phase: str, cfg: dict) -> dict:
         from anogen.phases.realism import run_realism
 
         return run_realism(cfg)
+    if phase == "fixsweep":
+        from anogen.phases.fixsweep import run_fixsweep
+
+        return run_fixsweep(cfg)
+    if phase == "geniasfair":
+        from anogen.phases.geniasfair import run_geniasfair
+
+        return run_geniasfair(cfg)
+    if phase == "s1bidir":
+        from anogen.phases.s1 import run_s1
+
+        # Same S1 recipe with a bidirectional S4-D, into its own directory so the
+        # frozen causal checkpoint is never overwritten.
+        cfg = dict(cfg)
+        shell = dict(cfg.get("shell") or {})
+        diff = dict(shell.get("diffusion") or {})
+        diff["bidirectional"] = True
+        shell["diffusion"] = diff
+        cfg["shell"] = shell
+        cfg["s1_dir"] = cfg.get("s1_bidir_dir", "results/shell_s1_bidir")
+        return run_s1(cfg)
     print(f"{phase} is not implemented yet.", file=sys.stderr)
     sys.exit(2)
 

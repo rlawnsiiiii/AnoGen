@@ -281,6 +281,9 @@ def shell_from_nominal(
     }
 
 
+GUIDANCE_SPACES = ("x", "x0")
+
+
 def guided_ddim(
     model: Any,
     encoder: Any,
@@ -315,6 +318,14 @@ def guided_ddim(
     parent_leash: str = "l2",
     parent_delta: float = 0.03,
     apply_final_grad: bool = True,
+    final_grad_scale: float | None = None,
+    guidance_space: str = "x",
+    guidance_t_window: tuple[float, float] = (0.0, 1.0),
+    burnin_prefix: np.ndarray | None = None,
+    burnin_bins: int = 0,
+    anom_proto_shift: "torch.Tensor | None" = None,
+    lam_repel: float = 0.0,
+    repel_project: bool = True,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Noise nominal windows to ν, DDIM with clipped constraint gradients.
 
@@ -336,9 +347,50 @@ def guided_ddim(
     apply_final_grad=False returns the last Tweedie x̂_0 without subtracting
     ∇f (the kick is otherwise stamped onto the output with no further DDIM).
     Default True keeps locked S4 / parent50 behaviour.
+
+    Additions (docs/POSITION_BIAS.md; all defaults reproduce the frozen runs):
+
+    final_grad_scale   continuous version of apply_final_grad: the last edit is
+                       multiplied by this (1.0 = locked, 0.0 = hashfix). When
+                       None, apply_final_grad decides (1.0 / 0.0).
+    guidance_space     "x"  (locked): ∇ is taken w.r.t. x_t, i.e. through the
+                       denoiser Jacobian, and subtracted from x_{t'}.
+                       "x0": ∇ is taken w.r.t. the Tweedie x̂_0 itself and the
+                       edited x̂_0 is re-noised with the same ε (manifold-
+                       preserving / Jacobian-free guidance). With a causal
+                       backbone the x-space VJP smears every edit toward the
+                       window start; x0-space has no such path, and it skips
+                       the backward pass through the denoiser (faster).
+    guidance_t_window  (lo, hi) on t / t_start; guidance is only applied on steps
+                       inside it (e.g. (0, 0.5) = only the low-noise half).
+    burnin_prefix      (N, B) raw-unit telemetry immediately *preceding* each
+                       donor. The chain runs on B+W bins; every objective sees
+                       only the last W bins of x̂_0 and the prefix is dropped
+                       from the output. Gives a causal backbone real context at
+                       the window start. With start_from_noise, use burnin_bins
+                       instead (the prefix is then pure noise like the rest).
+    anom_proto_shift   (N,) integer shift, in encoder time steps, applied to the
+                       proto embedding (temporal encoders only; edge-replicate).
+                       Moves the requested event in time so that samples
+                       sharing one of very few prototypes (6 level shifts) do
+                       not all aim at the same position.
+    lam_repel          particle-guidance repulsion between samples of the same
+                       call (Corso et al., ICLR 2024): RBF kernel on encoder
+                       embeddings, median bandwidth. With repel_project the
+                       component along the band gradient is removed so spread
+                       happens along constant shell energy.
     """
     _require_torch()
     from anogen.shell.diffusion import q_sample
+
+    space = str(guidance_space).lower()
+    if space not in GUIDANCE_SPACES:
+        raise ValueError(f"guidance_space must be one of {GUIDANCE_SPACES}, got {guidance_space!r}")
+    if final_grad_scale is None:
+        final_scale = 1.0 if apply_final_grad else 0.0
+    else:
+        final_scale = float(final_grad_scale)
+    t_lo, t_hi = (float(v) for v in guidance_t_window)
 
     device_t = torch.device(device or next(model.parameters()).device)
     model.eval()
@@ -353,6 +405,17 @@ def guided_ddim(
     sched = schedule.to(device_t) if schedule.betas.device != device_t else schedule
     x_np = np.asarray(x0, dtype=np.float32)
     ch_np = np.asarray(channel_idx, dtype=np.int64)
+    width = int(x_np.shape[1])
+    if burnin_prefix is not None:
+        pre = np.asarray(burnin_prefix, dtype=np.float32)
+        if pre.ndim != 2 or len(pre) != len(x_np):
+            raise ValueError(f"burnin_prefix must be (N, B) with N={len(x_np)}, got {pre.shape}")
+        x_np = np.concatenate([pre, x_np], axis=1)
+    elif int(burnin_bins) > 0:
+        if not start_from_noise:
+            raise ValueError("burnin_bins without a prefix needs start_from_noise=True; pass burnin_prefix")
+        x_np = np.concatenate([np.repeat(x_np[:, :1], int(burnin_bins), axis=1), x_np], axis=1)
+    crop = int(x_np.shape[1]) - width
     if scaler is not None:
         x_np = scaler.transform(x_np, ch_np)
     xt0 = torch.from_numpy(x_np).unsqueeze(1).to(device_t)
@@ -370,6 +433,12 @@ def guided_ddim(
         if anom_proto_index is None:
             raise ValueError("anom_energy_kind='proto' needs anom_proto_index")
         proto_a = ref_a[torch.as_tensor(anom_proto_index, device=device_t, dtype=torch.long)]
+        if anom_proto_shift is not None:
+            proto_a = shift_time_embedding(
+                proto_a,
+                torch.as_tensor(anom_proto_shift, device=device_t, dtype=torch.long),
+                _encoder_time_steps(encoder),
+            )
     kind_ids_t = None
     if ref_a is not None and str(anom_energy_kind).lower() in {"kind_soft", "kindsoft"}:
         if anom_kind_ids is None:
@@ -377,74 +446,104 @@ def guided_ddim(
         kind_ids_t = torch.as_tensor(anom_kind_ids, device=device_t, dtype=torch.long)
     n_correct = max(1, int(n_correct))
     times = np.linspace(t_start, 0, max(1, int(ddim_steps)), dtype=int)
+    use_anom = ref_a is not None and lam_anom != 0.0
+    use_rare = ref_r is not None and lam_rare != 0.0
+    use_cls = classifier is not None and lam_cls != 0.0
+    use_repel = float(lam_repel) != 0.0 and xt0.size(0) > 1
+
+    def objective_terms(x0_win: "torch.Tensor") -> tuple[list[tuple[float, "torch.Tensor", str]], "torch.Tensor"]:
+        """(weight, scalar loss, name) per active term, and h_soft (for occupancy)."""
+        x0_enc = (
+            scaler.inverse_torch(x0_win.squeeze(1), cb).unsqueeze(1) if scaler is not None else x0_win
+        )
+        z = encoder.encode(x0_enc)
+        h = soft_energy(z, ref_t, tau)
+        terms: list[tuple[float, "torch.Tensor", str]] = []
+        if mode != "off":
+            err = (-h).mean() if mode == "push" else ((h - Q_q) ** 2).mean()
+            terms.append((float(lam), err, "band"))
+        if use_anom:
+            h_a = anom_energy(
+                z, ref_a, tau, kind=anom_energy_kind, knn=anom_knn, proto=proto_a, kind_ids=kind_ids_t
+            )
+            terms.append((float(lam_anom), h_a.mean(), "anom"))
+        if use_rare:
+            terms.append((float(lam_rare), (-soft_energy(z, ref_r, tau)).mean(), "rare"))
+        if use_cls:
+            terms.append((float(lam_cls), (-classifier(x0_enc)).mean(), "cls"))
+        if use_repel:
+            terms.append((float(lam_repel), _repulsion(z), "repel"))
+        return terms, h
+
+    def guidance(target: "torch.Tensor", terms: list[tuple[float, "torch.Tensor", str]]) -> "torch.Tensor":
+        """Σ λ_k prep(∇_target loss_k); repulsion optionally projected off ∇band."""
+        total = torch.zeros_like(target)
+        band_dir = None
+        for k, (weight, loss, name) in enumerate(terms):
+            grad = torch.autograd.grad(
+                loss, target, retain_graph=k < len(terms) - 1, allow_unused=True
+            )[0]
+            if grad is None:
+                grad = torch.zeros_like(target)
+            if name == "band":
+                band_dir = grad
+            if name == "repel" and repel_project and band_dir is not None:
+                grad = _project_out(grad, band_dir)
+            total = total + weight * _prep_grad(grad, c_max, normalize_grad)
+        return total
+
     last_h = None
     for i, t in enumerate(times):
         t_prev = times[i + 1] if i + 1 < len(times) else -1
+        frac = float(t) / float(max(t_start, 1))
+        active = t_lo <= frac <= t_hi
         for corr in range(n_correct):
-            xt = xt.detach().requires_grad_(True)
             t_batch = torch.full((xt.size(0),), int(t), device=device_t, dtype=torch.long)
-            eps = model(xt, t_batch, cb)
             ab = sched.alpha_bar[int(t)]
-            x0_hat = (xt - (1.0 - ab).sqrt() * eps) / ab.sqrt()
-            x0_enc = (
-                scaler.inverse_torch(x0_hat.squeeze(1), cb).unsqueeze(1)
-                if scaler is not None
-                else x0_hat
-            )
-            z = encoder.encode(x0_enc)
-            h = soft_energy(z, ref_t, tau)
-            use_anom = ref_a is not None and lam_anom != 0.0
-            use_rare = ref_r is not None and lam_rare != 0.0
-            use_cls = classifier is not None and lam_cls != 0.0
-            extras = int(use_anom) + int(use_rare) + int(use_cls)
-            if mode == "off":
-                total = torch.zeros_like(xt)
-            else:
-                err = (-h).mean() if mode == "push" else ((h - Q_q) ** 2).mean()
-                grad = torch.autograd.grad(err, xt, retain_graph=extras > 0, allow_unused=True)[0]
-                if grad is None:
-                    grad = torch.zeros_like(xt)
-                total = lam * _prep_grad(grad, c_max, normalize_grad)
-            if use_anom:
-                extras -= 1
-                h_a = anom_energy(
-                    z,
-                    ref_a,
-                    tau,
-                    kind=anom_energy_kind,
-                    knn=anom_knn,
-                    proto=proto_a,
-                    kind_ids=kind_ids_t,
-                )
-                g_a = torch.autograd.grad(h_a.mean(), xt, retain_graph=extras > 0)[0]
-                total = total + lam_anom * _prep_grad(g_a, c_max, normalize_grad)
-            if use_rare:
-                extras -= 1
-                h_r = soft_energy(z, ref_r, tau)
-                g_r = torch.autograd.grad((-h_r).mean(), xt, retain_graph=extras > 0)[0]
-                total = total + lam_rare * _prep_grad(g_r, c_max, normalize_grad)
-            if use_cls:
-                logit = classifier(x0_enc)
-                g_cls = torch.autograd.grad((-logit).mean(), xt)[0]
-                total = total + lam_cls * _prep_grad(g_cls, c_max, normalize_grad)
-            if float(lam_parent) != 0.0 and not start_from_noise:
-                total = total + float(lam_parent) * _parent_pull(
-                    x0_hat - xt0, kind=parent_leash, delta=parent_delta
-                ).clamp(-c_max, c_max)
+            if space == "x":
+                xt = xt.detach().requires_grad_(True)
+                eps = model(xt, t_batch, cb)
+                x0_hat = (xt - (1.0 - ab).sqrt() * eps) / ab.sqrt()
+                x0_win = x0_hat[..., crop:]
+                terms, h = objective_terms(x0_win)
+                total = guidance(xt, terms) if (active and terms) else torch.zeros_like(xt)
+                if float(lam_parent) != 0.0 and not start_from_noise and active:
+                    pull = _parent_pull(
+                        x0_win - xt0[..., crop:], kind=parent_leash, delta=parent_delta
+                    ).clamp(-c_max, c_max)
+                    total = total + float(lam_parent) * F.pad(pull, (crop, 0))
+                x0_next = x0_hat.detach()
+                edit = total.detach()
+                eps = eps.detach()
+            else:  # x0-space: no backward pass through the denoiser
+                with torch.no_grad():
+                    eps = model(xt.detach(), t_batch, cb)
+                    x0_hat = (xt.detach() - (1.0 - ab).sqrt() * eps) / ab.sqrt()
+                leaf = x0_hat[..., crop:].detach().requires_grad_(True)
+                terms, h = objective_terms(leaf)
+                total = guidance(leaf, terms) if (active and terms) else torch.zeros_like(leaf)
+                if float(lam_parent) != 0.0 and not start_from_noise and active:
+                    total = total + float(lam_parent) * _parent_pull(
+                        leaf.detach() - xt0[..., crop:], kind=parent_leash, delta=parent_delta
+                    ).clamp(-c_max, c_max)
+                x0_next = x0_hat
+                edit = F.pad(total.detach(), (crop, 0))
             last_h = h.detach()
             advance = corr == n_correct - 1
             if t_prev < 0 and advance:
-                xt = (x0_hat - total).detach() if apply_final_grad else x0_hat.detach()
+                xt = (x0_next - final_scale * edit).detach()
                 break
-            if not advance:
-                xt = (ab.sqrt() * x0_hat + (1.0 - ab).sqrt() * eps - total).detach()
-                continue
-            ab_prev = sched.alpha_bar[int(t_prev)]
-            xt = (ab_prev.sqrt() * x0_hat + (1.0 - ab_prev).sqrt() * eps - total).detach()
+            if space == "x":
+                # Locked algebra: subtract the x_t-gradient from the DDIM output.
+                a_next = ab if not advance else sched.alpha_bar[int(t_prev)]
+                xt = (a_next.sqrt() * x0_next + (1.0 - a_next).sqrt() * eps - edit).detach()
+            else:
+                a_next = ab if not advance else sched.alpha_bar[int(t_prev)]
+                xt = (a_next.sqrt() * (x0_next - edit) + (1.0 - a_next).sqrt() * eps).detach()
         if t_prev < 0:
             break
     # Occupancy uses the last predicted x0 energy (before the final subtract).
-    samples = xt.squeeze(1).cpu().numpy().astype(np.float32)
+    samples = xt[..., crop:].squeeze(1).detach().cpu().numpy().astype(np.float32)
     if scaler is not None:
         samples = scaler.inverse(samples, ch_np)
     h_np = last_h.cpu().numpy() if last_h is not None else np.zeros(len(samples))
@@ -461,12 +560,21 @@ def chunked_guided_ddim(
     bsz: int,
     **kwargs: Any,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """``guided_ddim`` in batches. Extra kwargs are forwarded as-is."""
+    """``guided_ddim`` in batches. Extra kwargs are forwarded as-is.
+
+    Per-sample arrays (proto index, proto shift, burn-in prefix) are sliced with
+    the batch. ``anom_proto_shift_max`` > 0 draws one integer shift per sample
+    from U{-m..m} (seeded by ``anom_proto_shift_seed``).
+    """
     xs, hs = [], []
     x0 = np.asarray(x0)
     ch = np.asarray(channel_idx)
     step = max(1, int(bsz))
     proto_idx = kwargs.pop("anom_proto_index", None)
+    shift_max = int(kwargs.pop("anom_proto_shift_max", 0) or 0)
+    shift_seed = int(kwargs.pop("anom_proto_shift_seed", 0) or 0)
+    proto_shift = kwargs.pop("anom_proto_shift", None)
+    prefix = kwargs.pop("burnin_prefix", None)
     if str(kwargs.get("anom_energy_kind", "soft")).lower() == "proto":
         ref_a = kwargs.get("ref_anom")
         if ref_a is None:
@@ -478,16 +586,89 @@ def chunked_guided_ddim(
         else:
             kwargs.pop("anom_proto_seed", None)
             proto_idx = torch.as_tensor(proto_idx, dtype=torch.long)
+        if proto_shift is None and shift_max > 0:
+            proto_shift = torch.as_tensor(
+                proto_shift_draws(len(x0), shift_max, seed=shift_seed), dtype=torch.long
+            )
     else:
         kwargs.pop("anom_proto_seed", None)
+        proto_shift = None
+    if proto_shift is not None:
+        proto_shift = torch.as_tensor(proto_shift, dtype=torch.long)
     for i in range(0, len(x0), step):
         extra = dict(kwargs)
         if proto_idx is not None:
             extra["anom_proto_index"] = proto_idx[i : i + step]
+        if proto_shift is not None:
+            extra["anom_proto_shift"] = proto_shift[i : i + step]
+        if prefix is not None:
+            extra["burnin_prefix"] = np.asarray(prefix)[i : i + step]
         s, h = guided_ddim(model, encoder, x0[i : i + step], ch[i : i + step], schedule, **extra)
         xs.append(s)
         hs.append(h)
     return np.concatenate(xs, axis=0), np.concatenate(hs, axis=0)
+
+
+def proto_shift_draws(n: int, shift_max: int, *, seed: int = 0) -> np.ndarray:
+    """One integer shift per sample, uniform on {-m, ..., m}."""
+    m = max(0, int(shift_max))
+    rng = np.random.default_rng(int(seed))
+    return rng.integers(-m, m + 1, size=int(n)).astype(np.int64)
+
+
+def shift_time_embedding_np(z: np.ndarray, shifts: np.ndarray, n_steps: int) -> np.ndarray:
+    """Numpy twin of ``shift_time_embedding`` (tests run without torch)."""
+    z = np.asarray(z)
+    n = len(z)
+    c = z.shape[1] // int(n_steps)
+    if c * int(n_steps) != z.shape[1]:
+        raise ValueError(f"embedding dim {z.shape[1]} is not a multiple of {n_steps} time steps")
+    zz = z.reshape(n, c, int(n_steps))
+    src = np.clip(np.arange(int(n_steps))[None, :] - np.asarray(shifts).reshape(-1, 1), 0, int(n_steps) - 1)
+    out = np.take_along_axis(zz, np.repeat(src[:, None, :], c, axis=1), axis=2)
+    return out.reshape(n, -1)
+
+
+def shift_time_embedding(z: "torch.Tensor", shifts: "torch.Tensor", n_steps: int) -> "torch.Tensor":
+    """Translate a flattened (C × T) temporal embedding by ``shifts`` steps.
+
+    ``ShellEncoder(pool="time").encode`` returns ``proj(feat).flatten(1)``, i.e.
+    channel-major (index c·T + t). Positive shift moves content later in time;
+    vacated steps repeat the edge value (no wrap-around, which would teleport
+    the end of the window to its start).
+    """
+    n = z.size(0)
+    c = z.size(1) // int(n_steps)
+    if c * int(n_steps) != z.size(1):
+        raise ValueError(f"embedding dim {z.size(1)} is not a multiple of {n_steps} time steps")
+    zz = z.reshape(n, c, int(n_steps))
+    t_idx = torch.arange(int(n_steps), device=z.device).unsqueeze(0)
+    src = (t_idx - shifts.view(-1, 1).to(z.device)).clamp(0, int(n_steps) - 1)
+    out = torch.gather(zz, 2, src.unsqueeze(1).expand(n, c, int(n_steps)))
+    return out.reshape(n, -1)
+
+
+def _encoder_time_steps(encoder: Any) -> int:
+    if str(getattr(encoder, "pool", "pool")) != "time":
+        raise ValueError("anom_proto_shift needs a temporal encoder (ShellEncoder pool='time')")
+    return int(encoder.width) // 8
+
+
+def _repulsion(z: "torch.Tensor") -> "torch.Tensor":
+    """Mean pairwise RBF similarity; minimizing it pushes samples apart."""
+    d2 = ((z.unsqueeze(1) - z.unsqueeze(0)) ** 2).sum(dim=-1)
+    n = z.size(0)
+    off = ~torch.eye(n, dtype=torch.bool, device=z.device)
+    bw = d2.detach()[off].median().clamp(min=1e-8)
+    return torch.exp(-d2 / bw)[off].mean()
+
+
+def _project_out(grad: "torch.Tensor", direction: "torch.Tensor") -> "torch.Tensor":
+    """Remove each row's component along ``direction`` (per sample)."""
+    g = grad.reshape(grad.size(0), -1)
+    d = direction.reshape(direction.size(0), -1)
+    d = d / d.norm(dim=1, keepdim=True).clamp(min=1e-12)
+    return (g - (g * d).sum(dim=1, keepdim=True) * d).view_as(grad)
 
 
 def _parent_pull(residual: "torch.Tensor", *, kind: str, delta: float) -> "torch.Tensor":

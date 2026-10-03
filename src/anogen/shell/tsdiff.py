@@ -2,6 +2,15 @@
 
 S4-D kernel follows Gu et al. (diagonal SSM, Vandermonde + FFT conv).
 Same call signature as UNet1D: (x, t, channel_idx) -> ε.
+
+Causality. With ``bidirectional=False`` (the frozen S1 checkpoint) every S4-D
+layer is a one-sided convolution, ``y[t] = Σ_{s≤t} k[t−s] u[s]``, and every
+other op is pointwise in time, so ε_θ(x_t)[i] only sees x_t[0..i]. A denoiser
+has the whole noisy window available; restricting it to the past makes the
+first bins the worst-estimated ones and smears every guidance VJP toward the
+window start. ``bidirectional=True`` adds a second kernel run on the
+time-reversed input (the standard bidirectional S4 construction) so every bin
+sees both sides. See docs/POSITION_BIAS.md.
 """
 
 from __future__ import annotations
@@ -47,28 +56,43 @@ if torch_available():
             return k.real
 
     class S4D(nn.Module):
-        def __init__(self, d_model: int, d_state: int = 64) -> None:
+        def __init__(self, d_model: int, d_state: int = 64, bidirectional: bool = False) -> None:
             super().__init__()
             self.kernel = S4DKernel(d_model, d_state)
+            # Second kernel for the anti-causal half. Created only when asked so
+            # causal checkpoints keep loading with strict state_dict matching.
+            self.kernel_rev = S4DKernel(d_model, d_state) if bidirectional else None
+            self.bidirectional = bool(bidirectional)
             self.D = nn.Parameter(torch.randn(d_model))
             self.out = nn.Conv1d(d_model, d_model, 1)
+
+        @staticmethod
+        def _causal_conv(u32: "torch.Tensor", k: "torch.Tensor") -> "torch.Tensor":
+            length = u32.size(-1)
+            nfft = 2 * length
+            y = torch.fft.irfft(torch.fft.rfft(u32, n=nfft) * torch.fft.rfft(k, n=nfft), n=nfft)
+            return y[..., :length]
 
         def forward(self, u: "torch.Tensor") -> "torch.Tensor":
             # u: (B, H, L) — FFT in fp32 for stability
             length = u.size(-1)
             orig = u.dtype
             u32 = u.float()
-            k = self.kernel(length)
-            nfft = 2 * length
-            y = torch.fft.irfft(torch.fft.rfft(u32, n=nfft) * torch.fft.rfft(k, n=nfft), n=nfft)
-            y = y[..., :length] + u32 * self.D.float().unsqueeze(-1)
+            y = self._causal_conv(u32, self.kernel(length))
+            if self.kernel_rev is not None:
+                # Anti-causal half: y_rev[t] = Σ_{s≥t} k_rev[s−t] u[s].
+                rev = self._causal_conv(u32.flip(-1), self.kernel_rev(length))
+                y = y + rev.flip(-1)
+            y = y + u32 * self.D.float().unsqueeze(-1)
             return self.out(y.to(orig))
 
     class ResidualS4Block(nn.Module):
-        def __init__(self, hidden: int, d_state: int, time_dim: int) -> None:
+        def __init__(
+            self, hidden: int, d_state: int, time_dim: int, bidirectional: bool = False
+        ) -> None:
             super().__init__()
             self.norm = nn.LayerNorm(hidden)
-            self.s4 = S4D(hidden, d_state)
+            self.s4 = S4D(hidden, d_state, bidirectional=bidirectional)
             self.time = nn.Linear(time_dim, 2 * hidden)
             self.ff = nn.Sequential(
                 nn.Conv1d(hidden, hidden, 1),
@@ -93,9 +117,11 @@ if torch_available():
             n_layers: int = 6,
             d_state: int = 64,
             time_dim: int = 128,
+            bidirectional: bool = False,
         ) -> None:
             super().__init__()
             self.time_dim = time_dim
+            self.bidirectional = bool(bidirectional)
             self.time_mlp = nn.Sequential(
                 nn.Linear(time_dim, time_dim * 2),
                 nn.SiLU(),
@@ -104,7 +130,10 @@ if torch_available():
             self.in_conv = nn.Conv1d(1, hidden, 1)
             self.ch_emb = nn.Embedding(n_channels, hidden)
             self.blocks = nn.ModuleList(
-                [ResidualS4Block(hidden, d_state, time_dim) for _ in range(n_layers)]
+                [
+                    ResidualS4Block(hidden, d_state, time_dim, bidirectional=bidirectional)
+                    for _ in range(n_layers)
+                ]
             )
             self.out_norm = nn.LayerNorm(hidden)
             self.out = nn.Conv1d(hidden, 1, 1)

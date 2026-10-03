@@ -89,6 +89,25 @@ if torch_available():
             rec = rec_n * scale + mean
             return rec, mu, logv
 
+        def forward_pair(
+            self, x: "torch.Tensor", psi: "torch.Tensor | float"
+        ) -> tuple["torch.Tensor", "torch.Tensor", "torch.Tensor", "torch.Tensor"]:
+            """Normal and anomalous decodes from one shared ε (GenIAS Eq. 1).
+
+            x̂ from z = μ + σ⊙ε, x̃ from z̃ = μ + ψ·(σ⊙ε). Both are returned in the
+            per-window whitened units the losses are computed in, alongside the
+            whitened input; ``psi`` may be a learnable tensor.
+            """
+            mean = x.mean(dim=-1, keepdim=True)
+            scale = x.std(dim=-1, keepdim=True).clamp_min(1e-3)
+            xn = (x - mean) / scale
+            mu, logv = self.encode(xn)
+            std = torch.exp(0.5 * logv.clamp(-8.0, 8.0))
+            noise = std * torch.randn_like(std)
+            rec_hat = self.decode(mu + noise, x.size(-1))
+            rec_tilde = self.decode(mu + psi * noise, x.size(-1))
+            return xn, rec_hat, rec_tilde, torch.stack([mu, logv])
+
 else:  # pragma: no cover
 
     class TCNAE:  # type: ignore[no-redef]
@@ -122,7 +141,29 @@ def train_genias(
     val_frac: float = 0.1,
     seed: int = 0,
     device: str | None = None,
+    faithful: bool = False,
+    beta: float = 0.1,
+    zeta: float = 0.1,
+    sigma_prior: float = 0.5,
+    delta_min: float = 0.1,
+    delta_max: float = 0.2,
+    psi_init: float = 2.0,
 ) -> dict[str, Any]:
+    """Train the TCN-VAE.
+
+    ``faithful=False`` (locked S3): reconstruction + standard KL only, ψ chosen
+    at sampling time. This is a reconstructor, so ψ=2 barely leaves the parent
+    (RMSE 8e-4 in docs/RESULTS.md) and every GenIAS row so far scores a
+    near-copy of the donor.
+
+    ``faithful=True`` follows the published objective (Darban et al. 2025,
+    Eq. 2–6, UTS defaults): L = α L_recon + β L_perturb + ζ L_compKL with a
+    *learned* ψ ≥ 1, the triplet-margin perturbation loss
+    max(d(X,X̂) − d(X,X̃) + δ_min, 0) + max(d(X,X̃) − δ_max, 0) with d = MSE,
+    and the compact KL against N(0, σ_prior²). γ (zero-perturbation) is 0 for
+    univariate series, as in the paper. Distances are in per-window whitened
+    units, the same units the reconstruction loss already uses here.
+    """
     _require_torch()
     x = np.asarray(x, dtype=np.float32)
     if x.ndim != 2:
@@ -137,7 +178,14 @@ def train_genias(
 
     device_t = torch.device(device or ("cuda" if torch.cuda.is_available() else "cpu"))
     model = TCNAE(hidden=hidden, latent=latent).to(device_t)
-    opt = torch.optim.Adam(model.parameters(), lr=lr)
+    # ψ = 1 + softplus(ρ) keeps the perturbation an inflation (ψ ≥ 1).
+    psi_raw = torch.nn.Parameter(
+        torch.tensor(float(np.log(np.expm1(max(float(psi_init) - 1.0, 1e-3)))), device=device_t)
+    )
+    params = list(model.parameters()) + ([psi_raw] if faithful else [])
+    opt = torch.optim.Adam(params, lr=lr)
+    hist_perturb: list[float] = []
+    hist_psi: list[float] = []
     ds = TensorDataset(torch.from_numpy(x[train_idx]).unsqueeze(1))
     loader = DataLoader(ds, batch_size=min(batch_size, len(train_idx)), shuffle=True)
     x_val = torch.from_numpy(x[val_idx]).unsqueeze(1).to(device_t)
@@ -159,15 +207,32 @@ def train_genias(
     while step < steps:
         for (xb,) in loader:
             xb = xb.to(device_t)
-            rec, mu, logv = model(xb, psi=1.0)
-            mean = xb.mean(dim=-1, keepdim=True)
-            scale = xb.std(dim=-1, keepdim=True).clamp_min(1e-3)
-            recon = F.mse_loss((rec - mean) / scale, (xb - mean) / scale)
-            kl = -0.5 * (1 + logv - mu.pow(2) - logv.exp()).mean()
-            loss = recon + kl_w * kl
+            if faithful:
+                psi_t = 1.0 + F.softplus(psi_raw)
+                xn, rec_hat, rec_tilde, ml = model.forward_pair(xb, psi_t)
+                mu, logv = ml[0], ml[1]
+                recon = F.mse_loss(rec_hat, xn)
+                d_hat = ((rec_hat - xn) ** 2).mean(dim=(1, 2))
+                d_tilde = ((rec_tilde - xn) ** 2).mean(dim=(1, 2))
+                perturb = (
+                    F.relu(d_hat - d_tilde + float(delta_min)) + F.relu(d_tilde - float(delta_max))
+                ).mean()
+                sp2 = float(sigma_prior) ** 2
+                kl = -0.5 * (
+                    1 + logv - mu.pow(2) - logv.exp() / sp2 + 2.0 * float(np.log(sigma_prior))
+                ).mean()
+                loss = recon + float(beta) * perturb + float(zeta) * kl
+            else:
+                rec, mu, logv = model(xb, psi=1.0)
+                mean = xb.mean(dim=-1, keepdim=True)
+                scale = xb.std(dim=-1, keepdim=True).clamp_min(1e-3)
+                recon = F.mse_loss((rec - mean) / scale, (xb - mean) / scale)
+                kl = -0.5 * (1 + logv - mu.pow(2) - logv.exp()).mean()
+                perturb = torch.zeros((), device=device_t)
+                loss = recon + kl_w * kl
             opt.zero_grad(set_to_none=True)
             loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+            torch.nn.utils.clip_grad_norm_(params, 1.0)
             opt.step()
             last = float(loss.item())
             last_recon = float(recon.item())
@@ -179,6 +244,8 @@ def train_genias(
                 hist_loss.append(float(ema))
                 hist_recon.append(last_recon)
                 hist_kl.append(last_kl)
+                hist_perturb.append(float(perturb.item()))
+                hist_psi.append(float((1.0 + F.softplus(psi_raw)).item()))
             if step == 1 or step % val_every == 0 or step >= steps:
                 model.eval()
                 with torch.no_grad():
@@ -216,6 +283,10 @@ def train_genias(
         "n_train": int(len(train_idx)),
         "n_val": int(len(val_idx)),
         "kl_w": float(kl_w),
+        "faithful": bool(faithful),
+        "psi_learned": float((1.0 + F.softplus(psi_raw)).item()) if faithful else float("nan"),
+        "loss_perturb": np.asarray(hist_perturb, dtype=np.float64),
+        "psi_trace": np.asarray(hist_psi, dtype=np.float64),
         "loss_step": np.asarray(hist_step, dtype=np.int64),
         "loss_value": np.asarray(hist_loss, dtype=np.float64),
         "loss_recon": np.asarray(hist_recon, dtype=np.float64),
@@ -246,6 +317,46 @@ def deviation_patch(
     dev = (parent.astype(np.float64) - generated.astype(np.float64)) ** 2
     keep = dev > (float(tau) * amp[:, None])
     return np.where(keep, generated, parent).astype(np.float32)
+
+
+def genias_patch_alg2(
+    parent: np.ndarray,
+    generated: np.ndarray,
+    tau: float,
+    *,
+    units: str = "raw",
+) -> tuple[np.ndarray, np.ndarray]:
+    """GenIAS Algorithm 2 as published: per *dimension*, whole trajectory.
+
+    For each dimension d: X̃_d is kept iff ‖X_d − X̃_d‖²₂ > τ·(max X_d − min X_d),
+    otherwise the parent trajectory X_d is returned. For univariate windows
+    this degenerates to "replace the whole window or keep the parent", which
+    is stated here rather than hidden. ``deviation_patch`` (per timestep) is a
+    different rule and stays as the editor's variant.
+
+    The criterion compares a squared norm (units²) with an amplitude (units),
+    so τ does not transfer across scalings. ``units="raw"`` applies it to the
+    windows as given; ``units="whitened"`` applies it after per-window
+    z-scoring of the parent (the units GenIAS trains in here), which makes the
+    threshold scale-free. Returns (patched windows, replaced mask).
+    """
+    x = np.asarray(parent, dtype=np.float64)
+    g = np.asarray(generated, dtype=np.float64)
+    if x.shape != g.shape:
+        raise ValueError(f"parent {x.shape} vs generated {g.shape}")
+    if units == "whitened":
+        mu = x.mean(axis=1, keepdims=True)
+        sd = np.maximum(x.std(axis=1, keepdims=True), 1e-12)
+        xs, gs = (x - mu) / sd, (g - mu) / sd
+    elif units == "raw":
+        xs, gs = x, g
+    else:
+        raise ValueError(f"units must be raw|whitened, got {units!r}")
+    sq = ((xs - gs) ** 2).sum(axis=1)
+    amp = xs.max(axis=1) - xs.min(axis=1)
+    replace = sq > float(tau) * amp
+    out = np.where(replace[:, None], g, x).astype(np.float32)
+    return out, replace
 
 
 def patch_stats(parent: np.ndarray, patched: np.ndarray) -> dict[str, float]:

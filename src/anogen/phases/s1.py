@@ -100,6 +100,7 @@ def run_s1(cfg: dict[str, Any]) -> dict[str, Any]:
         n_layers=int(dcfg.get("n_layers", 6)),
         d_state=int(dcfg.get("d_state", 64)),
         scaler=scaler,
+        bidirectional=bool(dcfg.get("bidirectional", False)),
     )
     model = trained.pop("model")
     schedule = trained.pop("schedule")
@@ -144,6 +145,7 @@ def run_s1(cfg: dict[str, Any]) -> dict[str, Any]:
         "hidden": int(dcfg.get("hidden", 48)),
         "n_layers": int(dcfg.get("n_layers", 6)),
         "d_state": int(dcfg.get("d_state", 64)),
+        "bidirectional": bool(dcfg.get("bidirectional", False)),
         "n_channels": panel.k,
         "n_times": int(dcfg.get("n_times", 200)),
         "W": width,

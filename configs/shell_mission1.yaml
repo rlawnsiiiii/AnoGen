@@ -54,6 +54,9 @@ shell:
     ddim_steps: 20
     unguided_nu: 1.0
     n_sample: 256
+    # false = frozen causal S4-D (every layer sees only x_t[0..i]).
+    # `anogen s1bidir` trains the bidirectional variant into results/shell_s1_bidir.
+    bidirectional: false
   steer:
     enc_hidden: 32
     emb: 32
@@ -95,6 +98,31 @@ shell:
     psi: 2.0
     psi_extra: [1.0, 1.5]
     patch_tau: 0.2
+  # docs/POSITION_BIAS.md. Isolated results/shell_fixsweep; does not touch any freeze.
+  fixsweep:
+    encoder: time_both
+    recipe: hybrid_needles
+    folds: [0, 1, 2]
+    burnin_bins: 128
+    n_boot: 1000
+    baseline: c1_repro
+    # variants: omit to use DEFAULT_VARIANTS in phases/fixsweep.py. Example of
+    # adding the bidirectional backbone once `anogen s1bidir` has run:
+    # variants:
+    #   c1_repro: {}
+    #   bidir_x0: {denoiser: results/shell_s1_bidir/denoiser.pt, guidance_space: x0}
+  # Published GenIAS objective (P6). Isolated results/shell_genias_fair.
+  genias_fair:
+    steps: 15000
+    latent: 16
+    beta: 0.1
+    zeta: 0.1
+    sigma_prior: 0.5
+    delta_min: 0.1
+    delta_max: 0.2
+    psi_init: 2.0
+    tau_raw: [0.01, 0.1, 1.0]
+    tau_whitened: [1.0, 10.0, 50.0]
   adapter:
     hidden: 64
     steps: 800

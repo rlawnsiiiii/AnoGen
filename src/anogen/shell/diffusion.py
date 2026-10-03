@@ -170,6 +170,61 @@ def ddim_sample(
     return xt
 
 
+def flip_blend_weights(length: int, mode: str = "ramp") -> np.ndarray:
+    """Weight on the forward (causal) pass per position for ``FlipEnsemble``.
+
+    ``ramp``: w[i] = i / (L-1), so the causal pass dominates where it has seen
+    the most context (the window end) and the time-reversed pass dominates at
+    the start. ``avg``: 0.5 everywhere. Numpy twin used by the tests.
+    """
+    if mode == "avg":
+        return np.full(int(length), 0.5, dtype=np.float32)
+    if mode == "ramp":
+        return np.linspace(0.0, 1.0, int(length), dtype=np.float32)
+    raise ValueError(f"unknown flip blend {mode!r} (ramp|avg)")
+
+
+if _TORCH:
+
+    class FlipEnsemble(nn.Module):
+        """Zero-retrain bidirectional context for a *causal* ε-network.
+
+        ε(x) = w ⊙ ε_θ(x) + (1 − w) ⊙ flip(ε_θ(flip(x))). The reversed pass is
+        the causal network reading the window backwards, i.e. an anti-causal
+        estimate; this assumes the nominal process is approximately
+        time-reversible (true for stationary Gaussian oscillations, checked in
+        docs/TESTBED.md). Costs two forward passes. Gradients flow through both.
+        """
+
+        def __init__(self, model: Any, mode: str = "ramp") -> None:
+            super().__init__()
+            self.model = model
+            self.mode = str(mode)
+
+        def forward(
+            self, x: "torch.Tensor", t: "torch.Tensor", channel_idx: "torch.Tensor"
+        ) -> "torch.Tensor":
+            fwd = self.model(x, t, channel_idx)
+            rev = self.model(x.flip(-1), t, channel_idx).flip(-1)
+            w = torch.as_tensor(
+                flip_blend_weights(x.size(-1), self.mode), device=x.device, dtype=fwd.dtype
+            ).view(1, 1, -1)
+            return w * fwd + (1.0 - w) * rev
+
+
+def wrap_denoiser(model: Any, flip: str | None = None) -> Any:
+    """Optionally wrap a causal denoiser in ``FlipEnsemble`` (flip=ramp|avg)."""
+    if not flip or str(flip).lower() in {"none", "off", "false"}:
+        return model
+    _require_torch()
+    if bool(getattr(model, "bidirectional", False)):
+        # Already sees both sides; flipping would only average two bidirectional passes.
+        return model
+    wrapped = FlipEnsemble(model, mode=str(flip).lower())
+    wrapped.eval()
+    return wrapped
+
+
 def count_params(model: Any) -> int:
     return int(sum(p.numel() for p in model.parameters()))
 
@@ -184,8 +239,13 @@ def build_denoiser(
     time_dim: int = 128,
     state_dict: Any | None = None,
     device: Any | None = None,
+    bidirectional: bool = False,
 ) -> Any:
-    """Construct UNet1D or the TSDiff S4-D score. Old checkpoints default to unet."""
+    """Construct UNet1D or the TSDiff S4-D score. Old checkpoints default to unet.
+
+    ``bidirectional`` only applies to the TSDiff backbone (the U-Net already
+    sees both sides through its 'same'-padded convolutions).
+    """
     _require_torch()
     name = (backbone or "unet").lower()
     if name in {"tsdiff", "s4"}:
@@ -197,6 +257,7 @@ def build_denoiser(
             n_layers=n_layers,
             d_state=d_state,
             time_dim=time_dim,
+            bidirectional=bool(bidirectional),
         )
     else:
         model = UNet1D(hidden=hidden, n_channels=n_channels, time_dim=time_dim)
@@ -217,6 +278,7 @@ def denoiser_from_ckpt(ckpt: dict[str, Any], device: Any | None = None) -> Any:
         time_dim=int(ckpt.get("time_dim", 128)),
         state_dict=ckpt["state_dict"],
         device=device,
+        bidirectional=bool(ckpt.get("bidirectional", False)),
     )
 
 
@@ -237,6 +299,7 @@ def train_denoiser(
     n_layers: int = 6,
     d_state: int = 64,
     scaler: Any | None = None,
+    bidirectional: bool = False,
 ) -> dict[str, Any]:
     """Train ε-prediction. Returns model, schedule, and scalar logs."""
     _require_torch()
@@ -259,6 +322,7 @@ def train_denoiser(
         n_channels=n_channels,
         n_layers=n_layers,
         d_state=d_state,
+        bidirectional=bidirectional,
     ).to(device_t)
     schedule = DiffusionSchedule.linear(n_times).to(device_t)
     opt = torch.optim.Adam(model.parameters(), lr=lr)
@@ -319,6 +383,7 @@ def train_denoiser(
         "backbone": (backbone or "unet").lower(),
         "n_layers": int(n_layers),
         "d_state": int(d_state),
+        "bidirectional": bool(bidirectional),
         "steps": steps,
         "train_loss": last_loss,
         "train_loss_ema": float(ema),
