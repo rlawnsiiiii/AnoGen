@@ -5,10 +5,13 @@ import numpy as np
 from anogen.testbed.gauss import GPChannel, Schedule
 from anogen.testbed.npnet import TinyEpsNet, train_eps_net
 
-causal = sys.argv[1] == "causal"
+name = sys.argv[1]
+causal = name.startswith("causal")
 steps = int(sys.argv[2]) if len(sys.argv) > 2 else 2500
 out = Path("results/testbed/nets"); out.mkdir(parents=True, exist_ok=True)
-ch, sch = GPChannel(), Schedule()
+from anogen.testbed.gauss import GeometricSchedule
+ch = GPChannel()
+sch = GeometricSchedule() if name.endswith("_geo") else Schedule()
 chol = np.linalg.cholesky(ch.cov(512))
 fn = lambda n, rng: ch.mean + (chol @ rng.standard_normal((512, n))).T  # noqa: E731
 net = TinyEpsNet(hidden=32, k=5, dilations=(1, 2, 4, 8, 16), causal=causal, seed=0)

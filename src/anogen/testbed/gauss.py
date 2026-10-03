@@ -76,6 +76,15 @@ class Schedule:
         self.alpha_bar = np.cumprod(1.0 - betas)
 
 
+class GeometricSchedule:
+    """Log-spaced noise-to-signal ratios, twin of DiffusionSchedule.geometric."""
+
+    def __init__(self, n_times: int = 200, sigma_min: float = 1e-3, sigma_max: float = 10.0):
+        sig = np.geomspace(float(sigma_min), float(sigma_max), int(n_times))
+        self.alpha_bar = 1.0 / (1.0 + sig**2)
+        self.n_times = int(n_times)
+
+
 # --------------------------------------------------------------------------
 # Exact denoisers
 # --------------------------------------------------------------------------

@@ -271,6 +271,8 @@ def _resolved_spec(cfg: dict[str, Any]) -> dict[str, Any]:
                 "timeleash_l2",
                 "timeleash_gm",
                 "hashfix",
+                "c1_chanmix",
+                "c2_chanmix",
             ]
         ),
         "references": {
@@ -580,7 +582,17 @@ def _load_galleries(
         "timeleash_l2": (_abs(cfg.get("timeleash_dir", root / "results/shell_timeleash"), root), "time_both_l2_fold{fold}.npz"),
         "timeleash_gm": (_abs(cfg.get("timeleash_dir", root / "results/shell_timeleash"), root), "time_both_gm_fold{fold}.npz"),
         "hashfix": (_abs(cfg.get("hashfix_dir", root / "results/shell_hashfix"), root), "time_both_hashfix_fold{fold}.npz"),
+        # NEXT_STEPS P1: the reportable C1 is the channel-stratified (chanmix) gallery.
+        "c1_chanmix": (_abs(cfg.get("chanmix_dir", root / "results/shell_chanmix"), root), "time_both_hybrid_needles_fold{fold}.npz"),
+        "c2_chanmix": (_abs(cfg.get("chanmix_dir", root / "results/shell_chanmix"), root), "time_recon_hybrid_needles_fold{fold}.npz"),
     }
+    # Every fix-sweep variant, if that phase has run (docs/POSITION_BIAS.md).
+    fs_dir = _abs(cfg.get("fixsweep_dir", root / "results/shell_fixsweep"), root)
+    if fs_dir.is_dir():
+        for path in sorted(fs_dir.glob("*_fold0.npz")):
+            vname = "fixsweep_" + path.name[: -len("_fold0.npz")]
+            fold_specs[vname] = (fs_dir, path.name.replace("_fold0.npz", "_fold{fold}.npz"))
+            requested.add(vname)
     for name, (directory, pattern) in fold_specs.items():
         if name not in requested:
             continue
