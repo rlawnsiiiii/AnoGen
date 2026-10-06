@@ -63,7 +63,8 @@ shell:
   # (95 % texture kept, terminal SNR <= 1 % on every channel). scaler_v2 is used
   # by S1 only and stored in its checkpoint; S0 is untouched, and fixsweep /
   # diffdetect keep the frozen edit's physical noise level (scaler.unit_scale).
-  # diffusion_v2: {sigma_min: 1.0e-3, sigma_max: 10.0, parameterization: v, ema_decay: 0.999}
+  # diffusion_v2: {sigma_min: 1.0e-3, sigma_max: 10.0, ema_decay: 0.999}
+  #   (add parameterization: v only if from-noise samples keep a level bias; no gain in testbed E16)
   # scaler_v2: {kind: standard}        # per-channel z-score; or {feature_range: [-1.0, 1.0]}
   steer:
     enc_hidden: 32
@@ -142,6 +143,7 @@ shell:
     #        "fixsweep:flip_x0_contrast_masked+real", "fixsweep:flip_x0_contrast_masked_div+real",
     #        "fixsweep:nosteer_flip_x0_masked+real",
     #        "fixsweep:flip_x0_final025_recur2_decay1+real", "fixsweep:nosteer_flip_x0_recur2+real"]
+    #   after `anogen geniasfair` also "geniasfair:genias_fair+real" (published GenIAS objective)
     # compare:
     #   - ["fixsweep:flip_x0_contrast_masked_div+real", "genias+real"]
     #   - ["fixsweep:flip_x0_contrast_masked_div+real", c1_plus_real]

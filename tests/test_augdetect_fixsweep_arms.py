@@ -112,3 +112,20 @@ def test_return_donor_tracks_s3_rows_and_plus_real_keeps_the_leak_flag(tmp_path)
     assert np.array_equal(xs, xs2)
     assert _arm_leaks_fold0("genfsdiff_c1+real") and _arm_leaks_fold0("c1_plus_real")
     assert not _arm_leaks_fold0("genias+real")
+
+
+def test_geniasfair_arm_reads_the_fair_gallery_donor_disjoint(tmp_path):
+    import pytest
+
+    n, w = 24, 8
+    cond_ch = np.arange(n) % 3
+    x = np.tile(np.arange(n, dtype=np.float32)[:, None], (1, w))
+    np.savez_compressed(tmp_path / "galleries.npz", channel_idx=cond_ch, cond=x, genias_fair=x + 0.5)
+    xs, ch = _synth_for_arm("geniasfair:genias_fair+real", fold_id=0, rng=np.random.default_rng(0), n_synth=100,
+                            galleries={}, hybrid=tmp_path, enc_score=tmp_path, cond_ch=cond_ch,
+                            exclude_donor_fold=0, geniasfair_dir=tmp_path)
+    donors = (xs[:, 0] - 0.5).astype(int)
+    assert len(xs) == 16 and np.all(donors % 3 != 0) and np.array_equal(ch, cond_ch[donors])
+    with pytest.raises(FileNotFoundError):
+        _synth_for_arm("geniasfair:nope", fold_id=0, rng=np.random.default_rng(0), n_synth=5, galleries={},
+                       hybrid=tmp_path, enc_score=tmp_path, cond_ch=cond_ch, geniasfair_dir=tmp_path)

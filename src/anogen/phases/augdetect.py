@@ -62,6 +62,9 @@ def run_augdetect(cfg: dict[str, Any]) -> dict[str, Any]:
     fixsweep_dir = _abs(
         ((cfg.get("shell") or {}).get("fixsweep") or {}).get("out", root / "results/shell_fixsweep"), root
     )
+    geniasfair_dir = _abs(
+        ((cfg.get("shell") or {}).get("genias_fair") or {}).get("out", root / "results/shell_genias_fair"), root
+    )
     plots = out / "plots"
     docs_plots = root / "docs" / "augdetect"
     out.mkdir(parents=True, exist_ok=True)
@@ -230,6 +233,7 @@ def run_augdetect(cfg: dict[str, Any]) -> dict[str, Any]:
                         flip_test=flip_test,
                         diff_scores=diff_scores,
                         fixsweep_dir=fixsweep_dir,
+                        geniasfair_dir=geniasfair_dir,
                         real_frac=real_frac,
                         synth_filter=synth_filter,
                         novelty_cache=novelty_cache,
@@ -363,6 +367,7 @@ def _run_one(
     flip_test: bool = False,
     diff_scores: dict[str, np.ndarray] | None = None,
     fixsweep_dir: Path | None = None,
+    geniasfair_dir: Path | None = None,
     real_frac: float | None = None,
     synth_filter: Any = None,
     novelty_cache: dict[tuple, Any] | None = None,
@@ -405,6 +410,7 @@ def _run_one(
         cond_ch=cond_ch,
         exclude_donor_fold=fold_id if donor_disjoint else None,
         fixsweep_dir=fixsweep_dir,
+        geniasfair_dir=geniasfair_dir,
         return_donor=True,
     )
     # 20 % of the training nominals are always kept out of fitting (so the CNN
@@ -640,6 +646,7 @@ def _synth_for_arm(
     exclude_donor_fold: int | None = None,
     fixsweep_dir: Path | None = None,
     return_donor: bool = False,
+    geniasfair_dir: Path | None = None,
 ) -> tuple[np.ndarray, ...]:
     """Synthetic positives for one arm and test fold.
 
@@ -648,6 +655,9 @@ def _synth_for_arm(
     e.g. the recommended recipe and its no-steer twin, so the detection gain
     of steering can be separated from the gain of any regenerated window.
     Any other arm takes ``+real`` the same way (``genias+real``, ``posthoc+real``).
+    ``geniasfair:<gallery>`` reads ``<geniasfair_dir>/galleries.npz`` (``anogen
+    geniasfair``: the published GenIAS objective; ``geniasfair:genias_fair`` is the
+    unpatched gallery), also in S3 donor order.
     ``return_donor`` adds a third array: each row's S3 donor index (−1 when the
     gallery is not stored in donor order).
     """
@@ -687,6 +697,18 @@ def _synth_for_arm(
         blob = np.load(path, allow_pickle=True)
         ch = np.asarray(blob["channel_idx"]) if "channel_idx" in blob.files else cond_ch
         return _take(*_disjoint(np.asarray(blob["x"]), ch))
+    if key.startswith("geniasfair:"):
+        name = key[len("geniasfair:") :] or "genias_fair"
+        if geniasfair_dir is None:
+            raise FileNotFoundError(f"{arm}: no genias_fair directory configured")
+        path = Path(geniasfair_dir) / "galleries.npz"
+        if not path.is_file():
+            raise FileNotFoundError(path)
+        blob = np.load(path)
+        if name not in blob.files:
+            raise FileNotFoundError(f"{name} not in {path} (has {sorted(blob.files)})")
+        ch = np.asarray(blob["channel_idx"]) if "channel_idx" in blob.files else cond_ch
+        return _take(*_disjoint(np.asarray(blob[name]), ch))
     if key in galleries:
         x, ch = galleries[key]
         return _take(*_disjoint(x, ch))

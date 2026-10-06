@@ -190,6 +190,9 @@ What the testbed says to expect, in order of cost:
 
 ## 6. How to run (workstation, in this order)
 
+Step by step, with what to check after each run and what to send back:
+[NEXT_STEPS_2026-10-06.md](NEXT_STEPS_2026-10-06.md).
+
 ```bash
 # 0. 5 min, no generation: confirm the diagnosis on the real checkpoint and galleries
 .venv/bin/python scripts/diagnose_causality.py -c configs/shell_mission1.yaml
