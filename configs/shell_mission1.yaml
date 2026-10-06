@@ -76,8 +76,71 @@ shell:
     ddim_steps_long: 200
   kindmix:
     n: 256
+  kindmixscore:
+    # false: contiguous donor split, so each targeted kind sees only the one or
+    # two channels its block lands on (the frozen hybrid_needles galleries).
+    # true: split within every channel instead. scripts/run_chanmix.py sets this
+    # and writes results/shell_chanmix/. See docs/CHANMIX.md.
+    channel_stratified: false
   kindmix_htune:
     n: 128
+  quiettune:
+    n: 128
+    lam_quiet: [0.0, 0.05, 0.10, 0.15, 0.20]
+  genbase:
+    cutaddpaste:
+      width_frac: [0.08, 0.35]
+      trend_scale: 0.5
+      jitter_sigma: 0.05
+      n_paste: 1
+    taxonomy:
+      families: [point, contextual, shapelet, seasonal, trend]
+      severity: [0.5, 2.0]
+  editor:
+    n_keep: 3
+    patch_tau: 0.2
+  timeleash:
+    n: 1536
+    encoders: [time_both]
+    recipes: [l2, gm]
+    l2:
+      lam_parent: 0.03
+      parent_leash: l2
+    gm:
+      lam_parent: 0.15
+      parent_leash: gm
+      parent_delta: 0.03
+  hashfix:
+    n: 1536
+    encoders: [time_both]
+    ddim_steps: 20
+    normalize_grad: false
+    apply_final_grad: false
+  realism:
+    # Freeze before the first full audit run. Raw-window audit only:
+    # feature_pack_v1, S3, S4, and tau remain unchanged.
+    bins: 50
+    max_lag: 64
+    median_width: 9
+    mad_scale: 4.0
+    cusum_min_segment: 8
+    n_min: 10
+    bootstrap: 1000
+    seeds: [0, 1, 2, 3, 4]
+    c2st_test_size: 0.3
+    c2st_permutations: 200
+    methods: [donor, shell, unguided, genias, genias_patched, posthoc, c1, c2, cutaddpaste, taxonomy, editor, timeleash_l2, timeleash_gm, hashfix]
+  augdetect:
+    n_synth: 256
+    steps: 400
+    hidden: 32
+    batch_size: 32
+    lr: 1.0e-3
+    seeds: [0, 1, 2, 3, 4]
+    target_far: 0.01
+    n_boot: 1000
+    n_nominal_test: 512
+    arms: [real_only, posthoc, taxonomy, cutaddpaste, genias, unguided, genfsdiff_c1, genfsdiff_c3, c1_plus_real, c3_plus_real]
   enc_ablation:
     time_emb: 8
     steps_recon: 800
@@ -122,4 +185,12 @@ kindmix_score_dir: results/shell_kindmix_score_esa
 kindmix_score_hybrid_dir: results/shell_kindmix_score_hybrid
 kindmix_htune_dir: results/shell_kindmix_htune
 noise_score_dir: results/shell_noise_score
+ablate_lambda_dir: results/shell_ablate_lambda
+quiettune_dir: results/shell_quiettune
+genbase_dir: results/shell_genbase
+augdetect_dir: results/shell_augdetect
+editor_dir: results/shell_editor
+timeleash_dir: results/shell_timeleash
+hashfix_dir: results/shell_hashfix
+realism_dir: results/shell_realism
 enc_score_dir: results/shell_enc_score
