@@ -42,4 +42,7 @@ def test_contrast_mask_shapes_and_extent():
     assert m.shape == (2, 512) and m.dtype == bool
     assert not m[0, 91] and m[0, 92] and m[0, -1]
     s = contrast_mask("spike", np.array([200]), 512, dilate=4, spike_half=1, flank_gap=3)
-    assert s[0].sum() == 2 * (1 + 3 + 4) + 1 and s[0, 200]
+    assert s[0].sum() == 2 * (1 + 3) + 1 and s[0, 200]
+    # the flanks of the spike contrast stay outside the generated region
+    w = contrast_weights("spike", np.array([200]), 512, spike_half=1, flank_gap=3)
+    assert not np.any(s[0] & (w[0] < 0))

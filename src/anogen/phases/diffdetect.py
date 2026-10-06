@@ -169,6 +169,7 @@ def run_diffdetect(cfg: dict[str, Any]) -> dict[str, Any]:
             rare_t=sr_t,
             fresh_t=sd_t,
             fresh_channel=ch_d,
+            fuse=np.asarray(fuse),
             key=np.asarray(key),
         )
         rows = []

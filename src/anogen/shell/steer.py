@@ -565,8 +565,14 @@ def guided_ddim(
         dithers around the target); not taken through the denoiser Jacobian.
         """
         d = (x0_win.detach().squeeze(1) * cw).sum(dim=-1)
-        scale = (d - ct) / (cw * cw).sum(dim=-1).clamp(min=1e-12)
-        return float(lam_contrast) * (scale.unsqueeze(-1) * cw).unsqueeze(1)
+        # Under an anomaly mask only the masked bins may move: project along the
+        # masked direction w_m = w ⊙ m, normalized by ‖w_m‖² (w·w_m = ‖w_m‖², so
+        # λ = 1 still lands exactly on w·x̂₀ = δ). Without this the later
+        # multiplication by the mask would shrink the step by ‖w_m‖²/‖w‖², a
+        # factor that depends on the sampled position.
+        wd = cw * gen_mask[:, 0, win].to(cw.dtype) if gen_mask is not None else cw
+        scale = (d - ct) / (wd * wd).sum(dim=-1).clamp(min=1e-12)
+        return float(lam_contrast) * (scale.unsqueeze(-1) * wd).unsqueeze(1)
 
     def guidance(target: "torch.Tensor", terms: list[tuple[float, "torch.Tensor", str]]) -> "torch.Tensor":
         """Σ λ_k prep(∇_target loss_k); repulsion optionally projected off ∇band."""
@@ -590,7 +596,8 @@ def guided_ddim(
         t_prev = times[i + 1] if i + 1 < len(times) else -1
         frac = float(t) / float(max(t_start, 1))
         active = t_lo <= frac <= t_hi
-        n_rec = 1 if t_prev < 0 else n_recur
+        # repeated DDIM times (t == t') have no noise interval to travel back over
+        n_rec = 1 if (t_prev < 0 or int(t_prev) == int(t)) else n_recur
         for rec in range(n_rec):
             for corr in range(n_correct):
                 t_batch = torch.full((xt.size(0),), int(t), device=device_t, dtype=torch.long)

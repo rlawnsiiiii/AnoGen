@@ -14,6 +14,11 @@ in the *scaled* units the denoiser is trained in, and reports per channel:
   any sampler);
 * the largest σ_min that keeps 95 % of the texture.
 
+σ_min is in the units of the scaled windows: S0's range by default. For an
+s1v2 retrain with ``scaler_v2.feature_range: [-1, 1]`` pass
+``--feature-range -1 1`` (a [0, 1] → [-1, 1] change doubles every amplitude,
+so the σ_min that keeps the same texture doubles too).
+
 Writes results/shell_diagnose/schedule_check.json.
 """
 
@@ -37,6 +42,14 @@ def main() -> None:
     ap.add_argument("-c", "--config", required=True)
     ap.add_argument("--n", type=int, default=1024, help="windows per channel")
     ap.add_argument("--sigmas", type=float, nargs="*", default=[0.01, 0.003, 0.001, 0.0003])
+    ap.add_argument(
+        "--feature-range",
+        type=float,
+        nargs=2,
+        default=None,
+        help="report in the units of the planned S1 scaler (e.g. -1 1 for scaler_v2); "
+        "default: S0's scaler range. σ_min is in these units.",
+    )
     args = ap.parse_args()
     cfg = load_config(args.config)
     root = Path(cfg["_repo_root"])
@@ -62,6 +75,10 @@ def main() -> None:
         x = materialize(panel, sub, w)
         ch = sub["channel_idx"].to_numpy(dtype=np.int64)
         xs = scaler.transform(x, ch).astype(np.float64)
+        if args.feature_range is not None:  # re-express in the planned scaler's units
+            a, b = scaler.feature_range
+            a2, b2 = args.feature_range
+            xs = a2 + (xs - a) / (b - a) * (b2 - a2)
         r = texture_report(xs, list(args.sigmas))
         r["sigma_min_for_95pct_texture"] = sigma_min_for(window_spectrum(xs), width=w, keep=0.95)
         report[f"channel_idx_{int(c)}"] = r

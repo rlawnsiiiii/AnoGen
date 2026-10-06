@@ -131,10 +131,12 @@ def contrast_mask(
 
     step   [p − dilate, end): the shifted tail, starting ``dilate`` bins early so
            the denoiser makes the transition instead of the mask edge;
-    spike  [p − h − gap − dilate, p + h + gap + dilate]: the excursion and the gap
-           to its flanks (the flanks themselves stay donor, so the contrast is
-           measured against real context).
-    The mask is also the bin-level label of the generated anomaly.
+    spike  [p − h − gap, p + h + gap]: the excursion and the gap to its flanks.
+           ``dilate`` is not applied: the gap already gives the transition room,
+           and the flanks must stay donor so the contrast is measured against
+           real context (and cannot be met by pushing the flanks).
+    The mask is also the bin-level label of the generated anomaly (for a step
+    it starts ``dilate`` bins before the requested onset).
     """
     pos = np.asarray(positions, dtype=np.int64).reshape(-1)
     idx = np.arange(int(width))[None, :]
@@ -142,6 +144,6 @@ def contrast_mask(
         lo = np.maximum(pos - int(dilate), 0)[:, None]
         return idx >= lo
     if kind == "spike":
-        r = int(spike_half) + int(flank_gap) + int(dilate)
+        r = int(spike_half) + int(flank_gap)
         return (idx >= (pos - r)[:, None]) & (idx <= (pos + r)[:, None])
     raise ValueError(f"unknown contrast kind {kind!r} (use {CONTRAST_KINDS})")

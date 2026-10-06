@@ -157,6 +157,13 @@ def main() -> None:
                     standardize_phi(q_emb, phi_stats)[:, None, :] - standardize_phi(g_emb, phi_stats)[None, :, :], axis=2
                 ), axis=1)))
             )
+            # Sensitivity: φ without the three upper log-FFT bands (texture);
+            # testbed E12 shows frozen-φ ARP is dominated by texture match.
+            r["arp_phi_no_hf"] = float(
+                1.0 / (1.0 + np.mean(np.min(np.linalg.norm(
+                    q_emb[:, None, :9] - g_emb[None, :, :9], axis=2
+                ), axis=1)))
+            )
             r.update({f"prdc_{k}": v for k, v in prdc(q_emb, g_emb).items()})
             r["phi_attribution"] = feature_attribution(q_emb, g_emb, PHI_NAMES)
             u = channel_span_normalize(x, ch, scaler)
@@ -188,14 +195,14 @@ def main() -> None:
         return f"[{np.mean([v[0] for v in vals]):.3f}, {np.mean([v[1] for v in vals]):.3f}]" if vals else ""
 
     lines = [
-        "| gallery | ARP | ARP 95% CI | ARP − donor | ARP − unguided | ARP (std φ) | Cov@τ | precision | density | coverage(PRDC) | start | end | env exit |",
-        "|---|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
-        f"| real anomalies (target) | | | | | | | | | | {target['peak_at_start']:.3f} | {target['peak_at_end']:.3f} | {target['exit_frac']:.3f} |",
+        "| gallery | ARP | ARP 95% CI | ARP − donor | ARP − unguided | ARP (std φ) | ARP (φ no HF) | Cov@τ | precision | density | coverage(PRDC) | start | end | env exit |",
+        "|---|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+        f"| real anomalies (target) | | | | | | | | | | | {target['peak_at_start']:.3f} | {target['peak_at_end']:.3f} | {target['exit_frac']:.3f} |",
     ]
     for name, per in rows.items():
         lines.append(
             f"| {name} | {m(per, 'arp'):.3f} | {ci(per, 'arp_ci')} | {m(per, 'arp_minus_donor'):+.3f} | "
-            f"{m(per, 'arp_minus_unguided'):+.3f} | {m(per, 'arp_phi_std'):.3f} | {m(per, 'coverage'):.3f} | {m(per, 'prdc_precision'):.3f} | "
+            f"{m(per, 'arp_minus_unguided'):+.3f} | {m(per, 'arp_phi_std'):.3f} | {m(per, 'arp_phi_no_hf'):.3f} | {m(per, 'coverage'):.3f} | {m(per, 'prdc_precision'):.3f} | "
             f"{m(per, 'prdc_density'):.3f} | {m(per, 'prdc_coverage'):.3f} | "
             f"{m(per, 'peak_at_start'):.3f} | {m(per, 'peak_at_end'):.3f} | {m(per, 'exit_frac'):.3f} |"
         )

@@ -113,6 +113,11 @@ def run_augdetect(cfg: dict[str, Any]) -> dict[str, Any]:
         blob = np.load(dpath)
         fresh = np.load(dpath.parent / "fresh_nominal.npz")
         diff_scores = {k: np.asarray(blob[k]) for k in ("anomaly", "rare", "fresh")}
+        # Per-noise-level scores (diffdetect pool/fuse variants): re-fused per fold
+        # below so the test negatives never enter the standardization.
+        if "fresh_t" in blob.files and "fuse" in blob.files and str(blob["fuse"]) != "mean":
+            diff_scores.update({k + "_t": np.asarray(blob[k + "_t"]) for k in ("anomaly", "rare", "fresh")})
+            diff_scores["fuse"] = str(blob["fuse"])
         diff_scores["fresh_x"] = np.asarray(fresh["x"])
         diff_scores["fresh_ch"] = np.asarray(fresh["channel_idx"], dtype=np.int64)
         _lab = np.load(s0 / "labeled_arrays.npz")
@@ -387,6 +392,14 @@ def _run_one(
         # the rest standardizes the diffusion score per channel.
         fx, fch, fs = diff_scores["fresh_x"], diff_scores["fresh_ch"], diff_scores["fresh"]
         f_test = np.arange(len(fx)) % 3 == fold_id
+        d_anom, d_rare = diff_scores["anomaly"], diff_scores["rare"]
+        if "fresh_t" in diff_scores:
+            from anogen.phases.diffdetect import fuse_scores
+
+            ref_t, ref_c, how = diff_scores["fresh_t"][~f_test], fch[~f_test], diff_scores["fuse"]
+            fs = fuse_scores(diff_scores["fresh_t"], fch, ref_t, ref_c, how)
+            d_anom = fuse_scores(diff_scores["anomaly_t"], ch_a, ref_t, ref_c, how)
+            d_rare = fuse_scores(diff_scores["rare_t"], ch_r, ref_t, ref_c, how)
         mu, sdv = _channel_stats(fs[~f_test], fch[~f_test])
 
         def zd(s: np.ndarray, c: np.ndarray) -> np.ndarray:
@@ -399,9 +412,9 @@ def _run_one(
             return rank_fuse(predict_logits(clf, xs, device=device), ds, reference=[ref_cnn, ref_diff])
 
         evf = eval_scores(
-            fuse(x_te_a, zd(diff_scores["anomaly"][test_a], ch_a[test_a])),
+            fuse(x_te_a, zd(d_anom[test_a], ch_a[test_a])),
             fuse(scaler.transform(fx[f_test], fch[f_test]), zd(fs[f_test], fch[f_test])),
-            fuse(x_te_r, zd(diff_scores["rare"][test_r], ch_r[test_r])) if int(test_r.sum()) else np.zeros(0),
+            fuse(x_te_r, zd(d_rare[test_r], ch_r[test_r])) if int(test_r.sum()) else np.zeros(0),
             event_id=event_a[test_a],
             kind=kind_a[test_a],
             far=far,

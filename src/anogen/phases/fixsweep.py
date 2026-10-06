@@ -39,7 +39,7 @@ import pandas as pd
 from anogen.config import REPO_ROOT
 
 DEFAULT_VARIANTS: dict[str, dict[str, Any]] = {
-    "c1_repro": {},
+    "c1_repro": {"twin": "nosteer_c1"},
     "final025": {"final_grad_scale": 0.25},
     "x0": {"guidance_space": "x0"},
     "x0_final025": {"guidance_space": "x0", "final_grad_scale": 0.25},
@@ -84,23 +84,38 @@ DEFAULT_VARIANTS: dict[str, dict[str, Any]] = {
     # steered twin this is "what steering adds" beyond regeneration (SDEdit).
     "nosteer_c1": {"no_steer": True},
     "nosteer_flip_x0": {"flip": "ramp", "guidance_space": "x0", "no_steer": True},
+    # Masked twin of flip_x0_contrast_masked: same masks (same seeds), no objective.
+    "nosteer_flip_x0_masked": {
+        "flip": "ramp",
+        "guidance_space": "x0",
+        "contrast": {"real level shift": "step", "real ESA Point / Global": "spike"},
+        "mask": True,
+        "mask_dilate": 8,
+        "n_recur": 2,
+        "no_steer": True,
+    },
     # Self-recurrence (time travel) against the x̂₀-space sharpening (testbed E13).
     "flip_x0_final025_recur2": {
         "flip": "ramp",
         "guidance_space": "x0",
         "final_grad_scale": 0.25,
         "n_recur": 2,
+        "twin": "nosteer_flip_x0",
     },
     # Contrast kinds generated as masked (RePaint) edits: exact position and a
     # bin-level label; the rest of the window stays donor (testbed E14).
+    # contrast_only: the contrast kinds drop their prototype term (testbed E6:
+    # step-position W1 0.021 contrast-only vs 0.075 proto + contrast).
     "flip_x0_contrast_masked": {
         "flip": "ramp",
         "guidance_space": "x0",
         "final_grad_scale": 0.25,
         "contrast": {"real level shift": "step", "real ESA Point / Global": "spike"},
+        "contrast_only": True,
         "mask": True,
         "mask_dilate": 8,
         "n_recur": 2,
+        "twin": "nosteer_flip_x0_masked",
     },
 }
 
@@ -121,6 +136,7 @@ _PHASE_KEYS = {
     "mask",
     "mask_dilate",
     "no_steer",
+    "twin",
 }
 
 
@@ -252,6 +268,9 @@ def run_fixsweep(cfg: dict[str, Any]) -> dict[str, Any]:
     fold0: dict[str, np.ndarray] = {}
     galleries: dict[tuple[str, int], tuple[np.ndarray, np.ndarray]] = {}
     for vname, spec in variants.items():
+        if bool(spec.get("mask")) and bool(spec.get("start_from_noise")):
+            raise ValueError(f"variant {vname}: mask needs a donor, not start_from_noise")
+    for vname, spec in variants.items():
         spec = dict(spec)
         enc_name = str(spec.get("encoder", fcfg.get("encoder", "time_both")))
         recipe = str(spec.get("recipe", fcfg.get("recipe", "hybrid_needles")))
@@ -302,6 +321,8 @@ def run_fixsweep(cfg: dict[str, Any]) -> dict[str, Any]:
                 x, h = np.asarray(blob["x"]), np.asarray(blob["h"])
                 masks = np.asarray(blob["mask"]) if "mask" in blob.files else None
             else:
+                # mask rows stay False for slices without a contrast target: those
+                # rows are whole-window edits (``mask_rows`` records which is which)
                 masks = np.zeros(x_cond.shape, dtype=bool) if bool(spec.get("mask")) else None
                 print(f"fixsweep {vname} fold={fold_id}", flush=True)
                 torch.manual_seed(fseed)
@@ -329,7 +350,7 @@ def run_fixsweep(cfg: dict[str, Any]) -> dict[str, Any]:
                     mask_dilate=int(spec.get("mask_dilate", 8)),
                     no_steer=bool(spec.get("no_steer", False)),
                 )
-                extra_npz = {"mask": masks} if masks is not None else {}
+                extra_npz = {"mask": masks, "mask_rows": masks.any(axis=1)} if masks is not None else {}
                 np.savez_compressed(
                     cache,
                     x=x,
@@ -395,6 +416,33 @@ def run_fixsweep(cfg: dict[str, Any]) -> dict[str, Any]:
                     )
                 )
             results[vname]["paired_vs_" + base] = diffs
+
+    # Paired against each variant's own no-steer twin (same chain, seeds, donors,
+    # masks; every objective off): what steering adds beyond regeneration. In the
+    # frozen φ and, as a sensitivity, in per-feature standardized φ.
+    from anogen.shell.evaluation import phi_standardizer, standardize_phi
+
+    phi_stats = phi_standardizer(embed_windows(x_cond))
+    for vname, spec in variants.items():
+        twin = spec.get("twin")
+        if not twin or twin not in variants:
+            continue
+        pairs: dict[str, list] = {"frozen_phi": [], "standardized_phi": []}
+        for fold_id in folds:
+            qm = _query_mask(ch_a, fold_a, fold_tab, fold_id)
+            q = embed_windows(x_a[qm])
+            ga = embed_windows(galleries[(vname, fold_id)][0])
+            gb = embed_windows(galleries[(twin, fold_id)][0])
+            for space, (qq, aa, bb) in (
+                ("frozen_phi", (q, ga, gb)),
+                ("standardized_phi", tuple(standardize_phi(e, phi_stats) for e in (q, ga, gb))),
+            ):
+                pairs[space].append(
+                    paired_arp_difference(
+                        qq, aa, bb, event_a[qm], tau=tau, n_boot=n_boot, seed=seed0 + fold_id, aligned=True
+                    )
+                )
+        results[vname]["paired_vs_twin"] = {"twin": twin, **pairs}
 
     # Calibration rows: what "known faults", "no anomaly" and "noise" score.
     rng = np.random.default_rng(seed0)
@@ -490,7 +538,7 @@ def _generate_slices(
         kw = dict(common)
         if no_steer:  # same chain, same seeds, every objective off
             use_proto = False
-            kw.update(mode="off", lam=0.0, lam_rare=0.0, lam_cls=0.0, lam_parent=0.0)
+            kw.update(mode="off", lam=0.0, lam_rare=0.0, lam_cls=0.0, lam_parent=0.0, lam_repel=0.0)
         if prefix is not None:
             kw["burnin_prefix"] = prefix[idx]
         if suffix is not None:
@@ -506,7 +554,7 @@ def _generate_slices(
             )
         else:
             kw.update(lam_anom=0.0, lam_rare=0.0)
-        plan = None if no_steer else (contrast or {}).get(kind)
+        plan = (contrast or {}).get(kind)
         if plan is not None:
             from anogen.shell.contrast import contrast_mask, sample_targets
 
@@ -517,12 +565,13 @@ def _generate_slices(
                 plan["amplitudes"],
                 rng=np.random.default_rng(seed + 53 * (1 + kind_order.index(kind))),
             )
-            kw.update(contrast_weights=wts, contrast_target=delta, lam_contrast=plan["lam"])
+            if not no_steer:  # under no_steer the plan only fixes positions and masks
+                kw.update(contrast_weights=wts, contrast_target=delta, lam_contrast=plan["lam"])
             if mask_out is not None:
                 m = contrast_mask(plan["kind"], c_pos, x0.shape[1], dilate=int(mask_dilate))
                 kw["anomaly_mask"] = m
                 mask_out[idx] = m
-            if plan["only"]:
+            if plan["only"] and not no_steer:
                 for key in ("ref_anom", "anom_energy_kind", "anom_proto_seed", "anom_proto_shift_max", "anom_proto_shift_seed"):
                     kw.pop(key, None)
                 kw["lam_anom"] = 0.0
@@ -697,6 +746,25 @@ def fixsweep_table(results: dict[str, Any]) -> str:
             f"{m.get('diag_peak_at_start', float('nan')):.3f} | {m.get('diag_peak_at_end', float('nan')):.3f} | "
             f"{m.get('diag_position_entropy', float('nan')):.3f} |"
         )
+    twins = {k: v["paired_vs_twin"] for k, v in results.items() if not k.startswith("_") and v.get("paired_vs_twin")}
+    if twins:
+        lines += [
+            "",
+            "What steering adds: paired ARP difference against the variant's no-steer twin",
+            "(same chain, seeds and masks), mean over folds, mean of fold 95 % CI bounds.",
+            "",
+            "| variant | twin | ΔARP frozen φ | 95% CI | ΔARP standardized φ | 95% CI |",
+            "|---|---|---:|---|---:|---|",
+        ]
+        for k, tw in twins.items():
+            cells = []
+            for space in ("frozen_phi", "standardized_phi"):
+                rs = tw.get(space) or []
+                d = np.mean([r["arp_diff"] for r in rs]) if rs else float("nan")
+                lo = np.mean([r["arp_diff_ci"][0] for r in rs]) if rs else float("nan")
+                hi = np.mean([r["arp_diff_ci"][1] for r in rs]) if rs else float("nan")
+                cells += [f"{d:+.3f}", f"[{lo:+.3f}, {hi:+.3f}]"]
+            lines.append(f"| {k} | {tw['twin']} | " + " | ".join(cells) + " |")
     cal = results.get("_calibration") or {}
     if cal:
         lines += ["", "Calibration rows (same queries, same CI method):", ""]

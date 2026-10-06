@@ -324,7 +324,9 @@ def guided_ddim(
     ``n_recur`` > 1: time travel, as steer.guided_ddim (re-noise x_{t'} to t with
     fresh noise and redo the step). ``gen_mask`` (N, L over the full chain incl.
     crop): RePaint, bins outside it follow the noised donor and are returned as
-    the donor; edits act inside it only.
+    the donor; edits act inside it only. A projection term used with a mask
+    should already project along the masked direction (as steer.guided_ddim's
+    contrast edit does); here its edit is only multiplied by the mask.
     """
     if space not in GUIDANCE_SPACES:
         raise ValueError(space)
@@ -369,7 +371,7 @@ def guided_ddim(
     for i, t in enumerate(times):
         t = int(t)
         t_prev = int(times[i + 1]) if i + 1 < len(times) else -1
-        for rec in range(1 if t_prev < 0 else max(1, int(n_recur))):
+        for rec in range(1 if (t_prev < 0 or t_prev == t) else max(1, int(n_recur))):
             ab = float(sch.alpha_bar[t])
             if gen_mask is not None:
                 known = np.sqrt(ab) * x0 + np.sqrt(1.0 - ab) * rng.standard_normal(x0.shape)
