@@ -132,7 +132,7 @@ S1 in the mid-noise bins. If the mid-noise fit is worse, raise
 | `mask: true`, `mask_dilate` (06.10) | `steer.guided_ddim(anomaly_mask=)`, `contrast.contrast_mask`, fixsweep | RePaint-style masked edit: only the anomaly segment is generated, the donor is kept elsewhere; contrast projects along the masked direction; mask saved as a bin-level label | no | 3, position control (E14) |
 | `no_steer`, `twin` (06.10) | fixsweep | same chain, seeds and masks with every objective off; paired ΔARP vs the twin in frozen and standardized φ ("what steering adds") | no | evaluation |
 | `guidance_decay: 1.0` (06.10) | `steer.guidance_weights` | unit-norm kick × (σ_t/σ_start)^p, normalized to mean 1 over the chain: the same budget, spent while the denoiser can still harmonize it | no | 2 (E17: prototype distance 0.100 → 0.002, edges 0.059 vs 0.051 real with a trained net) |
-| `contrast_relative: true`, `contrast_amp_jitter: [0.5, 1.5]` (06.10) | fixsweep `_contrast_plan`, `_generate_slices` | contrast target = the donor's own contrast at the sampled position + the sampled size, so the planted anomaly has that size; sizes × U(a, b); positions and masks unchanged (same twin) | no | detection (E20: relative targets alone +0.8 points; with the jitter and `proto_shift_max: 16`, variant `flip_x0_contrast_masked_div`, +2.9 over the masked recipe) |
+| `contrast_relative: true`, `contrast_amp_jitter: [0.5, 1.5]` (06.10) | fixsweep `_contrast_plan`, `_generate_slices` | contrast target = the donor's own contrast at the sampled position + the sampled size, so the planted anomaly has that size; sizes × U(a, b); positions and masks unchanged (same twin) | no | detection (E20: relative targets alone +0.8 points; with the jitter and `proto_shift_max: 16`, variant `flip_x0_contrast_masked_div`, +2.3 [0.7, 3.8] over the masked recipe, E20d) |
 | `diffusion_v2.parameterization: v`, `ema_decay` (06.10) | `diffusion.VToEps`, `train_denoiser` | v-prediction (ε = √(1−ᾱ)·x_t + √ᾱ·v, so samplers are unchanged) and EMA weights with warm-up | **yes** | 4, optional (E16: no gain for the edit) |
 | `scaler_v2: {kind: standard}` + `unit_scale` (06.10) | `scaler.fit_channel_standard`, `scaler.unit_scale`, fixsweep, diffdetect | per-channel z-score for the retrained S1 only; the edit's noise level and the guidance weights are rescaled by the ratio of the two scalers, so the physical edit stays the frozen one | **yes** | 4, 4b (E19: no level bias at any σ_max) |
 | augdetect `fixsweep:<variant>[+real]`, `<arm>+real`, `compare`, `synth_filter`, `real_frac` (06.10) | augdetect, `shell/novelty.py`, `detector.fit_detector` | fixsweep galleries as detector arms; paired A − B event-recall contrasts (each steered arm against its twin automatically, all folds / no-leak / fused); optional kNN novelty filter for generated positives; optional real share per positive batch | no | the detection test (E20) |
@@ -174,16 +174,17 @@ What the testbed says to expect, in order of cost:
    (sd 0.20 → 0.23, real 0.24), at the cost of a lower shelf rate. On ESA,
    judge it on `cusum_position` / `signed_peak_position`, never on EDI, which
    is position-blind.
-6. **Detection (E20, the paper's headline).** With a BCE detector on
+6. **Detection (E20/E20d, the paper's headline).** With a BCE detector on
    random-convolution features, 18 real windows plus 255 generated ones,
-   recall at 1 % false alarms: real only 0.489; + no-steer twin 0.316;
-   + C1-like 0.498; + masked recipe 0.507; + `flip_x0_contrast_masked_div`
-   0.536 (paired +4.7 [3.8, 5.7] over real only, +3.8 over C1-like, +22
-   over the twin); + perfect positives 0.742. The gain survives a
-   better-tuned detector (+4.0 at C = 10, E20c). Steering is what makes
-   regenerated windows useful; most of the headroom is in the prototype
-   kinds (the subsequence kinds on ESA). A squared-loss detector lost recall
-   with every generator except the perfect one, so keep BCE.
+   recall at 1 % false alarms over 20 repetitions: real only 0.502;
+   + no-steer twin 0.329; + C1-like 0.506; + masked recipe 0.524;
+   + `flip_x0_contrast_masked_div` 0.547, i.e. +4.5 points [2.7, 6.4] over
+   real only, +4.1 over C1-like, +22 over the twin; + perfect positives 0.731.
+   With a better-tuned detector the recipe still adds 2.9 [0.8, 4.9] while
+   C1-like positives cost 6.2. Steering is what makes regenerated windows
+   useful; most of the headroom is in the prototype kinds (the subsequence
+   kinds on ESA). A squared-loss detector lost recall with every generator
+   except the perfect one, so keep BCE.
 
 ---
 

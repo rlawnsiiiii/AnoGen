@@ -148,8 +148,9 @@ shell:
     #   - ["fixsweep:flip_x0_contrast_masked_div+real", "fixsweep:flip_x0_contrast_masked+real"]
     # Optional, both off by default (docs/TESTBED.md E20):
     # synth_filter: {kind: rocket_knn, q: 0.99}  # drop generated windows inside the nominal set;
-    #   rescues near-nominal galleries (no-steer twin, unguided) but costs a little with good
-    #   ones; its pass rate (summary.json synth_pass_rate_mean) is worth reporting either way
+    #   rescues near-nominal galleries (twin +15 points, unguided +3 in E20), neutral for the
+    #   recipe, costs subtle real-like positives (perfect ones −7); report its pass rate
+    #   (summary.json synth_pass_rate_mean) either way
     # real_frac: 0.5   # share of real anomalies per positive batch (no effect with BCE in E20)
   # Published GenIAS objective (P6). Isolated results/shell_genias_fair.
   genias_fair:

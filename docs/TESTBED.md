@@ -475,90 +475,137 @@ Label-free detection by denoising error (spikes of 0.15 at uniform positions vs 
 | centred data (mean 0) | geometric sigma_max 100 | +0.000 | 0.89 | 0.87 |
 | centred data (mean 0) | rule (texture.schedule_bounds): σ_min 0.0016, σ_max 9.7 (without DC 9.7) | | | |
 
+### E20d the headline across 20 repetitions (recall at 1 % FAR)
+
+| training positives | logistic C=0.1 | logistic C=10 | ridge |
+|---|---:|---:|---:|
+| real_only | 0.502 ± 0.061 | 0.578 ± 0.077 | 0.608 ± 0.075 |
+| +twin | 0.329 ± 0.040 | 0.292 ± 0.037 | 0.300 ± 0.046 |
+| +C1-like | 0.506 ± 0.059 | 0.516 ± 0.061 | 0.565 ± 0.062 |
+| +posthoc | 0.507 ± 0.057 | 0.504 ± 0.061 | 0.417 ± 0.064 |
+| +recipe | 0.524 ± 0.050 | 0.586 ± 0.061 | 0.494 ± 0.065 |
+| +recipe/rel+div | 0.547 ± 0.050 | 0.606 ± 0.070 | 0.507 ± 0.072 |
+| +oracle | 0.731 ± 0.044 | 0.720 ± 0.045 | 0.667 ± 0.042 |
+
+Paired differences: mean over repetitions, t-interval and two-level bootstrap (repetitions, then test anomalies), share of repetitions with a gain:
+
+| detector | A − B | mean | t 95 % CI | two-level bootstrap 95 % CI | repetitions with A > B |
+|---|---|---:|---|---|---:|
+| logistic C=0.1 | +recipe/rel+div - real_only | +0.045 | [+0.027, +0.064] | [+0.028, +0.063] | 90% |
+| logistic C=0.1 | +recipe - real_only | +0.023 | [+0.011, +0.034] | [+0.011, +0.034] | 85% |
+| logistic C=0.1 | +recipe/rel+div - +recipe | +0.023 | [+0.007, +0.038] | [+0.009, +0.037] | 70% |
+| logistic C=0.1 | +recipe/rel+div - +C1-like | +0.041 | [+0.023, +0.060] | [+0.025, +0.059] | 85% |
+| logistic C=0.1 | +recipe/rel+div - +twin | +0.218 | [+0.195, +0.242] | [+0.197, +0.243] | 100% |
+| logistic C=0.1 | +recipe/rel+div - +posthoc | +0.040 | [+0.012, +0.068] | [+0.015, +0.066] | 75% |
+| logistic C=0.1 | +C1-like - real_only | +0.004 | [-0.002, +0.010] | [-0.002, +0.010] | 60% |
+| logistic C=0.1 | +twin - real_only | -0.173 | [-0.195, -0.152] | [-0.193, -0.153] | 0% |
+| logistic C=0.1 | +posthoc - real_only | +0.005 | [-0.027, +0.038] | [-0.024, +0.035] | 50% |
+| logistic C=0.1 | +oracle - real_only | +0.230 | [+0.194, +0.265] | [+0.197, +0.262] | 100% |
+| logistic C=10 | +recipe/rel+div - real_only | +0.029 | [+0.008, +0.049] | [+0.008, +0.048] | 75% |
+| logistic C=10 | +recipe - real_only | +0.008 | [-0.010, +0.027] | [-0.010, +0.026] | 65% |
+| logistic C=10 | +recipe/rel+div - +recipe | +0.020 | [+0.006, +0.034] | [+0.008, +0.034] | 75% |
+| logistic C=10 | +recipe/rel+div - +C1-like | +0.090 | [+0.066, +0.114] | [+0.069, +0.114] | 100% |
+| logistic C=10 | +recipe/rel+div - +twin | +0.314 | [+0.279, +0.349] | [+0.281, +0.345] | 100% |
+| logistic C=10 | +recipe/rel+div - +posthoc | +0.102 | [+0.077, +0.127] | [+0.080, +0.125] | 100% |
+| logistic C=10 | +C1-like - real_only | -0.062 | [-0.089, -0.035] | [-0.089, -0.037] | 5% |
+| logistic C=10 | +twin - real_only | -0.286 | [-0.322, -0.249] | [-0.319, -0.251] | 0% |
+| logistic C=10 | +posthoc - real_only | -0.074 | [-0.102, -0.046] | [-0.099, -0.047] | 10% |
+| logistic C=10 | +oracle - real_only | +0.143 | [+0.112, +0.173] | [+0.116, +0.173] | 100% |
+| ridge | +recipe/rel+div - real_only | -0.100 | [-0.117, -0.084] | [-0.116, -0.084] | 0% |
+| ridge | +recipe - real_only | -0.113 | [-0.137, -0.090] | [-0.136, -0.092] | 0% |
+| ridge | +recipe/rel+div - +recipe | +0.013 | [-0.002, +0.028] | [-0.003, +0.027] | 80% |
+| ridge | +recipe/rel+div - +C1-like | -0.058 | [-0.080, -0.035] | [-0.078, -0.036] | 10% |
+| ridge | +recipe/rel+div - +twin | +0.207 | [+0.169, +0.245] | [+0.173, +0.241] | 100% |
+| ridge | +recipe/rel+div - +posthoc | +0.090 | [+0.056, +0.124] | [+0.058, +0.120] | 90% |
+| ridge | +C1-like - real_only | -0.043 | [-0.059, -0.027] | [-0.059, -0.028] | 5% |
+| ridge | +twin - real_only | -0.307 | [-0.348, -0.267] | [-0.345, -0.269] | 0% |
+| ridge | +posthoc - real_only | -0.190 | [-0.220, -0.161] | [-0.216, -0.161] | 0% |
+| ridge | +oracle - real_only | +0.059 | [+0.030, +0.089] | [+0.031, +0.087] | 75% |
+
 ### E20 detector utility (logistic): 18 real anomalies + up to 255 generated, ROCKET features, recall at 1 % FAR (5 repetitions × 900 test anomalies)
 
 | training positives | n generated kept | recall @ 1 % FAR | spike | level shift | drift | AUROC | AP |
 |---|---:|---:|---:|---:|---:|---:|---:|
 | real_only | 0 | 0.489 ± 0.080 | 0.877 | 0.283 | 0.307 | 0.744 | 0.705 |
 | +posthoc | 255 | 0.511 ± 0.049 | 0.962 | 0.289 | 0.282 | 0.844 | 0.774 |
-| +posthoc | kNN filter | 201 | 0.523 ± 0.033 | 0.953 | 0.319 | 0.298 | 0.824 | 0.768 |
-| +posthoc | weighted | 255 | 0.529 ± 0.049 | 0.963 | 0.302 | 0.321 | 0.849 | 0.784 |
+| +posthoc \| kNN filter | 202 | 0.524 ± 0.032 | 0.953 | 0.319 | 0.302 | 0.824 | 0.767 |
+| +posthoc \| weighted | 255 | 0.529 ± 0.049 | 0.963 | 0.302 | 0.321 | 0.849 | 0.784 |
 | +unguided | 255 | 0.470 ± 0.063 | 0.968 | 0.281 | 0.160 | 0.754 | 0.699 |
-| +unguided | kNN filter | 41 | 0.495 ± 0.071 | 0.939 | 0.330 | 0.217 | 0.768 | 0.725 |
-| +unguided | weighted | 255 | 0.485 ± 0.069 | 0.965 | 0.291 | 0.198 | 0.757 | 0.710 |
+| +unguided \| kNN filter | 41 | 0.495 ± 0.071 | 0.939 | 0.330 | 0.217 | 0.768 | 0.725 |
+| +unguided \| weighted | 255 | 0.485 ± 0.069 | 0.965 | 0.291 | 0.198 | 0.757 | 0.710 |
 | +C1-like | 255 | 0.498 ± 0.076 | 0.920 | 0.293 | 0.281 | 0.755 | 0.717 |
-| +C1-like | kNN filter | 253 | 0.499 ± 0.073 | 0.919 | 0.295 | 0.283 | 0.755 | 0.717 |
-| +C1-like | weighted | 255 | 0.501 ± 0.075 | 0.904 | 0.299 | 0.299 | 0.752 | 0.715 |
+| +C1-like \| kNN filter | 253 | 0.499 ± 0.073 | 0.919 | 0.295 | 0.283 | 0.755 | 0.717 |
+| +C1-like \| weighted | 255 | 0.501 ± 0.075 | 0.904 | 0.299 | 0.299 | 0.752 | 0.715 |
 | +twin | 255 | 0.316 ± 0.058 | 0.804 | 0.035 | 0.107 | 0.622 | 0.551 |
-| +twin | kNN filter | 1 | 0.483 ± 0.084 | 0.883 | 0.275 | 0.291 | 0.745 | 0.706 |
-| +twin | weighted | 255 | 0.354 ± 0.068 | 0.830 | 0.067 | 0.165 | 0.649 | 0.590 |
+| +twin \| kNN filter | 3 | 0.465 ± 0.090 | 0.877 | 0.265 | 0.255 | 0.745 | 0.699 |
+| +twin \| weighted | 255 | 0.354 ± 0.068 | 0.830 | 0.067 | 0.165 | 0.649 | 0.590 |
 | +recipe | 255 | 0.507 ± 0.057 | 0.925 | 0.322 | 0.273 | 0.787 | 0.738 |
-| +recipe | kNN filter | 203 | 0.499 ± 0.053 | 0.922 | 0.315 | 0.259 | 0.781 | 0.735 |
-| +recipe | weighted | 255 | 0.507 ± 0.059 | 0.913 | 0.317 | 0.293 | 0.781 | 0.736 |
+| +recipe \| kNN filter | 203 | 0.499 ± 0.053 | 0.922 | 0.315 | 0.259 | 0.781 | 0.735 |
+| +recipe \| weighted | 255 | 0.507 ± 0.059 | 0.913 | 0.317 | 0.293 | 0.781 | 0.736 |
 | +recipe/rel | 255 | 0.515 ± 0.059 | 0.938 | 0.326 | 0.281 | 0.784 | 0.741 |
-| +recipe/rel | kNN filter | 203 | 0.513 ± 0.059 | 0.933 | 0.333 | 0.272 | 0.778 | 0.738 |
-| +recipe/rel | weighted | 255 | 0.517 ± 0.060 | 0.925 | 0.327 | 0.300 | 0.780 | 0.741 |
+| +recipe/rel \| kNN filter | 203 | 0.513 ± 0.059 | 0.933 | 0.333 | 0.272 | 0.778 | 0.738 |
+| +recipe/rel \| weighted | 255 | 0.517 ± 0.060 | 0.925 | 0.327 | 0.300 | 0.780 | 0.741 |
 | +recipe/rel+jitter | 255 | 0.522 ± 0.052 | 0.950 | 0.355 | 0.262 | 0.792 | 0.747 |
-| +recipe/rel+jitter | kNN filter | 202 | 0.520 ± 0.054 | 0.944 | 0.334 | 0.281 | 0.780 | 0.741 |
-| +recipe/rel+jitter | weighted | 255 | 0.527 ± 0.055 | 0.943 | 0.352 | 0.286 | 0.788 | 0.748 |
+| +recipe/rel+jitter \| kNN filter | 202 | 0.519 ± 0.055 | 0.945 | 0.334 | 0.277 | 0.779 | 0.741 |
+| +recipe/rel+jitter \| weighted | 255 | 0.527 ± 0.055 | 0.943 | 0.352 | 0.286 | 0.788 | 0.748 |
 | +recipe/rel+shift | 255 | 0.525 ± 0.054 | 0.937 | 0.337 | 0.302 | 0.798 | 0.753 |
-| +recipe/rel+shift | kNN filter | 208 | 0.519 ± 0.057 | 0.934 | 0.335 | 0.287 | 0.798 | 0.751 |
-| +recipe/rel+shift | weighted | 255 | 0.527 ± 0.055 | 0.927 | 0.335 | 0.319 | 0.793 | 0.750 |
+| +recipe/rel+shift \| kNN filter | 208 | 0.519 ± 0.057 | 0.934 | 0.335 | 0.287 | 0.798 | 0.751 |
+| +recipe/rel+shift \| weighted | 255 | 0.527 ± 0.055 | 0.927 | 0.335 | 0.319 | 0.793 | 0.750 |
 | +recipe/rel+div | 255 | 0.536 ± 0.051 | 0.953 | 0.363 | 0.293 | 0.804 | 0.759 |
-| +recipe/rel+div | kNN filter | 207 | 0.527 ± 0.054 | 0.946 | 0.343 | 0.291 | 0.797 | 0.752 |
-| +recipe/rel+div | weighted | 255 | 0.538 ± 0.055 | 0.943 | 0.360 | 0.313 | 0.799 | 0.758 |
+| +recipe/rel+div \| kNN filter | 207 | 0.526 ± 0.054 | 0.946 | 0.343 | 0.289 | 0.797 | 0.752 |
+| +recipe/rel+div \| weighted | 255 | 0.538 ± 0.055 | 0.943 | 0.360 | 0.313 | 0.799 | 0.758 |
 | +recipe/rel/bidir | 255 | 0.502 ± 0.033 | 0.876 | 0.350 | 0.279 | 0.790 | 0.743 |
-| +recipe/rel/bidir | kNN filter | 227 | 0.505 ± 0.034 | 0.881 | 0.351 | 0.283 | 0.791 | 0.744 |
-| +recipe/rel/bidir | weighted | 255 | 0.508 ± 0.039 | 0.874 | 0.349 | 0.302 | 0.788 | 0.745 |
+| +recipe/rel/bidir \| kNN filter | 228 | 0.504 ± 0.034 | 0.883 | 0.350 | 0.280 | 0.792 | 0.745 |
+| +recipe/rel/bidir \| weighted | 255 | 0.508 ± 0.039 | 0.874 | 0.349 | 0.302 | 0.788 | 0.745 |
 | +oracle | 255 | 0.742 ± 0.036 | 0.957 | 0.573 | 0.695 | 0.940 | 0.908 |
-| +oracle | kNN filter | 132 | 0.664 ± 0.041 | 0.954 | 0.506 | 0.531 | 0.916 | 0.873 |
-| +oracle | weighted | 255 | 0.739 ± 0.033 | 0.956 | 0.567 | 0.693 | 0.941 | 0.908 |
+| +oracle \| kNN filter | 139 | 0.667 ± 0.043 | 0.953 | 0.507 | 0.542 | 0.918 | 0.874 |
+| +oracle \| weighted | 255 | 0.739 ± 0.033 | 0.956 | 0.567 | 0.693 | 0.941 | 0.908 |
 
-Paired differences in recall (logistic; same test anomalies, pooled over repetitions, bootstrap 95 % CI):
+Paired differences in recall (logistic). Test-side CI: bootstrap over the pooled test anomalies; across repetitions: t-interval over the per-repetition differences (also covers the training draw):
 
-| A − B | all kinds | spike | level shift | drift | per repetition |
-|---|---|---:|---:|---:|---|
-| +recipe - real_only | +0.018 [+0.009, +0.026] | +0.048 | +0.039 | -0.034 | +0.03 +0.05 +0.05 +0.01 -0.04 |
-| +recipe/rel - real_only | +0.026 [+0.018, +0.034] | +0.061 | +0.043 | -0.025 | +0.03 +0.05 +0.05 +0.02 -0.02 |
-| +recipe/rel+div - real_only | +0.047 [+0.038, +0.057] | +0.076 | +0.080 | -0.014 | +0.03 +0.09 +0.10 +0.02 +0.00 |
-| +recipe/rel - +recipe | +0.008 [+0.003, +0.014] | +0.013 | +0.004 | +0.009 | +0.00 +0.01 +0.00 +0.02 +0.02 |
-| +recipe/rel+jitter - +recipe/rel | +0.007 [+0.001, +0.013] | +0.012 | +0.029 | -0.019 | +0.00 -0.00 +0.03 +0.00 +0.01 |
-| +recipe/rel+shift - +recipe/rel | +0.010 [+0.004, +0.016] | -0.001 | +0.011 | +0.021 | -0.00 +0.03 +0.02 -0.00 +0.00 |
-| +recipe/rel+div - +recipe/rel | +0.021 [+0.014, +0.028] | +0.015 | +0.037 | +0.011 | +0.00 +0.04 +0.05 -0.00 +0.02 |
-| +recipe/rel+div - +twin | +0.221 [+0.208, +0.233] | +0.149 | +0.327 | +0.185 | +0.23 +0.27 +0.23 +0.14 +0.23 |
-| +recipe/rel+div - +C1-like | +0.038 [+0.030, +0.047] | +0.033 | +0.069 | +0.012 | +0.03 +0.08 +0.08 +0.01 -0.01 |
-| +recipe/rel+div - +posthoc | +0.025 [+0.012, +0.038] | -0.009 | +0.074 | +0.011 | +0.03 -0.01 -0.06 -0.02 +0.18 |
-| +recipe/rel/bidir - +recipe/rel | -0.013 [-0.022, -0.005] | -0.062 | +0.024 | -0.002 | -0.02 -0.03 +0.04 -0.00 -0.05 |
-| +recipe - +twin | +0.191 [+0.178, +0.203] | +0.121 | +0.287 | +0.165 | +0.23 +0.23 +0.18 +0.13 +0.19 |
-| +recipe - +C1-like | +0.009 [+0.001, +0.016] | +0.005 | +0.029 | -0.008 | +0.03 +0.03 +0.03 +0.00 -0.05 |
-| +C1-like - real_only | +0.009 [+0.004, +0.015] | +0.043 | +0.011 | -0.026 | -0.00 +0.01 +0.02 +0.01 +0.01 |
-| +posthoc - real_only | +0.022 [+0.008, +0.037] | +0.085 | +0.006 | -0.025 | -0.00 +0.10 +0.16 +0.04 -0.18 |
-| +unguided - real_only | -0.019 [-0.030, -0.009] | +0.091 | -0.002 | -0.147 | -0.05 -0.04 +0.04 -0.03 -0.02 |
-| +twin - real_only | -0.173 [-0.186, -0.161] | -0.073 | -0.247 | -0.199 | -0.20 -0.18 -0.13 -0.12 -0.23 |
-| +oracle - real_only | +0.253 [+0.237, +0.268] | +0.080 | +0.291 | +0.388 | +0.24 +0.26 +0.43 +0.26 +0.07 |
-| +oracle - +recipe/rel+div | +0.206 [+0.191, +0.220] | +0.004 | +0.211 | +0.402 | +0.22 +0.17 +0.33 +0.24 +0.07 |
-| +twin | kNN filter - +twin | +0.168 [+0.156, +0.180] | +0.079 | +0.239 | +0.184 | +0.20 +0.16 +0.13 +0.12 +0.23 |
-| +unguided | kNN filter - +unguided | +0.026 [+0.018, +0.034] | -0.029 | +0.049 | +0.057 | +0.05 +0.03 -0.00 +0.02 +0.03 |
-| +recipe/rel+div | kNN filter - +recipe/rel+div | -0.009 [-0.015, -0.003] | -0.007 | -0.019 | -0.001 | +0.01 -0.03 -0.02 +0.00 -0.00 |
-| +oracle | kNN filter - +oracle | -0.078 [-0.088, -0.068] | -0.003 | -0.067 | -0.163 | -0.05 -0.03 -0.12 -0.11 -0.08 |
-| +recipe/rel+div | weighted - +recipe/rel+div | +0.002 [-0.002, +0.006] | -0.011 | -0.003 | +0.020 | +0.00 +0.02 -0.01 +0.00 -0.00 |
-| +oracle | weighted - +oracle | -0.003 [-0.006, +0.001] | -0.001 | -0.006 | -0.001 | -0.01 +0.00 -0.01 +0.00 +0.00 |
+| A − B | mean | test-side 95 % CI | across repetitions 95 % CI | spike | level shift | drift | per repetition |
+|---|---:|---|---|---:|---:|---:|---|
+| +recipe - real_only | +0.018 | [+0.009, +0.026] | [-0.025, +0.060] | +0.048 | +0.039 | -0.034 | +0.03 +0.05 +0.05 +0.01 -0.04 |
+| +recipe/rel - real_only | +0.026 | [+0.018, +0.034] | [-0.010, +0.063] | +0.061 | +0.043 | -0.025 | +0.03 +0.05 +0.05 +0.02 -0.02 |
+| +recipe/rel+div - real_only | +0.047 | [+0.038, +0.057] | [-0.008, +0.102] | +0.076 | +0.080 | -0.014 | +0.03 +0.09 +0.10 +0.02 +0.00 |
+| +recipe/rel - +recipe | +0.008 | [+0.003, +0.014] | [-0.001, +0.018] | +0.013 | +0.004 | +0.009 | +0.00 +0.01 +0.00 +0.02 +0.02 |
+| +recipe/rel+jitter - +recipe/rel | +0.007 | [+0.001, +0.013] | [-0.008, +0.022] | +0.012 | +0.029 | -0.019 | +0.00 -0.00 +0.03 +0.00 +0.01 |
+| +recipe/rel+shift - +recipe/rel | +0.010 | [+0.004, +0.016] | [-0.011, +0.031] | -0.001 | +0.011 | +0.021 | -0.00 +0.03 +0.02 -0.00 +0.00 |
+| +recipe/rel+div - +recipe/rel | +0.021 | [+0.014, +0.028] | [-0.008, +0.050] | +0.015 | +0.037 | +0.011 | +0.00 +0.04 +0.05 -0.00 +0.02 |
+| +recipe/rel+div - +twin | +0.221 | [+0.208, +0.233] | [+0.159, +0.283] | +0.149 | +0.327 | +0.185 | +0.23 +0.27 +0.23 +0.14 +0.23 |
+| +recipe/rel+div - +C1-like | +0.038 | [+0.030, +0.047] | [-0.010, +0.087] | +0.033 | +0.069 | +0.012 | +0.03 +0.08 +0.08 +0.01 -0.01 |
+| +recipe/rel+div - +posthoc | +0.025 | [+0.012, +0.038] | [-0.092, +0.143] | -0.009 | +0.074 | +0.011 | +0.03 -0.01 -0.06 -0.02 +0.18 |
+| +recipe/rel/bidir - +recipe/rel | -0.013 | [-0.022, -0.005] | [-0.053, +0.026] | -0.062 | +0.024 | -0.002 | -0.02 -0.03 +0.04 -0.00 -0.05 |
+| +recipe - +twin | +0.191 | [+0.178, +0.203] | [+0.137, +0.245] | +0.121 | +0.287 | +0.165 | +0.23 +0.23 +0.18 +0.13 +0.19 |
+| +recipe - +C1-like | +0.009 | [+0.001, +0.016] | [-0.032, +0.050] | +0.005 | +0.029 | -0.008 | +0.03 +0.03 +0.03 +0.00 -0.05 |
+| +C1-like - real_only | +0.009 | [+0.004, +0.015] | [-0.001, +0.019] | +0.043 | +0.011 | -0.026 | -0.00 +0.01 +0.02 +0.01 +0.01 |
+| +posthoc - real_only | +0.022 | [+0.008, +0.037] | [-0.140, +0.184] | +0.085 | +0.006 | -0.025 | -0.00 +0.10 +0.16 +0.04 -0.18 |
+| +unguided - real_only | -0.019 | [-0.030, -0.009] | [-0.063, +0.024] | +0.091 | -0.002 | -0.147 | -0.05 -0.04 +0.04 -0.03 -0.02 |
+| +twin - real_only | -0.173 | [-0.186, -0.161] | [-0.230, -0.116] | -0.073 | -0.247 | -0.199 | -0.20 -0.18 -0.13 -0.12 -0.23 |
+| +oracle - real_only | +0.253 | [+0.237, +0.268] | [+0.095, +0.411] | +0.080 | +0.291 | +0.388 | +0.24 +0.26 +0.43 +0.26 +0.07 |
+| +oracle - +recipe/rel+div | +0.206 | [+0.191, +0.220] | [+0.087, +0.324] | +0.004 | +0.211 | +0.402 | +0.22 +0.17 +0.33 +0.24 +0.07 |
+| +twin \| kNN filter - +twin | +0.150 | [+0.138, +0.162] | [+0.084, +0.216] | +0.073 | +0.229 | +0.147 | +0.18 +0.16 +0.09 +0.10 +0.22 |
+| +unguided \| kNN filter - +unguided | +0.026 | [+0.018, +0.034] | [+0.004, +0.048] | -0.029 | +0.049 | +0.057 | +0.05 +0.03 -0.00 +0.02 +0.03 |
+| +recipe/rel+div \| kNN filter - +recipe/rel+div | -0.010 | [-0.016, -0.003] | [-0.032, +0.012] | -0.007 | -0.019 | -0.003 | +0.01 -0.04 -0.02 +0.00 -0.00 |
+| +oracle \| kNN filter - +oracle | -0.074 | [-0.084, -0.064] | [-0.116, -0.033] | -0.004 | -0.067 | -0.153 | -0.04 -0.04 -0.11 -0.11 -0.08 |
+| +recipe/rel+div \| weighted - +recipe/rel+div | +0.002 | [-0.002, +0.006] | [-0.011, +0.016] | -0.011 | -0.003 | +0.020 | +0.00 +0.02 -0.01 +0.00 -0.00 |
+| +oracle \| weighted - +oracle | -0.003 | [-0.006, +0.001] | [-0.011, +0.005] | -0.001 | -0.006 | -0.001 | -0.01 +0.00 -0.01 +0.00 +0.00 |
 
 Share of generated windows the kNN novelty filter keeps (outside the nominal 99 % set), per kind:
 
 | generator | spike | level shift | drift |
 |---|---:|---:|---:|
-| posthoc | 0.78 | 0.80 | 0.79 |
+| posthoc | 0.78 | 0.80 | 0.80 |
 | unguided | 0.17 | 0.17 | 0.14 |
 | C1-like | 1.00 | 0.99 | 0.99 |
-| twin | 0.00 | 0.01 | 0.00 |
+| twin | 0.02 | 0.01 | 0.01 |
 | recipe | 1.00 | 0.96 | 0.42 |
 | recipe/rel | 0.99 | 0.97 | 0.42 |
 | recipe/rel+jitter | 0.97 | 0.98 | 0.42 |
 | recipe/rel+shift | 0.99 | 0.97 | 0.49 |
 | recipe/rel+div | 0.97 | 0.98 | 0.49 |
-| recipe/rel/bidir | 0.98 | 0.98 | 0.71 |
-| oracle | 0.88 | 0.28 | 0.39 |
+| recipe/rel/bidir | 0.98 | 0.99 | 0.71 |
+| oracle | 0.89 | 0.31 | 0.44 |
 
 ### E20 detector utility (ridge): 18 real anomalies + up to 255 generated, ROCKET features, recall at 1 % FAR (5 repetitions × 900 test anomalies)
 
@@ -566,38 +613,38 @@ Share of generated windows the kNN novelty filter keeps (outside the nominal 99 
 |---|---:|---:|---:|---:|---:|---:|---:|
 | real_only | 0 | 0.594 ± 0.058 | 0.888 | 0.395 | 0.499 | 0.781 | 0.769 |
 | +posthoc | 255 | 0.436 ± 0.033 | 0.865 | 0.139 | 0.303 | 0.798 | 0.716 |
-| +posthoc | kNN filter | 201 | 0.464 ± 0.032 | 0.831 | 0.208 | 0.352 | 0.810 | 0.734 |
-| +posthoc | weighted | 255 | 0.489 ± 0.024 | 0.872 | 0.219 | 0.377 | 0.818 | 0.752 |
+| +posthoc \| kNN filter | 202 | 0.460 ± 0.031 | 0.831 | 0.202 | 0.346 | 0.810 | 0.734 |
+| +posthoc \| weighted | 255 | 0.489 ± 0.024 | 0.872 | 0.219 | 0.377 | 0.818 | 0.752 |
 | +unguided | 255 | 0.444 ± 0.091 | 0.859 | 0.229 | 0.242 | 0.719 | 0.671 |
-| +unguided | kNN filter | 41 | 0.519 ± 0.067 | 0.835 | 0.364 | 0.359 | 0.771 | 0.738 |
-| +unguided | weighted | 255 | 0.467 ± 0.076 | 0.849 | 0.263 | 0.289 | 0.739 | 0.693 |
+| +unguided \| kNN filter | 41 | 0.519 ± 0.067 | 0.835 | 0.364 | 0.359 | 0.771 | 0.738 |
+| +unguided \| weighted | 255 | 0.467 ± 0.076 | 0.849 | 0.263 | 0.289 | 0.739 | 0.693 |
 | +C1-like | 255 | 0.569 ± 0.045 | 0.829 | 0.397 | 0.482 | 0.781 | 0.760 |
-| +C1-like | kNN filter | 253 | 0.566 ± 0.049 | 0.827 | 0.393 | 0.477 | 0.782 | 0.759 |
-| +C1-like | weighted | 255 | 0.562 ± 0.050 | 0.816 | 0.390 | 0.481 | 0.782 | 0.760 |
+| +C1-like \| kNN filter | 253 | 0.566 ± 0.049 | 0.827 | 0.393 | 0.477 | 0.782 | 0.759 |
+| +C1-like \| weighted | 255 | 0.562 ± 0.050 | 0.816 | 0.390 | 0.481 | 0.782 | 0.760 |
 | +twin | 255 | 0.288 ± 0.059 | 0.710 | 0.033 | 0.120 | 0.615 | 0.535 |
-| +twin | kNN filter | 1 | 0.552 ± 0.105 | 0.868 | 0.347 | 0.440 | 0.752 | 0.734 |
-| +twin | weighted | 255 | 0.362 ± 0.075 | 0.773 | 0.082 | 0.231 | 0.654 | 0.598 |
+| +twin \| kNN filter | 3 | 0.494 ± 0.111 | 0.839 | 0.277 | 0.367 | 0.745 | 0.716 |
+| +twin \| weighted | 255 | 0.362 ± 0.075 | 0.773 | 0.082 | 0.231 | 0.654 | 0.598 |
 | +recipe | 255 | 0.492 ± 0.069 | 0.803 | 0.337 | 0.337 | 0.805 | 0.754 |
-| +recipe | kNN filter | 203 | 0.505 ± 0.059 | 0.817 | 0.343 | 0.354 | 0.791 | 0.742 |
-| +recipe | weighted | 255 | 0.536 ± 0.055 | 0.823 | 0.372 | 0.414 | 0.808 | 0.769 |
+| +recipe \| kNN filter | 203 | 0.505 ± 0.059 | 0.817 | 0.343 | 0.354 | 0.791 | 0.742 |
+| +recipe \| weighted | 255 | 0.536 ± 0.055 | 0.823 | 0.372 | 0.414 | 0.808 | 0.769 |
 | +recipe/rel | 255 | 0.514 ± 0.064 | 0.839 | 0.343 | 0.361 | 0.804 | 0.757 |
-| +recipe/rel | kNN filter | 203 | 0.508 ± 0.069 | 0.838 | 0.341 | 0.344 | 0.792 | 0.745 |
-| +recipe/rel | weighted | 255 | 0.548 ± 0.063 | 0.849 | 0.374 | 0.421 | 0.807 | 0.770 |
+| +recipe/rel \| kNN filter | 203 | 0.508 ± 0.069 | 0.838 | 0.341 | 0.344 | 0.792 | 0.745 |
+| +recipe/rel \| weighted | 255 | 0.548 ± 0.063 | 0.849 | 0.374 | 0.421 | 0.807 | 0.770 |
 | +recipe/rel+jitter | 255 | 0.479 ± 0.076 | 0.842 | 0.277 | 0.319 | 0.793 | 0.740 |
-| +recipe/rel+jitter | kNN filter | 202 | 0.495 ± 0.065 | 0.840 | 0.305 | 0.341 | 0.772 | 0.734 |
-| +recipe/rel+jitter | weighted | 255 | 0.531 ± 0.068 | 0.857 | 0.338 | 0.397 | 0.804 | 0.764 |
+| +recipe/rel+jitter \| kNN filter | 202 | 0.496 ± 0.065 | 0.840 | 0.306 | 0.341 | 0.772 | 0.734 |
+| +recipe/rel+jitter \| weighted | 255 | 0.531 ± 0.068 | 0.857 | 0.338 | 0.397 | 0.804 | 0.764 |
 | +recipe/rel+shift | 255 | 0.520 ± 0.052 | 0.822 | 0.346 | 0.393 | 0.814 | 0.764 |
-| +recipe/rel+shift | kNN filter | 208 | 0.525 ± 0.053 | 0.833 | 0.352 | 0.391 | 0.816 | 0.768 |
-| +recipe/rel+shift | weighted | 255 | 0.543 ± 0.049 | 0.833 | 0.363 | 0.435 | 0.817 | 0.774 |
+| +recipe/rel+shift \| kNN filter | 208 | 0.525 ± 0.053 | 0.833 | 0.352 | 0.391 | 0.816 | 0.768 |
+| +recipe/rel+shift \| weighted | 255 | 0.543 ± 0.049 | 0.833 | 0.363 | 0.435 | 0.817 | 0.774 |
 | +recipe/rel+div | 255 | 0.483 ± 0.074 | 0.815 | 0.286 | 0.348 | 0.803 | 0.746 |
-| +recipe/rel+div | kNN filter | 207 | 0.496 ± 0.071 | 0.819 | 0.309 | 0.362 | 0.804 | 0.753 |
-| +recipe/rel+div | weighted | 255 | 0.534 ± 0.063 | 0.843 | 0.341 | 0.420 | 0.809 | 0.765 |
+| +recipe/rel+div \| kNN filter | 207 | 0.494 ± 0.070 | 0.817 | 0.307 | 0.359 | 0.804 | 0.753 |
+| +recipe/rel+div \| weighted | 255 | 0.534 ± 0.063 | 0.843 | 0.341 | 0.420 | 0.809 | 0.765 |
 | +recipe/rel/bidir | 255 | 0.461 ± 0.077 | 0.725 | 0.320 | 0.337 | 0.787 | 0.728 |
-| +recipe/rel/bidir | kNN filter | 227 | 0.467 ± 0.075 | 0.741 | 0.315 | 0.344 | 0.788 | 0.730 |
-| +recipe/rel/bidir | weighted | 255 | 0.517 ± 0.075 | 0.759 | 0.372 | 0.421 | 0.799 | 0.753 |
+| +recipe/rel/bidir \| kNN filter | 228 | 0.466 ± 0.076 | 0.737 | 0.315 | 0.346 | 0.787 | 0.729 |
+| +recipe/rel/bidir \| weighted | 255 | 0.517 ± 0.075 | 0.759 | 0.372 | 0.421 | 0.799 | 0.753 |
 | +oracle | 255 | 0.678 ± 0.028 | 0.870 | 0.508 | 0.657 | 0.934 | 0.890 |
-| +oracle | kNN filter | 132 | 0.693 ± 0.042 | 0.912 | 0.501 | 0.667 | 0.925 | 0.884 |
-| +oracle | weighted | 255 | 0.690 ± 0.037 | 0.873 | 0.513 | 0.683 | 0.936 | 0.894 |
+| +oracle \| kNN filter | 139 | 0.684 ± 0.037 | 0.907 | 0.495 | 0.651 | 0.924 | 0.882 |
+| +oracle \| weighted | 255 | 0.690 ± 0.037 | 0.873 | 0.513 | 0.683 | 0.936 | 0.894 |
 
 ### E20b more anomalous is not more useful (logistic, 3 repetitions, recall at 1 % FAR)
 
@@ -607,24 +654,24 @@ Share of generated windows the kNN novelty filter keeps (outside the nominal 99 
 | +div | 0.520 | 0.957 | 0.353 | 0.250 | 0.56 |
 | +div/ramp | 0.489 | 0.952 | 0.351 | 0.164 | 0.99 |
 | +div/ramp/wide | 0.470 | 0.964 | 0.316 | 0.131 | 0.99 |
-| +oracle | 0.760 | 0.956 | 0.598 | 0.727 | 0.49 |
+| +oracle | 0.760 | 0.956 | 0.598 | 0.727 | 0.56 |
 
 ### E20c the gain against a better-tuned detector (logistic, penalty C swept, 3 repetitions)
 
 | C, training positives | recall @ 1 % FAR | spike | level shift | drift | AUROC |
 |---|---:|---:|---:|---:|---:|
-| C=0.01 | real_only | 0.413 | 0.861 | 0.202 | 0.177 | 0.765 |
-| C=0.01 | +recipe/rel+div | 0.474 | 0.950 | 0.317 | 0.154 | 0.823 |
-| C=0.01 | +oracle | 0.742 | 0.962 | 0.584 | 0.680 | 0.944 |
-| C=0.1 | real_only | 0.448 | 0.867 | 0.232 | 0.244 | 0.772 |
-| C=0.1 | +recipe/rel+div | 0.520 | 0.957 | 0.353 | 0.250 | 0.836 |
-| C=0.1 | +oracle | 0.760 | 0.956 | 0.598 | 0.727 | 0.944 |
-| C=1 | real_only | 0.482 | 0.877 | 0.264 | 0.306 | 0.775 |
-| C=1 | +recipe/rel+div | 0.551 | 0.960 | 0.383 | 0.310 | 0.847 |
-| C=1 | +oracle | 0.756 | 0.948 | 0.598 | 0.723 | 0.942 |
-| C=10 | real_only | 0.563 | 0.893 | 0.349 | 0.448 | 0.775 |
-| C=10 | +recipe/rel+div | 0.603 | 0.960 | 0.419 | 0.430 | 0.854 |
-| C=10 | +oracle | 0.750 | 0.940 | 0.591 | 0.718 | 0.941 |
+| C=0.01 \| real_only | 0.413 | 0.861 | 0.202 | 0.177 | 0.765 |
+| C=0.01 \| +recipe/rel+div | 0.474 | 0.950 | 0.317 | 0.154 | 0.823 |
+| C=0.01 \| +oracle | 0.742 | 0.962 | 0.584 | 0.680 | 0.944 |
+| C=0.1 \| real_only | 0.448 | 0.867 | 0.232 | 0.244 | 0.772 |
+| C=0.1 \| +recipe/rel+div | 0.520 | 0.957 | 0.353 | 0.250 | 0.836 |
+| C=0.1 \| +oracle | 0.760 | 0.956 | 0.598 | 0.727 | 0.944 |
+| C=1 \| real_only | 0.482 | 0.877 | 0.264 | 0.306 | 0.775 |
+| C=1 \| +recipe/rel+div | 0.551 | 0.960 | 0.383 | 0.310 | 0.847 |
+| C=1 \| +oracle | 0.756 | 0.948 | 0.598 | 0.723 | 0.942 |
+| C=10 \| real_only | 0.563 | 0.893 | 0.349 | 0.448 | 0.775 |
+| C=10 \| +recipe/rel+div | 0.603 | 0.960 | 0.419 | 0.430 | 0.854 |
+| C=10 \| +oracle | 0.750 | 0.940 | 0.591 | 0.718 | 0.941 |
 
 ## Reading
 
@@ -881,45 +928,55 @@ two training events per kind seen through three overlapping crops (18 real
 windows); 255 generated positives per arm (85 per kind) on training donors;
 a detector on 500 ROCKET kernels; 900 new test anomalies with sizes over the
 whole range and 3000 nominal test windows; recall at 1 % nominal false
-alarms; five repetitions; paired bootstrap over the pooled test anomalies.
-The logistic detector is the stand-in for augdetect's CNN (both train with
-BCE); the ridge detector shows what a squared loss does.
+alarms. The logistic detector is the stand-in for augdetect's CNN (both
+train with BCE); the ridge detector shows what a squared loss does. E20 runs
+every arm for five repetitions; E20d reruns the key arms for 20 repetitions
+and gives the intervals quoted here: t-intervals over the per-repetition
+differences, which cover the draw of the training events as well as the
+test sample (E20's "test-side" intervals cover only the latter and are far
+too narrow for claims).
 
 - *Steering is what makes regenerated windows useful.* The no-steer twin
   (the recipe's sampler, masks and seeds with every objective off) costs
-  17 points of recall (0.489 → 0.316); the steered recipe beats it by 22.
-  Unguided regeneration costs 2. Regenerated donors labelled positive are
-  mislabelled negatives.
-- *The fixes help detection, modestly.* The masked recipe adds 1.8 points
-  over real anomalies alone; donor-relative targets, size jitter ×U(0.5,
-  1.5) and prototype time shifts add about a point each (2.1 together),
-  for +4.7 [3.8, 5.7] in `flip_x0_contrast_masked_div`, +3.8 over the
-  C1-like sampler and +2.5 over post-hoc injection. The gain survives a
-  better-tuned detector (E20c): with a weaker penalty (C = 10) real-only
-  recall rises to 0.563 and the recipe still adds 4.0 points (3
-  repetitions), which brings it level with the best real-only detector
-  here (ridge, 0.594).
+  17 points of recall (0.502 → 0.329, CI [−19.5, −15.2]); the detection
+  recipe beats it by 22 [19.5, 24.2]. Regenerated donors labelled positive
+  are mislabelled negatives.
+- *The fixes help detection, modestly but clearly.* The masked recipe adds
+  2.3 points over real anomalies alone [1.1, 3.4];
+  `flip_x0_contrast_masked_div` (donor-relative targets, sizes ×U(0.5, 1.5),
+  prototype time shifts) adds another 2.3 [0.7, 3.8], for +4.5 [2.7, 6.4]
+  over real anomalies (gain in 18 of 20 repetitions), +4.1 [2.3, 6.0] over
+  the C1-like sampler and +4.0 [1.2, 6.8] over post-hoc injection. C1-like
+  and post-hoc positives add nothing measurable (+0.4, +0.5). In E20's
+  breakdown, relative targets alone give 0.8 points, jitter and shifts
+  about 1 each.
+- *A better-tuned detector keeps the gain and punishes the frozen sampler.*
+  With a 100 times weaker penalty (C = 10) real-only recall rises to 0.578,
+  the detection recipe still adds 2.9 [0.8, 4.9], while C1-like positives
+  now cost 6.2 [3.5, 8.9] and post-hoc ones 7.4. The difference between
+  the fixed and the frozen sampler grows to 9.0 points [6.6, 11.4] (E20c
+  sweeps C on three repetitions with the same picture).
 - *The headroom is in the prototype kinds.* Perfect positives (the true
-  anomaly process injected into the same donors) add 25 points; their lead
-  over the recipe is 21 points on level shifts and 40 on drifts, none on
-  spikes. Only about half of the prototype-made drift windows leave the
-  nominal set at all (kNN filter), against 97 % of the contrast windows. On
-  ESA the prototype kinds are the global and local subsequences, 18 of 22
-  events.
+  anomaly process injected into the same donors) add 23 points [19.4,
+  26.5] (14 with C = 10). In E20 their lead over the recipe is 21 points on
+  level shifts and 40 on drifts, none on spikes. On ESA the prototype kinds
+  are the global and local subsequences, 18 of 22 events.
 - *The loss matters.* With a squared loss every generator except the perfect
-  one lowered recall (the recipe by 11 points, C1-like by 2.5), while the same
-  positives raised it under BCE. Easy positives far beyond the boundary pull a
-  least-squares fit; BCE ignores them. Weighting the synthetic positives to the
-  real ones' total weight recovers 5 points for ridge and does nothing under
-  BCE.
-- *The novelty filter is a safety net.* Dropping generated windows that a
-  nominal-only 5-NN in ROCKET space cannot tell from nominal data (99th
-  percentile) keeps 0–1 % of the twin, 17 % of unguided, 79 % of post-hoc,
-  99 % of C1-like and 97 % / 49 % of the recipe's contrast / prototype
-  windows. It restores the twin to real-only recall (+16.8 points), helps
-  unguided (+2.6), costs the recipe 0.9 and perfect positives 7.8 points:
-  subtle but real anomalies also sit inside the nominal set. Its pass rate is
-  a useful gallery number in its own right (augdetect reports it).
+  one lowered recall (the detection recipe by 10 points, C1-like by 4.3,
+  E20d), while the same positives raised it under BCE. Easy positives far
+  beyond the boundary pull a least-squares fit; BCE ignores them. Weighting
+  the synthetic positives to the real ones' total weight recovers 5 points
+  for ridge and does nothing under BCE (E20).
+- *The novelty filter is a safety net, not a free gain* (E20, five
+  repetitions, each window's own donor left out of its neighbours). A
+  nominal-only 5-NN in ROCKET space at its 99th percentile keeps 1–2 % of
+  the twin, 14–17 % of unguided, 79 % of post-hoc, 99 % of C1-like, 97–98 %
+  of the recipe's contrast windows and 49 % of its prototype windows. It
+  rescues the twin (+15 points [8.4, 21.6]) and unguided (+2.6), is neutral
+  for the recipe (−1.0 [−3.2, 1.2]) and costs perfect positives 7.4 points
+  [3.3, 11.6]: subtle but real anomalies also sit inside the nominal set (the
+  filter keeps only 31 % of the true level shifts). Its pass rate is a useful
+  gallery number in its own right (augdetect reports it).
 - *A bidirectional denoiser did not help detection here* (−1.3 points with
   the exact bidirectional estimator, mostly spikes); its value is realism.
 
@@ -934,7 +991,15 @@ the real ones teaches the detector the wrong boundary. That is where realism
 and detection meet.
 
 **E20c — against a better-tuned detector.** E20's logistic detector uses
-C = 0.1. Over C = 0.01 … 10 the recipe adds 6.1, 7.2, 6.9 and 4.0 points to
-real-only recall (0.413 → 0.474, 0.448 → 0.520, 0.482 → 0.551, 0.563 →
-0.603) and perfect positives stay at 0.74–0.76. The gain shrinks as the
-real-only baseline gets stronger but does not vanish.
+C = 0.1. Over C = 0.01 … 10 (three repetitions) the detection recipe adds 6.1,
+7.2, 6.9 and 4.0 points to real-only recall (0.413 → 0.474, 0.448 → 0.520,
+0.482 → 0.551, 0.563 → 0.603) and perfect positives stay at 0.74–0.76. E20d
+confirms the C = 10 case on 20 repetitions (+2.9 [0.8, 4.9]): the gain shrinks
+as the real-only baseline gets stronger but does not vanish.
+
+**E20d — 20 repetitions.** The key arms of E20 rerun with three detectors;
+the first five repetitions are E20's (identical numbers). The t-interval over
+repetitions and a two-level bootstrap (repetitions, then test anomalies)
+agree to 0.003. Every interval quoted under E20 comes from here; E20's own
+"test-side" intervals resample only the test anomalies and are three to five
+times narrower than these.

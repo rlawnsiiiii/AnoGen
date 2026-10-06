@@ -43,7 +43,7 @@
    "recall drift": 0.7266666666666667,
    "auroc": 0.9438704938271605,
    "ap": 0.9145139011440868,
-   "drift kept by kNN filter": 0.49411764705882355
+   "drift kept by kNN filter": 0.5568627450980391
   }
  },
  "per_rep": {
@@ -168,7 +168,7 @@
     "recall drift": 0.71,
     "auroc": 0.9426466666666666,
     "ap": 0.9154631342133083,
-    "drift kept by kNN filter": 0.5294117647058824
+    "drift kept by kNN filter": 0.6235294117647059
    },
    {
     "recall@1%FAR": 0.7388888888888889,
@@ -177,7 +177,7 @@
     "recall drift": 0.7166666666666667,
     "auroc": 0.9366822222222222,
     "ap": 0.9011041619407723,
-    "drift kept by kNN filter": 0.5647058823529412
+    "drift kept by kNN filter": 0.5764705882352941
    },
    {
     "recall@1%FAR": 0.7866666666666666,
@@ -186,7 +186,7 @@
     "recall drift": 0.7533333333333333,
     "auroc": 0.9522825925925927,
     "ap": 0.9269744072781803,
-    "drift kept by kNN filter": 0.38823529411764707
+    "drift kept by kNN filter": 0.47058823529411764
    }
   ]
  }
