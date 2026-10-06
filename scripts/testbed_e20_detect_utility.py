@@ -46,8 +46,11 @@ loss, ROCKET's default) and with an L2 logistic regression (the CNN's BCE
 loss), stand-ins for augdetect's CNN (all pool over time). Test: 300 new anomalies per kind
 with amplitudes over the whole range and uniform positions, 3000 nominal
 windows. Primary: recall at 1 % nominal false alarms; also AUROC and AP.
-Repeated over 5 draws of the few-shot events and of all generation seeds;
-paired differences per test anomaly, pooled over repetitions, bootstrap CI.
+Repeated over 5 draws of the few-shot events and of all generation seeds.
+Paired differences per test anomaly: "all" bootstraps the pooled test
+anomalies (test-side uncertainty only); "across_reps" is a t-interval over the
+per-repetition differences, which also covers the training draw. E20d repeats
+the key arms 20 times for the headline intervals.
 """
 
 from __future__ import annotations
@@ -58,6 +61,7 @@ import time
 from pathlib import Path
 
 import numpy as np
+from scipy import stats
 from sklearn.linear_model import LogisticRegression, RidgeClassifierCV
 from sklearn.metrics import average_precision_score, roc_auc_score
 from sklearn.neighbors import NearestNeighbors
@@ -202,6 +206,15 @@ def oracle(donors, rng):
                            for k, kind in enumerate(KINDS)])
 
 
+def knn_score(nn, emb: np.ndarray, exclude: np.ndarray, k: int = 5) -> np.ndarray:
+    """Mean distance to the k nearest reference windows, the window's own donor left out
+    (shell/novelty.KnnNovelty.score with ``exclude``)."""
+    d, idx = nn.kneighbors(emb, n_neighbors=k + 1)
+    drop = idx == np.asarray(exclude)[:, None]
+    drop[~drop.any(axis=1), -1] = True
+    return (d * ~drop).sum(axis=1) / k
+
+
 def evaluate(f_pos, f_neg, f_test_nom, f_test_an, kind_test, weight=None, detector="ridge"):
     x = np.concatenate([f_pos, f_neg])
     y = np.r_[np.ones(len(f_pos)), np.zeros(len(f_neg))]
@@ -260,7 +273,10 @@ def main() -> None:
         x_real = np.concatenate([real[k] for k in KINDS])
         neg = ch.sample(N_NEG, W, rng)
         shell = Shell.from_nominal(enc, ch.sample(512, W, rng), ch.sample(512, W, rng))
-        donors = neg[rng.permutation(N_NEG)[: N_PER_KIND * len(KINDS)]]  # training nominals, as in augdetect
+        perm = rng.permutation(N_NEG)
+        donors = neg[perm[: N_PER_KIND * len(KINDS)]]  # training nominals, as in augdetect
+        # the filter's reference set is neg[:1500]; a generated window's own donor is left out of its neighbours
+        own = np.where(perm[: N_PER_KIND * len(KINDS)] < 1500, perm[: N_PER_KIND * len(KINDS)], -1)
         test_nom = ch.sample(N_TEST_NOM, W, rng)
         kind_test = np.repeat(np.array(KINDS), N_TEST_PER_KIND)
         test_an = np.concatenate([inject(k, ch.sample(N_TEST_PER_KIND, W, rng), positions(k, N_TEST_PER_KIND, rng),
@@ -289,7 +305,7 @@ def main() -> None:
         # novelty filters, both calibrated on nominal training windows only
         nn = NearestNeighbors(n_neighbors=5).fit(space.embed_features(f_neg[:1500]))
         knn_thr = float(np.quantile(nn.kneighbors(space.embed_features(f_neg[1500:]))[0].mean(axis=1), 0.99))
-        keep = {g: {"kNN filter": nn.kneighbors(space.embed_features(f_syn[g]))[0].mean(axis=1) > knn_thr} for g in GENS}
+        keep = {g: {"kNN filter": knn_score(nn, space.embed_features(f_syn[g]), own) > knn_thr} for g in GENS}
         print(f"rep {rep}: features and filters ({time.time() - t0:.0f}s)", flush=True)
 
         row = {"realized": realized, "pass_rate": {}, "n_real": int(len(x_real))}
@@ -335,10 +351,16 @@ def main() -> None:
     for dt in DETECTORS:
         for a, b in PAIRS:
             ha, hb = np.concatenate(hits_all[(dt, a)]), np.concatenate(hits_all[(dt, b)])
+            per_rep = [float((x.astype(float) - y.astype(float)).mean())
+                       for x, y in zip(hits_all[(dt, a)], hits_all[(dt, b)], strict=True)]
+            half = (float(stats.t.ppf(0.975, len(per_rep) - 1) * np.std(per_rep, ddof=1) / np.sqrt(len(per_rep)))
+                    if len(per_rep) > 1 else float("nan"))
             pairs[dt][f"{a} - {b}"] = {"all": paired(ha, hb, rng),
                                        **{k: paired(ha[kinds_cat == k], hb[kinds_cat == k], rng) for k in KINDS},
-                                       "per_rep": [float((x.astype(float) - y.astype(float)).mean())
-                                                   for x, y in zip(hits_all[(dt, a)], hits_all[(dt, b)], strict=True)]}
+                                       "per_rep": per_rep,
+                                       "across_reps": {"mean": float(np.mean(per_rep)),
+                                                       "lo": float(np.mean(per_rep) - half),
+                                                       "hi": float(np.mean(per_rep) + half)}}
     res = {"setup": {"W": W, "reps": REPS, "n_synth_per_kind": N_PER_KIND, "n_real_train": 6 * len(KINDS),
                      "n_neg": N_NEG, "n_test_nominal": N_TEST_NOM, "n_test_per_kind": N_TEST_PER_KIND, "amp": AMP,
                      "detectors": "ROCKET 500 kernels (ppv, max) + RidgeClassifierCV (balanced) / "

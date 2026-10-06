@@ -32,3 +32,20 @@ def test_config_parsing():
         novelty_from_cfg({"kind": "isolation_forest"})
     with pytest.raises(RuntimeError):
         KnnNovelty().score(np.zeros((1, 8)))
+
+
+def test_excluding_the_own_donor_removes_the_self_match():
+    rng = np.random.default_rng(3)
+    ref, cal = _nominal(300, rng), _nominal(200, rng)
+    nov = KnnNovelty(n_kernels=100, n_components=16, q=0.99).fit(ref, cal)
+    copies = ref[:20] + 1e-6  # "edits" that are their donor
+    plain = nov.score(copies)
+    excl = nov.score(copies, exclude=np.arange(20))
+    assert np.all(excl > plain)  # the zero-distance self match is gone
+    # excluding an index that is not a neighbour drops the farthest of k + 1 instead
+    far = nov.score(copies[:3], exclude=np.full(3, -1))
+    assert np.allclose(far, plain[:3], rtol=0.3) and far.shape == (3,)
+    import pytest as _pytest
+
+    with _pytest.raises(ValueError):
+        nov.score(copies, exclude=np.arange(3))

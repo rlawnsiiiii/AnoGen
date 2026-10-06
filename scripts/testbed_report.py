@@ -4,6 +4,7 @@ import sys
 from pathlib import Path
 
 d = Path(sys.argv[1] if len(sys.argv) > 1 else "results/testbed")
+BAR = "\\|"  # a literal | inside a markdown table cell
 e1 = {b: json.loads((d / f"e1_unguided_B{b}.json").read_text()) for b in (128, 256) if (d / f"e1_unguided_B{b}.json").is_file()}
 print("### E1 unguided\n")
 print("| start | denoiser | peak@start | peak@end | std ratio start / mid / end | Δ-std ratio start / mid / end |")
@@ -278,16 +279,22 @@ if p20.is_file():
         print("| training positives | n generated kept | recall @ 1 % FAR | spike | level shift | drift | AUROC | AP |")
         print("|---|---:|---:|---:|---:|---:|---:|---:|")
         for arm, r in summ.items():
-            print(f"| {arm} | {r.get('n_synth', 0):.0f} | {r['recall@1%FAR']:.3f} ± {r['recall_sd_over_reps']:.3f} | "
+            arm_md = arm.replace("|", BAR)
+            print(f"| {arm_md} | {r.get('n_synth', 0):.0f} | {r['recall@1%FAR']:.3f} ± {r['recall_sd_over_reps']:.3f} | "
                   f"{r['recall spike']:.3f} | {r['recall level shift']:.3f} | {r['recall drift']:.3f} | "
                   f"{r['auroc']:.3f} | {r['ap']:.3f} |")
-        print(f"\nPaired differences in recall ({dt}; same test anomalies, pooled over repetitions, bootstrap 95 % CI):\n")
-        print("| A − B | all kinds | spike | level shift | drift | per repetition |")
-        print("|---|---|---:|---:|---:|---|")
+        print(f"\nPaired differences in recall ({dt}). Test-side CI: bootstrap over the pooled test anomalies; "
+              "across repetitions: t-interval over the per-repetition differences (also covers the training draw):\n")
+        print("| A − B | mean | test-side 95 % CI | across repetitions 95 % CI | spike | level shift | drift | per repetition |")
+        print("|---|---:|---|---|---:|---:|---:|---|")
         for name, p in e20["pairs"][dt].items():
             a = p["all"]
-            print(f"| {name} | {a['diff']:+.3f} [{a['lo']:+.3f}, {a['hi']:+.3f}] | {p['spike']['diff']:+.3f} | "
-                  f"{p['level shift']['diff']:+.3f} | {p['drift']['diff']:+.3f} | {' '.join(f'{v:+.2f}' for v in p['per_rep'])} |")
+            ar = p.get("across_reps") or {}
+            ci = f"[{ar['lo']:+.3f}, {ar['hi']:+.3f}]" if ar else ""
+            name_md = name.replace("|", BAR)
+            print(f"| {name_md} | {a['diff']:+.3f} | [{a['lo']:+.3f}, {a['hi']:+.3f}] | {ci} | "
+                  f"{p['spike']['diff']:+.3f} | {p['level shift']['diff']:+.3f} | {p['drift']['diff']:+.3f} | "
+                  f"{' '.join(f'{v:+.2f}' for v in p['per_rep'])} |")
     pr = e20.get("pass_rate") or {}
     if pr:
         print("\nShare of generated windows the kNN novelty filter keeps (outside the nominal 99 % set), per kind:\n")
@@ -312,5 +319,23 @@ if p20c.is_file():
     print("| C, training positives | recall @ 1 % FAR | spike | level shift | drift | AUROC |")
     print("|---|---:|---:|---:|---:|---:|")
     for arm, r in e20c["summary"].items():
-        print(f"| {arm} | {r['recall@1%FAR']:.3f} | {r['recall spike']:.3f} | {r['recall level shift']:.3f} | "
+        arm_md = arm.replace("|", BAR)
+        print(f"| {arm_md} | {r['recall@1%FAR']:.3f} | {r['recall spike']:.3f} | {r['recall level shift']:.3f} | "
               f"{r['recall drift']:.3f} | {r['auroc']:.3f} |")
+p20d = d / "e20d_repetitions.json"
+if p20d.is_file():
+    e20d = json.loads(p20d.read_text())
+    print(f"\n### E20d the headline across {e20d['reps']} repetitions (recall at 1 % FAR)\n")
+    dets = list(e20d["arms"])
+    print("| training positives | " + " | ".join(dets) + " |")
+    print("|---|" + "---:|" * len(dets))
+    for arm in next(iter(e20d["arms"].values())):
+        print(f"| {arm} | " + " | ".join(f"{e20d['arms'][dt][arm]['recall_mean']:.3f} ± {e20d['arms'][dt][arm]['recall_sd_over_reps']:.3f}"
+                                       for dt in dets) + " |")
+    print("\nPaired differences: mean over repetitions, t-interval and two-level bootstrap (repetitions, then test anomalies), share of repetitions with a gain:\n")
+    print("| detector | A − B | mean | t 95 % CI | two-level bootstrap 95 % CI | repetitions with A > B |")
+    print("|---|---|---:|---|---|---:|")
+    for dt in dets:
+        for name, p in e20d["pairs"][dt].items():
+            print(f"| {dt} | {name} | {p['mean']:+.3f} | [{p['t_lo']:+.3f}, {p['t_hi']:+.3f}] | "
+                  f"[{p['boot_lo']:+.3f}, {p['boot_hi']:+.3f}] | {p['share_of_reps_positive']:.0%} |")

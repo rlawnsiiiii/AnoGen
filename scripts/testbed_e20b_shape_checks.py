@@ -64,7 +64,9 @@ def main() -> None:
         x_real = np.concatenate([real[k] for k in e20.KINDS])
         neg = e20.ch.sample(e20.N_NEG, W, rng)
         shell = e20.Shell.from_nominal(e20.enc, e20.ch.sample(512, W, rng), e20.ch.sample(512, W, rng))
-        donors = neg[rng.permutation(e20.N_NEG)[: NK * len(e20.KINDS)]]
+        perm = rng.permutation(e20.N_NEG)
+        donors = neg[perm[: NK * len(e20.KINDS)]]
+        own = np.where(perm[: NK * len(e20.KINDS)] < 1500, perm[: NK * len(e20.KINDS)], -1)
         test_nom = e20.ch.sample(e20.N_TEST_NOM, W, rng)
         kind_test = np.repeat(np.array(e20.KINDS), e20.N_TEST_PER_KIND)
         test_an = np.concatenate([e20.inject(k, e20.ch.sample(e20.N_TEST_PER_KIND, W, rng),
@@ -91,7 +93,7 @@ def main() -> None:
             fs = space.features(xs)
             _, m = e20.evaluate(np.concatenate([f_real, fs]), f_neg, f_tn, f_ta, kind_test, detector="logistic")
             m["drift kept by kNN filter"] = float(
-                (nn.kneighbors(space.embed_features(fs[2 * NK :]))[0].mean(axis=1) > thr).mean())
+                (e20.knn_score(nn, space.embed_features(fs[2 * NK :]), own[2 * NK :]) > thr).mean())
             rows[name].append(m)
         print(rep, {a: round(rows[a][-1]["recall@1%FAR"], 3) for a in arms}, flush=True)
     summary = {a: {k: float(np.mean([r[k] for r in v])) for k in v[0]} for a, v in rows.items()}

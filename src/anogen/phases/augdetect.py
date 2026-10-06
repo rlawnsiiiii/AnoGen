@@ -90,6 +90,19 @@ def run_augdetect(cfg: dict[str, Any]) -> dict[str, Any]:
 
     acfg = dict((cfg.get("shell") or {}).get("augdetect") or {})
     arms = tuple(acfg.get("arms") or DEFAULT_ARMS)
+    # Paired A − B contrasts beyond "vs real_only": configured pairs plus every
+    # fixsweep arm against its no-steer twin when both arms run (what steering
+    # adds to a detector, beyond regenerating the donor). Checked before any run.
+    variants = dict(((cfg.get("shell") or {}).get("fixsweep") or {}).get("variants") or _fixsweep_variants())
+    pair_list = _auto_twin_pairs(arms, variants)
+    for p in acfg.get("compare") or []:
+        if len(p) != 2:
+            raise ValueError(f"augdetect.compare entries are [arm_a, arm_b], got {p}")
+        missing = [a for a in p if str(a) not in arms]
+        if missing:
+            raise ValueError(f"augdetect.compare names arms that are not in augdetect.arms: {missing}")
+        if (str(p[0]), str(p[1])) not in pair_list:
+            pair_list.append((str(p[0]), str(p[1])))
     seeds = [int(s) for s in (acfg.get("seeds") or [0, 1, 2, 3, 4])]
     n_synth = int(acfg.get("n_synth", 256))
     steps = int(acfg.get("steps", 400))
@@ -115,7 +128,7 @@ def run_augdetect(cfg: dict[str, Any]) -> dict[str, Any]:
     from anogen.shell.novelty import novelty_from_cfg
 
     synth_filter = novelty_from_cfg(acfg.get("synth_filter"), seed=int(cfg.get("seed", 0)))
-    novelty_cache: dict[tuple[int, int], Any] = {}
+    novelty_cache: dict[tuple, Any] = {}
     # Optional label-free score from `anogen diffdetect`, rank-fused with the CNN.
     diff_scores = None
     if acfg.get("fuse_diffscore"):
@@ -233,16 +246,6 @@ def run_augdetect(cfg: dict[str, Any]) -> dict[str, Any]:
 
     _assert_no_nominal_leak(rows)
     summary = _aggregate(rows, arms=arms, seeds=seeds, folds=folds)
-    # Paired A − B contrasts beyond "vs real_only": configured pairs plus every
-    # fixsweep arm against its no-steer twin when both arms ran (what steering
-    # adds to a detector, beyond regenerating the donor).
-    variants = dict(((cfg.get("shell") or {}).get("fixsweep") or {}).get("variants") or _fixsweep_variants())
-    pair_list = _auto_twin_pairs(arms, variants)
-    for p in acfg.get("compare") or []:
-        if len(p) != 2:
-            raise ValueError(f"augdetect.compare entries are [arm_a, arm_b], got {p}")
-        if (str(p[0]), str(p[1])) not in pair_list:
-            pair_list.append((str(p[0]), str(p[1])))
     pairs = _compare_pairs(rows, pair_list, n_boot=max(n_boot, 2000), seed=seed0)
     csv_path = out / "metrics.csv"
     _write_csv(csv_path, rows)
@@ -291,25 +294,35 @@ def _filter_synth(
     ch_ref: np.ndarray,
     x_cal: np.ndarray,
     ch_cal: np.ndarray,
-    cache: dict[tuple[int, int], Any] | None = None,
-    key: tuple[int, int] = (0, 0),
+    cache: dict[tuple, Any] | None = None,
+    key: tuple = (0, 0),
+    exclude: np.ndarray | None = None,
 ) -> tuple[np.ndarray, np.ndarray, float]:
     """Keep the generated windows ``synth_filter`` (an unfitted ``KnnNovelty``)
     places outside the nominal set; returns them, their channels and the share
-    kept. The filter is fitted in the detector's scaled units, once per key."""
+    kept. The filter is fitted in the detector's scaled units, once per key.
+    ``exclude``: per window, the reference row of its own donor (−1: none).
+    Too few nominal windows to fit the filter: nothing is dropped (share NaN)."""
     nov = None if cache is None else cache.get(key)
     if nov is None:
-        nov = copy.deepcopy(synth_filter).fit(scaler.transform(x_ref, ch_ref), scaler.transform(x_cal, ch_cal))
+        try:
+            nov = copy.deepcopy(synth_filter).fit(scaler.transform(x_ref, ch_ref), scaler.transform(x_cal, ch_cal))
+        except ValueError as exc:
+            import warnings
+
+            warnings.warn(f"synth_filter skipped: {exc}", stacklevel=2)
+            return np.asarray(x_syn), np.asarray(ch_syn), float("nan")
         if cache is not None:
             cache[key] = nov
-    keep = nov.keep(scaler.transform(x_syn, ch_syn))
+    keep = nov.keep(scaler.transform(x_syn, ch_syn), exclude=exclude)
     return np.asarray(x_syn)[keep], np.asarray(ch_syn)[keep], float(keep.mean())
 
 
 def _arm_leaks_fold0(arm: str) -> bool:
     # fixsweep galleries steer level shifts toward fold-0's only level-shift
     # event when that fold is held out (kind_ref_indices falls back in-fold)
-    return arm in {"genfsdiff_c1", "c1_plus_real", "synth_only"} or arm.startswith("fixsweep:")
+    base = arm.removesuffix("+real")
+    return base in {"genfsdiff_c1", "c1_plus_real", "synth_only"} or base.startswith("fixsweep:")
 
 
 def _is_plus_real(arm: str) -> bool:
@@ -352,7 +365,7 @@ def _run_one(
     fixsweep_dir: Path | None = None,
     real_frac: float | None = None,
     synth_filter: Any = None,
-    novelty_cache: dict[tuple[int, int], Any] | None = None,
+    novelty_cache: dict[tuple, Any] | None = None,
 ) -> dict[str, Any]:
     rng = np.random.default_rng(seed + 1000 * fold_id)
     train_a = fold_a != fold_id
@@ -381,7 +394,7 @@ def _run_one(
     x_pos_real = x_a[train_a] if use_real else np.zeros((0, x_a.shape[1]), dtype=x_a.dtype)
     ch_pos_real = ch_a[train_a] if use_real else np.zeros(0, dtype=ch_a.dtype)
 
-    x_syn, ch_syn = _synth_for_arm(
+    x_syn, ch_syn, donor_syn = _synth_for_arm(
         arm,
         fold_id=fold_id,
         rng=rng,
@@ -392,6 +405,7 @@ def _run_one(
         cond_ch=cond_ch,
         exclude_donor_fold=fold_id if donor_disjoint else None,
         fixsweep_dir=fixsweep_dir,
+        return_donor=True,
     )
     # 20 % of the training nominals are always kept out of fitting (so the CNN
     # rows do not depend on whether fusion is on); they serve as the CNN's
@@ -408,6 +422,11 @@ def _run_one(
     n_synth_generated = int(len(x_syn))
     synth_pass = float("nan")
     if synth_filter is not None and len(x_syn) and arm != "real_only":
+        # a generated window's own donor may be a reference window: leave it out
+        ref_row = np.full(len(x_cond), -1, dtype=np.int64)
+        fit_pos = np.flatnonzero(nom_train_m)[~ref_nom]
+        ref_row[fit_pos] = np.arange(len(fit_pos))
+        exclude = np.where(donor_syn >= 0, ref_row[np.clip(donor_syn, 0, None)], -1)
         x_syn, ch_syn, synth_pass = _filter_synth(
             x_syn,
             ch_syn,
@@ -418,7 +437,8 @@ def _run_one(
             x_cal=x_nom_tr[ref_nom],
             ch_cal=ch_nom_tr[ref_nom],
             cache=novelty_cache,
-            key=(int(fold_id), int(seed)),
+            key=(int(fold_id), int(seed), hash(np.flatnonzero(ref_nom).tobytes())),
+            exclude=exclude,
         )
 
     if arm == "real_only":
@@ -439,6 +459,8 @@ def _run_one(
     x_neg = np.concatenate([x_fit_nom, x_r[train_r]], axis=0) if int(train_r.sum()) else x_fit_nom
     ch_neg = np.concatenate([ch_fit_nom, ch_r[train_r]], axis=0) if int(train_r.sum()) else ch_fit_nom
 
+    # real_frac only applies when the positives hold both real and generated rows
+    real_frac_used = real_frac if (plus_real and 0 < len(x_pos_real) < len(x_pos)) else None
     x_pos_s = scaler.transform(x_pos, ch_pos)
     x_neg_s = scaler.transform(x_neg, ch_neg)
     x_te_a = scaler.transform(x_a[test_a], ch_a[test_a])
@@ -459,7 +481,7 @@ def _run_one(
         lr=lr,
         device=device,
         shift_aug=shift_aug,
-        real_frac=real_frac if (plus_real and arm != "real_only") else None,
+        real_frac=real_frac_used,
         n_real=int(len(x_pos_real)),
     )
     ev = eval_detector(
@@ -580,7 +602,7 @@ def _run_one(
         "n_pos_synth": int(len(x_syn) if arm != "real_only" else 0),
         "n_synth_generated": n_synth_generated if arm != "real_only" else 0,
         "synth_pass_rate": synth_pass,
-        "real_frac": real_frac if (plus_real and arm != "real_only") else None,
+        "real_frac": real_frac_used,
         "n_neg": int(len(x_neg)),
         "n_nom_train": int(len(x_nom_tr)),
         "n_fit_nominals": int((~ref_nom).sum()),
@@ -617,7 +639,8 @@ def _synth_for_arm(
     cond_ch: np.ndarray,
     exclude_donor_fold: int | None = None,
     fixsweep_dir: Path | None = None,
-) -> tuple[np.ndarray, np.ndarray]:
+    return_donor: bool = False,
+) -> tuple[np.ndarray, ...]:
     """Synthetic positives for one arm and test fold.
 
     ``fixsweep:<variant>`` (alone) or ``fixsweep:<variant>+real`` (added to the
@@ -625,16 +648,26 @@ def _synth_for_arm(
     e.g. the recommended recipe and its no-steer twin, so the detection gain
     of steering can be separated from the gain of any regenerated window.
     Any other arm takes ``+real`` the same way (``genias+real``, ``posthoc+real``).
+    ``return_donor`` adds a third array: each row's S3 donor index (−1 when the
+    gallery is not stored in donor order).
     """
     if n_synth <= 0:
-        return np.zeros((0, 1), dtype=np.float32), np.zeros(0, dtype=np.int64)
+        empty = (np.zeros((0, 1), dtype=np.float32), np.zeros(0, dtype=np.int64))
+        return (*empty, np.zeros(0, dtype=np.int64)) if return_donor else empty
 
-    def _disjoint(x: np.ndarray, ch: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    def _disjoint(x: np.ndarray, ch: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         # Galleries are stored in S3 donor order (row i is an edit of donor i).
-        if exclude_donor_fold is None or len(x) != len(cond_ch):
-            return x, ch
-        keep = np.arange(len(x)) % 3 != int(exclude_donor_fold)
-        return x[keep], np.asarray(ch)[keep]
+        if len(x) != len(cond_ch):
+            return x, ch, np.full(len(x), -1, dtype=np.int64)
+        donor = np.arange(len(x), dtype=np.int64)
+        if exclude_donor_fold is None:
+            return x, ch, donor
+        keep = donor % 3 != int(exclude_donor_fold)
+        return x[keep], np.asarray(ch)[keep], donor[keep]
+
+    def _take(x: np.ndarray, ch: np.ndarray, donor: np.ndarray) -> tuple[np.ndarray, ...]:
+        xs, cs, ds = _subsample_with_donor(x, ch, donor, n_synth, rng)
+        return (xs, cs, ds) if return_donor else (xs, cs)
 
     key = {
         "synth_only": "genfsdiff_c1",
@@ -653,24 +686,24 @@ def _synth_for_arm(
             raise FileNotFoundError(path)
         blob = np.load(path, allow_pickle=True)
         ch = np.asarray(blob["channel_idx"]) if "channel_idx" in blob.files else cond_ch
-        return _subsample(*_disjoint(np.asarray(blob["x"]), ch), n_synth, rng)
+        return _take(*_disjoint(np.asarray(blob["x"]), ch))
     if key in galleries:
         x, ch = galleries[key]
-        return _subsample(*_disjoint(x, ch), n_synth, rng)
+        return _take(*_disjoint(x, ch))
     if key == "genfsdiff_c1":
         path = hybrid / f"{C1_GALLERY}_fold{fold_id}.npz"
         if not path.is_file():
             raise FileNotFoundError(path)
         blob = np.load(path)
         ch = np.asarray(blob["channel_idx"]) if "channel_idx" in blob.files else cond_ch
-        return _subsample(*_disjoint(np.asarray(blob["x"]), ch), n_synth, rng)
+        return _take(*_disjoint(np.asarray(blob["x"]), ch))
     if key == "genfsdiff_c3":
         path = enc_score / f"{C3_GALLERY}_fold{fold_id}.npz"
         if not path.is_file():
             raise FileNotFoundError(path)
         blob = np.load(path)
         ch = np.asarray(blob["channel_idx"]) if "channel_idx" in blob.files else cond_ch
-        return _subsample(*_disjoint(np.asarray(blob["x"]), ch), n_synth, rng)
+        return _take(*_disjoint(np.asarray(blob["x"]), ch))
     raise FileNotFoundError(f"unknown augdetect arm {arm}")
 
 
@@ -680,14 +713,27 @@ def _subsample(
     n: int,
     rng: np.random.Generator,
 ) -> tuple[np.ndarray, np.ndarray]:
+    xs, cs, _ = _subsample_with_donor(x, ch, None, n, rng)
+    return xs, cs
+
+
+def _subsample_with_donor(
+    x: np.ndarray,
+    ch: np.ndarray,
+    donor: np.ndarray | None,
+    n: int,
+    rng: np.random.Generator,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """``_subsample`` that carries a per-row donor index along (same rng use)."""
     x = np.asarray(x)
     ch = np.asarray(ch)
     if len(ch) != len(x):
         ch = ch[: len(x)] if len(ch) >= len(x) else np.resize(ch, len(x))
+    donor = np.full(len(x), -1, dtype=np.int64) if donor is None else np.asarray(donor, dtype=np.int64)
     if n >= len(x):
-        return x, ch
+        return x, ch, donor
     idx = rng.choice(len(x), size=int(n), replace=False)
-    return x[idx], ch[idx]
+    return x[idx], ch[idx], donor[idx]
 
 
 def _assert_no_nominal_leak(rows: list[dict[str, Any]]) -> None:

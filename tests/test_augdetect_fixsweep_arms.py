@@ -94,3 +94,21 @@ def test_synth_filter_drops_nominal_like_positives_and_caches_per_key():
     fitted = cache[(0, 0)]
     _filter_synth(syn, np.arange(40), **kw)
     assert cache[(0, 0)] is fitted  # reused, not refitted
+
+
+def test_return_donor_tracks_s3_rows_and_plus_real_keeps_the_leak_flag(tmp_path):
+    n, w = 30, 16
+    cond_ch = np.arange(n) % 2
+    x = np.tile(np.arange(n, dtype=np.float32)[:, None], (1, w))
+    np.savez_compressed(tmp_path / "v_fold2.npz", x=x, channel_idx=cond_ch)
+    xs, ch, donor = _synth_for_arm("fixsweep:v+real", fold_id=2, rng=np.random.default_rng(0), n_synth=7,
+                                   galleries={}, hybrid=tmp_path, enc_score=tmp_path, cond_ch=cond_ch,
+                                   exclude_donor_fold=2, fixsweep_dir=tmp_path, return_donor=True)
+    assert len(xs) == 7 and np.array_equal(donor, xs[:, 0].astype(int)) and np.all(donor % 3 != 2)
+    # the same rng use as without donors: identical rows
+    xs2, _ = _synth_for_arm("fixsweep:v+real", fold_id=2, rng=np.random.default_rng(0), n_synth=7, galleries={},
+                            hybrid=tmp_path, enc_score=tmp_path, cond_ch=cond_ch, exclude_donor_fold=2,
+                            fixsweep_dir=tmp_path)
+    assert np.array_equal(xs, xs2)
+    assert _arm_leaks_fold0("genfsdiff_c1+real") and _arm_leaks_fold0("c1_plus_real")
+    assert not _arm_leaks_fold0("genias+real")
