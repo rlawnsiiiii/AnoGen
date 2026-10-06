@@ -12,6 +12,12 @@ share of first-difference variance is
 This is an upper bound for any sampler that ends with a Tweedie step at σ_min
 (a perfect denoiser, exact ODE). Use it to choose σ_min *before* retraining:
 measure S(f) on the scaled training windows of each channel.
+
+The other end of the schedule follows from the same spectrum. At σ_max a
+component of power P keeps SNR = P / σ_max² in q(x_T | x₀); a sampler started
+from N(0, I) is only on-distribution when that is ≈ 0 for the strongest
+component, including the window mean (DC), whose power is W·mean² when the
+data are not centred. ``schedule_bounds`` turns both into numbers.
 """
 
 from __future__ import annotations
@@ -72,3 +78,44 @@ def sigma_min_for(spec: np.ndarray, *, width: int, keep: float = 0.95) -> float:
         if kept_fraction(spec, float(s), width=width) >= keep:
             best = float(s)
     return best
+
+
+def component_power(x_scaled: np.ndarray, *, center: float | None = None) -> dict[str, float]:
+    """Largest per-frequency power of the windows, and the power of their mean (DC).
+
+    ``center``: value subtracted before the DC power (None = 0, the data as the
+    denoiser sees them; the channel mean = what a centred scaler would leave).
+    Both in the per-sample-variance units of ``window_spectrum``.
+    """
+    a = np.asarray(x_scaled, dtype=np.float64)
+    w = a.shape[1]
+    c = 0.0 if center is None else float(center)
+    dc = float(w * np.mean((a.mean(axis=1) - c) ** 2))
+    spec = window_spectrum(a)
+    return {"spectrum_max": float(spec[1:].max()), "dc_power": dc}
+
+
+def schedule_bounds(
+    x_scaled: np.ndarray,
+    *,
+    keep_texture: float = 0.95,
+    terminal_snr: float = 0.01,
+    centered: bool = False,
+) -> dict[str, float]:
+    """σ_min that keeps ``keep_texture`` of the texture and σ_max that leaves at
+    most ``terminal_snr`` in the strongest component (DC included).
+
+    ``centered=True`` assumes the denoiser sees the data with the channel mean
+    removed (z-score scaler); otherwise the raw scaled values (min/max scaler),
+    whose large mean usually dominates σ_max.
+    """
+    a = np.asarray(x_scaled, dtype=np.float64)
+    spec = window_spectrum(a)
+    p = component_power(a, center=float(a.mean()) if centered else None)
+    p_max = max(p["spectrum_max"], p["dc_power"])
+    return {
+        "sigma_min": sigma_min_for(spec, width=a.shape[1], keep=keep_texture),
+        "sigma_max": float(np.sqrt(p_max / float(terminal_snr))),
+        "sigma_max_without_dc": float(np.sqrt(p["spectrum_max"] / float(terminal_snr))),
+        **p,
+    }

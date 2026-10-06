@@ -146,24 +146,36 @@ class TinyEpsNet:
 
 
 class NetDenoiser:
-    """Adapter so ``gauss.guided_ddim`` can sample with a TinyEpsNet."""
+    """Adapter so ``gauss.guided_ddim`` can sample with a TinyEpsNet.
 
-    def __init__(self, net: TinyEpsNet, schedule, length: int, mean: float = 0.0):
+    ``param``: what the net was trained to predict, ``"eps"`` (ε) or ``"v"``
+    (v = √ᾱ ε − √(1−ᾱ) x₀, Salimans & Ho 2022), both on the centred input.
+    """
+
+    def __init__(self, net: TinyEpsNet, schedule, length: int, mean: float = 0.0, param: str = "eps"):
         self.net, self.schedule, self.length, self.mean = net, schedule, int(length), float(mean)
+        if param not in ("eps", "v"):
+            raise ValueError(param)
+        self.param = param
         self._last: tuple | None = None
 
     def x0_hat(self, xt: np.ndarray, t: int) -> np.ndarray:
         ab = float(self.schedule.alpha_bar[int(t)])
-        eps = self.net.forward(xt - np.sqrt(ab) * self.mean, np.full(len(xt), int(t)))
+        z = xt - np.sqrt(ab) * self.mean
+        out = self.net.forward(z, np.full(len(xt), int(t)))
         self._last = (int(t), ab)
-        return (xt - np.sqrt(1.0 - ab) * eps) / np.sqrt(ab)
+        if self.param == "v":  # x0_c = √ab z − √(1−ab) v
+            return self.mean + np.sqrt(ab) * z - np.sqrt(1.0 - ab) * out
+        return (xt - np.sqrt(1.0 - ab) * out) / np.sqrt(ab)
 
     def vjp(self, g_x0: np.ndarray, t: int) -> np.ndarray:
         """d f / d x_t for the *last* x0_hat call at this t."""
         ab = float(self.schedule.alpha_bar[int(t)])
+        g_in, _ = self.net.backward(g_x0)
+        if self.param == "v":
+            return np.sqrt(ab) * g_x0 - np.sqrt(1.0 - ab) * g_in
         # x0 = (x - sqrt(1-ab) eps(x)) / sqrt(ab)  ->  J^T g = (g - sqrt(1-ab) Jeps^T g) / sqrt(ab)
-        g_eps_in, _ = self.net.backward(g_x0)
-        return (g_x0 - np.sqrt(1.0 - ab) * g_eps_in) / np.sqrt(ab)
+        return (g_x0 - np.sqrt(1.0 - ab) * g_in) / np.sqrt(ab)
 
 
 def train_eps_net(
@@ -177,8 +189,10 @@ def train_eps_net(
     mean: float = 0.0,
     seed: int = 0,
     log_every: int = 200,
+    target: str = "eps",
 ) -> list[float]:
-    """ε-MSE training on fresh draws from ``sample_fn(n, rng) -> (n, L)``."""
+    """ε-MSE (``target="eps"``) or v-MSE (``"v"``) training on fresh draws from
+    ``sample_fn(n, rng) -> (n, L)``."""
     rng = np.random.default_rng(seed)
     hist = []
     n_times = len(schedule.alpha_bar)
@@ -189,11 +203,12 @@ def train_eps_net(
         eps = rng.standard_normal(x0.shape)
         xt = np.sqrt(ab) * x0 + np.sqrt(1 - ab) * eps
         pred = net.forward(xt, t)
-        g = 2.0 * (pred - eps) / pred.size
+        tgt = eps if target == "eps" else np.sqrt(ab) * eps - np.sqrt(1 - ab) * x0
+        g = 2.0 * (pred - tgt) / pred.size
         _, grads = net.backward(g)
         lr_s = lr * min(1.0, s / 100) * (0.5 * (1 + np.cos(np.pi * s / steps)) * 0.9 + 0.1)
         net.step(grads, lr=lr_s)
-        hist.append(float(np.mean((pred - eps) ** 2)))
+        hist.append(float(np.mean((pred - tgt) ** 2)))
         if log_every and s % log_every == 0:
             print(f"  step {s}: eps-mse {np.mean(hist[-log_every:]):.4f}", flush=True)
     return hist

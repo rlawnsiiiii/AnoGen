@@ -17,6 +17,11 @@ What it adds per gallery (fold-wise, then averaged):
 * which φ feature carries the query→nearest distance
 * position of the dominant excursion (start / end / entropy) and envelope
   exit frequency vs magnitude, in channel-span units
+* a channel-balanced, event-grouped ROCKET C2ST AUC (0.5 = indistinguishable
+  from the fold's real anomalies) and ARP in the ROCKET PCA space
+  (shell/rocket.py; testbed E18: the linear raw-window C2ST has no power,
+  ROCKET detects texture, amplitude and position defects). ``--rocket-kernels 0``
+  switches it off.
 """
 
 from __future__ import annotations
@@ -110,6 +115,7 @@ def main() -> None:
     ap.add_argument("-c", "--config", required=True)
     ap.add_argument("--n-boot", type=int, default=1000)
     ap.add_argument("--out", default=None, help="output dir (default results/shell_metric_audit)")
+    ap.add_argument("--rocket-kernels", type=int, default=300, help="0 = skip the ROCKET C2ST / ARP")
     args = ap.parse_args()
     cfg = load_config(args.config)
     root = Path(cfg["_repo_root"])
@@ -133,6 +139,16 @@ def main() -> None:
         return spec["fold"].get(k)
 
     ref_names = ("donor (real nominal)", "unguided nu=1")
+    rocket_space = None
+    if args.rocket_kernels > 0:
+        from anogen.shell.coverage import arp as _arp
+        from anogen.shell.coverage import min_distances
+        from anogen.shell.rocket import RocketSpace, rocket_c2st
+
+        d_x, d_ch = gals["donor (real nominal)"]["all"]
+        rocket_space = RocketSpace(n_kernels=args.rocket_kernels, seed=0).fit(
+            channel_span_normalize(np.asarray(d_x), np.asarray(d_ch), scaler)
+        )
     phi_stats = phi_standardizer(embed_windows(np.asarray(gals["donor (real nominal)"]["all"][0])))
     # Oracle: real anomaly windows of the *other* folds as the gallery (the
     # honest ceiling for "reproduces known faults").
@@ -165,6 +181,18 @@ def main() -> None:
                 ), axis=1)))
             )
             r.update({f"prdc_{k}": v for k, v in prdc(q_emb, g_emb).items()})
+            if rocket_space is not None:
+                rm_ = fold_a == k
+                u_r = channel_span_normalize(x_a[rm_], ch_a[rm_], scaler)
+                u_g = channel_span_normalize(x, ch, scaler)
+                try:
+                    r["c2st_rocket_auc"] = rocket_c2st(
+                        rocket_space, u_r, u_g, ch_a[rm_], ch, ev[rm_], np.arange(len(x))
+                    )["auc"]
+                except ValueError:
+                    r["c2st_rocket_auc"] = float("nan")
+                u_q = channel_span_normalize(x_a[qm], ch_a[qm], scaler)
+                r["arp_rocket"] = _arp(min_distances(rocket_space.embed(u_q), rocket_space.embed(u_g)))
             r["phi_attribution"] = feature_attribution(q_emb, g_emb, PHI_NAMES)
             u = channel_span_normalize(x, ch, scaler)
             rm = fold_a == k
@@ -195,14 +223,14 @@ def main() -> None:
         return f"[{np.mean([v[0] for v in vals]):.3f}, {np.mean([v[1] for v in vals]):.3f}]" if vals else ""
 
     lines = [
-        "| gallery | ARP | ARP 95% CI | ARP − donor | ARP − unguided | ARP (std φ) | ARP (φ no HF) | Cov@τ | precision | density | coverage(PRDC) | start | end | env exit |",
-        "|---|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
-        f"| real anomalies (target) | | | | | | | | | | | {target['peak_at_start']:.3f} | {target['peak_at_end']:.3f} | {target['exit_frac']:.3f} |",
+        "| gallery | ARP | ARP 95% CI | ARP − donor | ARP − unguided | ARP (std φ) | ARP (φ no HF) | C2ST ROCKET AUC | Cov@τ | precision | density | coverage(PRDC) | start | end | env exit |",
+        "|---|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+        f"| real anomalies (target) | | | | | | | 0.5 | | | | | {target['peak_at_start']:.3f} | {target['peak_at_end']:.3f} | {target['exit_frac']:.3f} |",
     ]
     for name, per in rows.items():
         lines.append(
             f"| {name} | {m(per, 'arp'):.3f} | {ci(per, 'arp_ci')} | {m(per, 'arp_minus_donor'):+.3f} | "
-            f"{m(per, 'arp_minus_unguided'):+.3f} | {m(per, 'arp_phi_std'):.3f} | {m(per, 'arp_phi_no_hf'):.3f} | {m(per, 'coverage'):.3f} | {m(per, 'prdc_precision'):.3f} | "
+            f"{m(per, 'arp_minus_unguided'):+.3f} | {m(per, 'arp_phi_std'):.3f} | {m(per, 'arp_phi_no_hf'):.3f} | {m(per, 'c2st_rocket_auc'):.3f} | {m(per, 'coverage'):.3f} | {m(per, 'prdc_precision'):.3f} | "
             f"{m(per, 'prdc_density'):.3f} | {m(per, 'prdc_coverage'):.3f} | "
             f"{m(per, 'peak_at_start'):.3f} | {m(per, 'peak_at_end'):.3f} | {m(per, 'exit_frac'):.3f} |"
         )

@@ -12,7 +12,11 @@ in the *scaled* units the denoiser is trained in, and reports per channel:
   final Tweedie step at σ_min keeps, for the frozen σ_min = 0.01 and smaller
   values (shell/texture.py; exact for Gaussian windows, an upper bound for
   any sampler);
-* the largest σ_min that keeps 95 % of the texture.
+* the largest σ_min that keeps 95 % of the texture, and the σ_max that leaves
+  at most 1 % SNR in the strongest component at the top of the schedule
+  (``texture.schedule_bounds``). With min/max data the window mean (DC) sets
+  σ_max (≈ 80 in the testbed); centred data (``--standardize``) only need the
+  spectrum's peak (≈ 10), and have no from-noise level bias (testbed E19).
 
 σ_min is in the units of the scaled windows: S0's range by default. For an
 s1v2 retrain with ``scaler_v2.feature_range: [-1, 1]`` pass
@@ -33,7 +37,7 @@ import numpy as np
 from anogen.config import load_config, panel_path
 from anogen.shell.data import load_panel
 from anogen.shell.scaler import load_minmax
-from anogen.shell.texture import sigma_min_for, texture_report, window_spectrum
+from anogen.shell.texture import schedule_bounds, sigma_min_for, texture_report, window_spectrum
 from anogen.shell.windows import load_train_index, materialize
 
 
@@ -49,6 +53,11 @@ def main() -> None:
         default=None,
         help="report in the units of the planned S1 scaler (e.g. -1 1 for scaler_v2); "
         "default: S0's scaler range. σ_min is in these units.",
+    )
+    ap.add_argument(
+        "--standardize",
+        action="store_true",
+        help="report in per-channel z-score units (scaler_v2: {kind: standard}); overrides --feature-range",
     )
     args = ap.parse_args()
     cfg = load_config(args.config)
@@ -75,17 +84,21 @@ def main() -> None:
         x = materialize(panel, sub, w)
         ch = sub["channel_idx"].to_numpy(dtype=np.int64)
         xs = scaler.transform(x, ch).astype(np.float64)
-        if args.feature_range is not None:  # re-express in the planned scaler's units
+        if args.standardize:  # per-channel z-score, as fit_channel_standard
+            xs = (xs - xs.mean()) / max(float(xs.std()), 1e-12)
+        elif args.feature_range is not None:  # re-express in the planned scaler's units
             a, b = scaler.feature_range
             a2, b2 = args.feature_range
             xs = a2 + (xs - a) / (b - a) * (b2 - a2)
         r = texture_report(xs, list(args.sigmas))
         r["sigma_min_for_95pct_texture"] = sigma_min_for(window_spectrum(xs), width=w, keep=0.95)
+        r.update({f"bounds_{k}": v for k, v in schedule_bounds(xs, centered=bool(args.standardize)).items()})
         report[f"channel_idx_{int(c)}"] = r
         print(
             f"ch {int(c)}: mean {r['window_mean']:.3f}  σ_data {r['sigma_data_within_window']:.4f}  "
             f"texture sd/bin {r['texture_sd_per_bin']:.5f}  kept texture @σ_min=0.01: "
-            f"{r['kept_texture_sigma_0.01']:.2f}  σ_min for 95 %: {r['sigma_min_for_95pct_texture']:.2g}"
+            f"{r['kept_texture_sigma_0.01']:.2f}  σ_min for 95 %: {r['sigma_min_for_95pct_texture']:.2g}  "
+            f"σ_max for SNR_T 1 %: {r['bounds_sigma_max']:.3g} (without the mean: {r['bounds_sigma_max_without_dc']:.3g})"
         )
     (out / "schedule_check.json").write_text(json.dumps(report, indent=2) + "\n")
 

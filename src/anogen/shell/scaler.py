@@ -127,6 +127,36 @@ def fit_channel_minmax(
     return ChannelMinMax(lo=lo, hi=hi, feature_range=feature_range)
 
 
+def fit_channel_standard(
+    x: np.ndarray,
+    channel_idx: np.ndarray,
+    n_channels: int,
+) -> ChannelMinMax:
+    """Per-channel z-score, (x − μ_c) / s_c, as an affine ``ChannelMinMax``.
+
+    lo = μ − s, hi = μ + s and feature_range (−1, 1) give exactly the z-score,
+    so every consumer (transform, inverse, torch twins, checkpoints) works
+    unchanged. Gives each channel unit variance, so one noise schedule means
+    the same signal-to-noise ratio on every channel (input scaling shifts the
+    log-SNR, Chen 2023), and the diffusion prior N(0, I) matches the data's
+    scale. For the denoiser only: envelope diagnostics must keep using S0's
+    min/max scaler (``channel_span_normalize`` reads lo/hi).
+    """
+    x = np.asarray(x, dtype=np.float64)
+    ch = np.asarray(channel_idx, dtype=np.int64)
+    lo = np.full(n_channels, -1.0, dtype=np.float64)
+    hi = np.ones(n_channels, dtype=np.float64)
+    for c in range(n_channels):
+        m = ch == c
+        if not np.any(m):
+            continue
+        xc = x[m]
+        mu, sd = float(np.mean(xc)), float(np.std(xc))
+        sd = sd if sd > _EPS else 1.0
+        lo[c], hi[c] = mu - sd, mu + sd
+    return ChannelMinMax(lo=lo, hi=hi, feature_range=(-1.0, 1.0))
+
+
 def load_minmax(path: Path) -> ChannelMinMax:
     blob = np.load(path)
     fr = blob["feature_range"]
@@ -153,3 +183,24 @@ def resolve_scaler(ckpt: dict[str, Any] | None = None, s0: Path | None = None) -
         if path.is_file():
             return load_minmax(path)
     return None
+
+
+def unit_scale(scaler: ChannelMinMax | None, reference: ChannelMinMax | None, channels: Any = None) -> float:
+    """How many of ``scaler``'s units one ``reference`` unit is (median over channels).
+
+    Both are affine per channel, so a noise level σ in ``reference`` units is
+    σ·unit_scale in ``scaler`` units for the same physical perturbation. Used to
+    keep the frozen edit's strength when a denoiser was trained in other units
+    (e.g. an s1v2 z-score scaler). 1.0 when either is missing.
+    """
+    if scaler is None or reference is None:
+        return 1.0
+    a, b = scaler.feature_range
+    a0, b0 = reference.feature_range
+    per = ((b - a) / (scaler.hi - scaler.lo)) / ((b0 - a0) / (reference.hi - reference.lo))
+    if channels is not None:
+        idx = np.unique(np.asarray(channels, dtype=np.int64))
+        idx = idx[(idx >= 0) & (idx < len(per))]
+        if len(idx):
+            per = per[idx]
+    return float(np.median(per))

@@ -272,6 +272,39 @@ if _TORCH:
             return w * fwd + (1.0 - w) * rev
 
 
+if _TORCH:
+
+    class VToEps(nn.Module):
+        """Wrap a v-prediction network so that it returns ε.
+
+        v = √ᾱ ε − √(1−ᾱ) x₀ (Salimans & Ho, ICLR 2022) and x_t = √ᾱ x₀ + √(1−ᾱ) ε
+        give ε = √(1−ᾱ) x_t + √ᾱ v, so every sampler and score in the repo
+        (which all read ε) works unchanged. v is better conditioned than ε at
+        both ends of a wide (log-spaced, near-zero terminal SNR) schedule.
+        """
+
+        def __init__(self, model: Any, alpha_bar: Any) -> None:
+            super().__init__()
+            self.model = model
+            self.register_buffer("alpha_bar", torch.as_tensor(alpha_bar, dtype=torch.float32).detach().clone())
+
+        @property
+        def bidirectional(self) -> bool:
+            return bool(getattr(self.model, "bidirectional", False))
+
+        def forward(
+            self, x: "torch.Tensor", t: "torch.Tensor", channel_idx: "torch.Tensor"
+        ) -> "torch.Tensor":
+            v = self.model(x, t, channel_idx)
+            ab = self.alpha_bar.to(v.device)[t].view(-1, 1, 1).to(v.dtype)
+            return (1.0 - ab).sqrt() * x + ab.sqrt() * v
+
+
+def v_target(x0: Any, noise: Any, alpha_bar_t: Any) -> Any:
+    """v = √ᾱ ε − √(1−ᾱ) x₀ (works on torch tensors and numpy arrays)."""
+    return alpha_bar_t**0.5 * noise - (1.0 - alpha_bar_t) ** 0.5 * x0
+
+
 def wrap_denoiser(model: Any, flip: str | None = None) -> Any:
     """Optionally wrap a causal denoiser in ``FlipEnsemble`` (flip=ramp|avg)."""
     if not flip or str(flip).lower() in {"none", "off", "false"}:
@@ -329,7 +362,8 @@ def build_denoiser(
 
 
 def denoiser_from_ckpt(ckpt: dict[str, Any], device: Any | None = None) -> Any:
-    return build_denoiser(
+    """The checkpoint's network as an ε-predictor (v-models are wrapped in ``VToEps``)."""
+    model = build_denoiser(
         backbone=str(ckpt.get("backbone", "unet")),
         hidden=int(ckpt.get("hidden", 48)),
         n_channels=int(ckpt["n_channels"]),
@@ -340,6 +374,15 @@ def denoiser_from_ckpt(ckpt: dict[str, Any], device: Any | None = None) -> Any:
         device=device,
         bidirectional=bool(ckpt.get("bidirectional", False)),
     )
+    param = str(ckpt.get("parameterization", "eps")).lower()
+    if param == "v":
+        sched = DiffusionSchedule.from_ckpt(ckpt, allow_nonlinear=True)
+        model = VToEps(model, sched.alpha_bar)
+        if device is not None:
+            model.to(device)
+    elif param != "eps":
+        raise ValueError(f"unknown parameterization {param!r} in checkpoint")
+    return model
 
 
 def train_denoiser(
@@ -363,8 +406,18 @@ def train_denoiser(
     schedule_kind: str = "linear",
     sigma_min: float = 1e-3,
     sigma_max: float = 10.0,
+    parameterization: str = "eps",
+    ema_decay: float | None = None,
 ) -> dict[str, Any]:
-    """Train ε-prediction. Returns model, schedule, and scalar logs."""
+    """Train ε- (default) or v-prediction. Returns model, schedule, and scalar logs.
+
+    ``parameterization="v"`` trains on v = √ᾱ ε − √(1−ᾱ) x₀; the returned
+    ``model`` is the raw network (save its state_dict with
+    ``parameterization: v``) and ``eps_model`` is the same network wrapped to
+    return ε for sampling. ``ema_decay`` (e.g. 0.999) keeps an exponential
+    moving average of the weights and returns it instead of the last iterate.
+    Validation is always ε-MSE, so ``loss_by_t`` stays comparable across runs.
+    """
     _require_torch()
     if x.ndim != 2:
         raise ValueError(f"expected (N, W), got {x.shape}")
@@ -392,6 +445,20 @@ def train_denoiser(
         allow_nonlinear=True,
     ).to(device_t)
     opt = torch.optim.Adam(model.parameters(), lr=lr)
+    param = str(parameterization).lower()
+    if param not in ("eps", "v"):
+        raise ValueError(f"parameterization must be 'eps' or 'v', got {parameterization!r}")
+    ema_model = None
+    if ema_decay:
+        import copy
+
+        ema_model = copy.deepcopy(model)
+        ema_model.eval()
+        for p in ema_model.parameters():
+            p.requires_grad_(False)
+
+    def eps_view(m: Any) -> Any:
+        return VToEps(m, schedule.alpha_bar) if param == "v" else m
 
     def _loader(idx: np.ndarray, shuffle: bool) -> DataLoader:
         xt = torch.from_numpy(np.asarray(x[idx], dtype=np.float32)).unsqueeze(1)
@@ -418,11 +485,22 @@ def train_denoiser(
             t = torch.randint(0, n_times, (xb.size(0),), device=device_t)
             xt, noise = q_sample(xb, t, schedule)
             pred = model(xt, t, cb)
-            loss = F.mse_loss(pred, noise)
+            if param == "v":
+                target = v_target(xb, noise, schedule.alpha_bar[t].view(-1, 1, 1))
+            else:
+                target = noise
+            loss = F.mse_loss(pred, target)
             opt.zero_grad(set_to_none=True)
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             opt.step()
+            if ema_model is not None:
+                with torch.no_grad():
+                    d = float(ema_decay)
+                    for pe, pm in zip(ema_model.parameters(), model.parameters(), strict=True):
+                        pe.mul_(d).add_(pm.detach(), alpha=1.0 - d)
+                    for be, bm in zip(ema_model.buffers(), model.buffers(), strict=True):
+                        be.copy_(bm)
             last_loss = float(loss.item())
             ema = last_loss if not np.isfinite(ema) else (0.98 * ema + 0.02 * last_loss)
             step += 1
@@ -431,7 +509,7 @@ def train_denoiser(
                 hist_loss.append(float(ema))
             if step == 1 or step % val_every == 0 or step >= steps:
                 model.eval()
-                vm = _val_mse(model, schedule, val_loader, device_t, n_times)
+                vm = _val_mse(eps_view(ema_model or model), schedule, val_loader, device_t, n_times)
                 hist_val_step.append(step)
                 hist_val.append(vm)
                 model.train()
@@ -439,10 +517,15 @@ def train_denoiser(
                 break
 
     model.eval()
-    val_mse = hist_val[-1] if hist_val else _val_mse(model, schedule, val_loader, device_t, n_times)
-    loss_by_t = _val_mse_by_t(model, schedule, val_loader, device_t, n_times, n_bins=8)
+    if ema_model is not None:
+        model = ema_model
+    val_mse = hist_val[-1] if hist_val else _val_mse(eps_view(model), schedule, val_loader, device_t, n_times)
+    loss_by_t = _val_mse_by_t(eps_view(model), schedule, val_loader, device_t, n_times, n_bins=8)
     return {
         "model": model,
+        "eps_model": eps_view(model),
+        "parameterization": param,
+        "ema_decay": float(ema_decay) if ema_decay else None,
         "schedule": schedule,
         "device": str(device_t),
         "n_params": count_params(model),

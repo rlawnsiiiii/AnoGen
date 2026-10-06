@@ -102,6 +102,17 @@ DEFAULT_VARIANTS: dict[str, dict[str, Any]] = {
         "n_recur": 2,
         "twin": "nosteer_flip_x0",
     },
+    # Guidance weight ∝ σ_t (mean 1 over the chain): same budget, spent while the
+    # denoiser can still harmonize it (testbed E17: prototype distance
+    # 0.100 -> 0.002 with the trained net, edges 0.059 vs 0.051 real).
+    "flip_x0_final025_recur2_decay1": {
+        "flip": "ramp",
+        "guidance_space": "x0",
+        "final_grad_scale": 0.25,
+        "n_recur": 2,
+        "guidance_decay": 1.0,
+        "twin": "nosteer_flip_x0",
+    },
     # Contrast kinds generated as masked (RePaint) edits: exact position and a
     # bin-level label; the rest of the window stays donor (testbed E14).
     # contrast_only: the contrast kinds drop their prototype term (testbed E6:
@@ -115,6 +126,7 @@ DEFAULT_VARIANTS: dict[str, dict[str, Any]] = {
         "mask": True,
         "mask_dilate": 8,
         "n_recur": 2,
+        "guidance_decay": 1.0,
         "twin": "nosteer_flip_x0_masked",
     },
 }
@@ -192,7 +204,7 @@ def run_fixsweep(cfg: dict[str, Any]) -> dict[str, Any]:
     from anogen.shell.events import types_from_cfg
     from anogen.shell.features import embed_windows
     from anogen.shell.morphology import KIND_ORDER, KIND_SLUG, kind_ref_indices, kinds_for_windows
-    from anogen.shell.scaler import resolve_scaler
+    from anogen.shell.scaler import load_minmax, resolve_scaler
     from anogen.shell.steer import chunked_guided_ddim
 
     recipes = {
@@ -235,6 +247,19 @@ def run_fixsweep(cfg: dict[str, Any]) -> dict[str, Any]:
     prefix_info: dict[str, Any] = {"requested": False}
     if any(bool(v.get("burnin")) and not bool(v.get("start_from_noise")) for v in variants.values()):
         context, prefix_info = donor_context(cfg, x_cond, cond_ch, burn_bins)
+
+    # Realism diagnostics are always in S0's envelope units (channel min/max of
+    # the train pool), whatever scaler a denoiser checkpoint carries (s1v2 may
+    # use another range or a z-score). ROCKET C2ST/ARP space fit on the donors.
+    span_scaler = load_minmax(s0 / "minmax_scaler.npz")
+    rocket_space = None
+    if int(fcfg.get("rocket_kernels", 300)) > 0:
+        from anogen.shell.realism import channel_span_normalize
+        from anogen.shell.rocket import RocketSpace
+
+        rocket_space = RocketSpace(n_kernels=int(fcfg.get("rocket_kernels", 300)), seed=seed0).fit(
+            channel_span_normalize(x_cond, cond_ch, span_scaler)
+        )
 
     dens: dict[str, tuple[Any, Any, Any]] = {}
 
@@ -292,7 +317,10 @@ def run_fixsweep(cfg: dict[str, Any]) -> dict[str, Any]:
             **_PARENT50,
         )
         common.update(guided_kw)
-        common["nu"] = edit_nu(schedule, float(common["nu"]))
+        from anogen.shell.scaler import unit_scale as _unit_scale
+
+        u_scale = _unit_scale(scaler, span_scaler, cond_ch)
+        common["nu"] = edit_nu(schedule, float(common["nu"]), u_scale)
         if bool(spec.get("start_from_noise")):
             common["start_from_noise"] = True
             if bool(spec.get("burnin")):
@@ -371,7 +399,7 @@ def run_fixsweep(cfg: dict[str, Any]) -> dict[str, Any]:
                 score_kw=score_kw,
                 event_a=event_a,
                 kind_lab=kind_lab,
-                scaler=scaler,
+                scaler=span_scaler,
                 n_boot=n_boot,
                 seed=fseed,
                 h=h,
@@ -381,6 +409,7 @@ def run_fixsweep(cfg: dict[str, Any]) -> dict[str, Any]:
                 score_gallery=_score_gallery,
                 kind_order=KIND_ORDER,
                 kind_slug=KIND_SLUG,
+                rocket=rocket_space,
             )
             row["leaked_kinds"] = [k for k, v in leaked.items() if v]
             rows.append(row)
@@ -600,7 +629,15 @@ def _score_fold(
     score_gallery: Any,
     kind_order: tuple[str, ...],
     kind_slug: dict[str, str],
+    rocket: Any | None = None,
 ) -> dict[str, Any]:
+    """Protocol scores and raw-window diagnostics for one gallery and fold.
+
+    ``scaler`` must be S0's min/max scaler (envelope units). ``rocket``: a fitted
+    ``RocketSpace``; adds a channel-balanced, event-grouped ROCKET C2ST
+    (``c2st_rocket_auc``, 0.5 = indistinguishable; testbed E18 shows the linear
+    raw-window C2ST has no power) and ARP in its PCA space (``arp_rocket``).
+    """
     from anogen.shell.evaluation import envelope_frequency_report, position_report
     from anogen.shell.features import embed_windows
     from anogen.shell.realism import (
@@ -630,7 +667,20 @@ def _score_fold(
 
     real_m = fold_a == int(fold_id)
     u_real = channel_span_normalize(x_a[real_m], ch_a[real_m], scaler)
-    real_pos = _positions(u_real)
+    if rocket is not None:
+        from anogen.shell.coverage import arp as _arp
+        from anogen.shell.coverage import min_distances
+        from anogen.shell.rocket import rocket_c2st
+
+        u_gal = channel_span_normalize(x, cond_ch, scaler)
+        try:
+            rc = rocket_c2st(rocket, u_real, u_gal, ch_a[real_m], cond_ch, event_a[real_m], np.arange(len(x)))
+            row["c2st_rocket_auc"] = rc["auc"]
+            row["c2st_rocket"] = rc
+        except ValueError as exc:
+            row["c2st_rocket_error"] = str(exc)
+        u_q = channel_span_normalize(x_a[qm], ch_a[qm], scaler)
+        row["arp_rocket"] = _arp(min_distances(rocket.embed(u_q), rocket.embed(u_gal)))
 
     def diag(xs: np.ndarray, chs: np.ndarray, real_u: np.ndarray) -> dict[str, float]:
         u = channel_span_normalize(xs, chs, scaler)
@@ -691,7 +741,16 @@ def _positions(u: np.ndarray) -> np.ndarray:
 
 
 def _mean_rows(rows: list[dict[str, Any]]) -> dict[str, Any]:
-    keys = ("arp_anomaly", "coverage_anomaly", "gap", "occupancy", "c2st_median", "c2st_reject_rate")
+    keys = (
+        "arp_anomaly",
+        "coverage_anomaly",
+        "gap",
+        "occupancy",
+        "c2st_median",
+        "c2st_reject_rate",
+        "c2st_rocket_auc",
+        "arp_rocket",
+    )
     out: dict[str, Any] = {}
     for k in keys:
         vals = [r[k] for r in rows if k in r]
@@ -718,8 +777,8 @@ def fixsweep_table(results: dict[str, Any]) -> str:
         "Real-anomaly targets in the first row; `start`/`end` = share of dominant",
         "peaks in the first/last 10 % of the window (uniform 0.10).",
         "",
-        "| variant | ARP | ARP 95% CI | Cov@τ | C2ST | env exit | env p95 | CUSUM | diff p99.9 | start | end | pos H |",
-        "|---|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+        "| variant | ARP | ARP 95% CI | Cov@τ | C2ST | C2ST ROCKET AUC | env exit | env p95 | CUSUM | diff p99.9 | start | end | pos H |",
+        "|---|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for name, res in results.items():
         if name.startswith("_"):
@@ -731,7 +790,7 @@ def fixsweep_table(results: dict[str, Any]) -> str:
             dr = rows[0]["diag_real"]
             real = dr
             lines.append(
-                f"| real anomalies (fold {rows[0]['fold']}) | | | | 0.5 | {dr['exit_frac']:.3f} | "
+                f"| real anomalies (fold {rows[0]['fold']}) | | | | 0.5 | 0.5 | {dr['exit_frac']:.3f} | "
                 f"{dr['excess_p95_given_exit']:.2f} | {dr['cusum_mean']:+.3f} | {dr['diff_p999']:.3f} | "
                 f"{dr['peak_at_start']:.3f} | {dr['peak_at_end']:.3f} | {dr['position_entropy']:.3f} |"
             )
@@ -741,6 +800,7 @@ def fixsweep_table(results: dict[str, Any]) -> str:
         lines.append(
             f"| {name} | {m.get('arp_anomaly', float('nan')):.3f} | [{lo:.3f}, {hi:.3f}] | "
             f"{m.get('coverage_anomaly', float('nan')):.3f} | {m.get('c2st_median', float('nan')):.3f} | "
+            f"{m.get('c2st_rocket_auc', float('nan')):.3f} | "
             f"{m.get('diag_exit_frac', float('nan')):.3f} | {m.get('diag_excess_p95_given_exit', float('nan')):.2f} | "
             f"{m.get('diag_cusum_mean', float('nan')):+.3f} | {m.get('diag_diff_p999', float('nan')):.3f} | "
             f"{m.get('diag_peak_at_start', float('nan')):.3f} | {m.get('diag_peak_at_end', float('nan')):.3f} | "
@@ -817,21 +877,26 @@ def _contrast_plan(
     return plan
 
 
-def edit_nu(schedule: Any, nu: float) -> float:
+def edit_nu(schedule: Any, nu: float, unit_scale: float = 1.0) -> float:
     """ν giving the frozen edit's *noise level* under ``schedule``.
 
-    Identity for the linear schedule (every frozen checkpoint). For another
-    schedule (s1v2 is geometric), ν = 0.2 would be a much lighter edit, so the
-    ν whose ᾱ matches the linear schedule's ᾱ at ν is returned instead.
+    Identity for the linear schedule in the frozen units (every frozen
+    checkpoint). For another schedule (s1v2 is geometric), ν = 0.2 would be a
+    much lighter edit, so the ν whose ᾱ matches the linear schedule's ᾱ at ν is
+    returned instead. ``unit_scale`` (``scaler.unit_scale``) converts the noise
+    level σ = sqrt((1−ᾱ)/ᾱ) when the denoiser works in other units than the
+    frozen S1 (a z-scored s1v2 sees each physical perturbation g times larger),
+    so the same physical edit strength is kept.
     """
     from anogen.shell.diffusion import DiffusionSchedule, nu_for_noise_level
 
     n = int(schedule.betas.numel())
     lin = DiffusionSchedule.linear(n).alpha_bar
-    if np.allclose(schedule.alpha_bar.detach().cpu().numpy(), lin.numpy()):
+    if np.allclose(schedule.alpha_bar.detach().cpu().numpy(), lin.numpy()) and abs(float(unit_scale) - 1.0) < 1e-9:
         return float(nu)
-    target = float(lin[int(round(float(nu) * (n - 1)))])
-    return nu_for_noise_level(schedule.alpha_bar, target)
+    ab_lin = float(lin[int(round(float(nu) * (n - 1)))])
+    sigma = np.sqrt((1.0 - ab_lin) / ab_lin) * float(unit_scale)
+    return nu_for_noise_level(schedule.alpha_bar, 1.0 / (1.0 + sigma**2))
 
 
 def channel_moments(x: np.ndarray, ch: np.ndarray, scaler: Any) -> tuple[np.ndarray, np.ndarray]:

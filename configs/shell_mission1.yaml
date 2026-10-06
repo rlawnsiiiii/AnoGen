@@ -58,10 +58,13 @@ shell:
     # `anogen s1bidir` trains the bidirectional variant into results/shell_s1_bidir.
     bidirectional: false
   # `anogen s1v2` (bidirectional + log-spaced schedule, results/shell_s1_v2).
-  # Pick sigma_min with scripts/schedule_check.py (95 % texture on every channel).
-  # scaler_v2 is used by S1 only and stored in its checkpoint; S0 is untouched.
-  # diffusion_v2: {sigma_min: 1.0e-3, sigma_max: 10.0}
-  # scaler_v2: {feature_range: [-1.0, 1.0]}
+  # Pick sigma_min / sigma_max with
+  #   scripts/schedule_check.py -c configs/shell_mission1.yaml --standardize
+  # (95 % texture kept, terminal SNR <= 1 % on every channel). scaler_v2 is used
+  # by S1 only and stored in its checkpoint; S0 is untouched, and fixsweep /
+  # diffdetect keep the frozen edit's physical noise level (scaler.unit_scale).
+  # diffusion_v2: {sigma_min: 1.0e-3, sigma_max: 10.0, parameterization: v, ema_decay: 0.999}
+  # scaler_v2: {kind: standard}        # per-channel z-score; or {feature_range: [-1.0, 1.0]}
   steer:
     enc_hidden: 32
     emb: 32

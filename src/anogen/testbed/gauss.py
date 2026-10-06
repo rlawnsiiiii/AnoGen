@@ -248,7 +248,6 @@ class Shell:
     def band(self, x: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         z = self.enc.encode(x)
         h, gz = soft_energy(z, self.ref, self.tau)
-        f = (h - self.q_q) ** 2
         return h, self.enc.vjp(x, (2.0 * (h - self.q_q))[:, None] * gz)
 
 
@@ -302,6 +301,7 @@ def guided_ddim(
     final_denoise: bool = True,
     n_recur: int = 1,
     gen_mask: np.ndarray | None = None,
+    guidance_decay: float = 0.0,
 ) -> np.ndarray:
     """Numpy mirror of ``steer.guided_ddim`` (eta = 0 by default).
 
@@ -346,6 +346,7 @@ def guided_ddim(
         ab = sch.alpha_bar[t_start]
         xt = np.sqrt(ab) * x0 + np.sqrt(1.0 - ab) * rng.standard_normal(x0.shape)
     times = np.linspace(t_start, 0, max(1, int(ddim_steps)), dtype=int)
+    gw = guidance_weights(sch.alpha_bar, times, guidance_decay)
 
     def total_grad(x0h: np.ndarray, t: int, through_denoiser: bool, project: bool = False) -> np.ndarray:
         """Sum of the unit-normalized gradient terms, or (project=True) of the
@@ -385,11 +386,11 @@ def guided_ddim(
             if active and terms:
                 proj = total_grad(x0h, t, False, project=True)
                 if space == "x":
-                    edit = total_grad(x0h, t, True)
+                    edit = gw[i] * total_grad(x0h, t, True)
                 elif space == "x0":
-                    edit = total_grad(x0h, t, False)
+                    edit = gw[i] * total_grad(x0h, t, False)
                 else:  # eps: fold the x_t-gradient into the noise estimate
-                    g = total_grad(x0h, t, True)
+                    g = gw[i] * total_grad(x0h, t, True)
                     eps = eps + np.sqrt(1.0 - ab) * g
                     x0h = (xt - np.sqrt(1.0 - ab) * eps) / np.sqrt(ab)
             if gen_mask is not None:
@@ -423,6 +424,22 @@ def guided_ddim(
         if t_prev < 0:
             break
     return xt[:, crop : xt.shape[1] - crop_end]
+
+
+def guidance_weights(alpha_bar: np.ndarray, times: np.ndarray, decay: float) -> np.ndarray:
+    """Per-step weight on the (unit-normalized) guidance terms, mean 1 over the chain.
+
+    w_i ∝ (σ_{t_i} / σ_{t_0})^decay with σ_t = sqrt((1 − ᾱ_t) / ᾱ_t). decay = 0 is
+    the constant kick; decay = 1 makes each edit proportional to the noise level
+    still to be removed, so late (low-noise) steps, whose edits are never
+    denoised again, get small edits. Twin of ``steer.guidance_weights``.
+    """
+    ab = np.asarray(alpha_bar, dtype=np.float64)[np.asarray(times, dtype=int)]
+    if float(decay) == 0.0:
+        return np.ones(len(ab))
+    sig = np.sqrt((1.0 - ab) / ab)
+    w = (sig / sig[0]) ** float(decay)
+    return w / w.mean()
 
 
 # --------------------------------------------------------------------------

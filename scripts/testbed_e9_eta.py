@@ -1,5 +1,5 @@
 """E9: does stochastic DDIM (eta > 0) fix the high-frequency texture shift of deterministic DDIM?"""
-import json, sys
+import json
 from pathlib import Path
 import numpy as np
 from anogen.testbed.gauss import GPChannel, Schedule, LinearDenoiser, guided_ddim

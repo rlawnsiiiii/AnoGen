@@ -1,5 +1,5 @@
 """E8b: does a *trained* causal ε-net show the start bias the exact estimators predict?"""
-import json, pickle, sys
+import json, pickle
 from pathlib import Path
 import numpy as np
 from anogen.testbed.gauss import (GPChannel, Schedule, BlockEncoder, Shell, GuideTerm, guided_ddim,

@@ -88,3 +88,38 @@ def test_minmax_torch_roundtrip_and_two_step_train():
     assert samples.shape == (2, 64)
     assert np.isfinite(samples).all()
     assert scaler_from_ckpt(ChannelMinMax(lo=sc.lo, hi=sc.hi).to_ckpt()) is not None
+
+
+def test_fit_channel_standard_is_a_per_channel_zscore():
+    import numpy as np
+
+    from anogen.shell.scaler import fit_channel_standard, scaler_from_ckpt
+
+    rng = np.random.default_rng(0)
+    x = np.r_[rng.normal(3.0, 0.5, (50, 32)), rng.normal(-1.0, 2.0, (50, 32))]
+    ch = np.r_[np.zeros(50, int), np.ones(50, int)]
+    sc = fit_channel_standard(x, ch, 2)
+    z = sc.transform(x, ch)
+    for c in (0, 1):
+        assert abs(z[ch == c].mean()) < 1e-5 and abs(z[ch == c].std() - 1.0) < 1e-4
+    assert np.allclose(sc.inverse(z, ch), x, atol=1e-4)
+    back = scaler_from_ckpt(sc.to_ckpt())
+    assert np.allclose(back.transform(x, ch), z)
+
+
+def test_unit_scale_between_minmax_and_zscore():
+    import numpy as np
+
+    from anogen.shell.scaler import fit_channel_minmax, fit_channel_standard, unit_scale
+
+    rng = np.random.default_rng(1)
+    x = np.r_[rng.normal(0.0, 1.0, (40, 16)), rng.normal(5.0, 3.0, (40, 16))]
+    ch = np.r_[np.zeros(40, int), np.ones(40, int)]
+    mm = fit_channel_minmax(x, ch, 2)
+    zs = fit_channel_standard(x, ch, 2)
+    assert np.isclose(unit_scale(mm, mm), 1.0)
+    # one minmax unit = span / sd z-units, per channel
+    per = (mm.hi - mm.lo) / np.array([x[ch == c].std() for c in (0, 1)])
+    assert np.isclose(unit_scale(zs, mm, [0]), per[0], rtol=1e-6)
+    assert np.isclose(unit_scale(zs, mm), np.median(per), rtol=1e-6)
+    assert unit_scale(None, mm) == 1.0

@@ -11,12 +11,13 @@ steps = int(sys.argv[2]) if len(sys.argv) > 2 else 2500
 out = Path("results/testbed/nets"); out.mkdir(parents=True, exist_ok=True)
 from anogen.testbed.gauss import GeometricSchedule
 ch = GPChannel()
-sch = GeometricSchedule() if name.endswith("_geo") else Schedule()
+sch = GeometricSchedule() if "_geo" in name else Schedule()
+target = "v" if name.endswith("_v") else "eps"
 chol = np.linalg.cholesky(ch.cov(512))
 fn = lambda n, rng: ch.mean + (chol @ rng.standard_normal((512, n))).T  # noqa: E731
 net = TinyEpsNet(hidden=32, k=5, dilations=(1, 2, 4, 8, 16), causal=causal, seed=0)
 t0 = time.time()
-hist = train_eps_net(net, fn, sch, steps=steps, batch=64, mean=ch.mean, seed=1, log_every=250)
+hist = train_eps_net(net, fn, sch, steps=steps, batch=64, mean=ch.mean, seed=1, log_every=250, target=target)
 for layer in net.layers():
     layer.cache = None
 net._pre = net._h_in = None

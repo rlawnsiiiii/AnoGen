@@ -34,3 +34,16 @@ def test_report_and_sigma_rule():
     s = sigma_min_for(window_spectrum(x), width=512, keep=0.95)
     assert kept_fraction(window_spectrum(x), s, width=512) >= 0.95
     _ = LinearDenoiser, Schedule  # testbed import smoke
+
+
+def test_schedule_bounds_dc_dominates_uncentred_data():
+    from anogen.shell.texture import component_power, schedule_bounds
+
+    x = GPChannel(mean=0.5).sample(400, 256, np.random.default_rng(3))
+    raw = schedule_bounds(x)
+    cen = schedule_bounds(x - 0.5, centered=True)
+    assert raw["dc_power"] > 50 * raw["spectrum_max"]  # W·0.25 = 64 vs harmonics ~1
+    assert raw["sigma_max"] > 5 * cen["sigma_max"]
+    assert abs(cen["sigma_max"] - cen["sigma_max_without_dc"]) < 1e-9 or cen["sigma_max"] >= cen["sigma_max_without_dc"]
+    p = component_power(np.full((3, 64), 2.0))
+    assert np.isclose(p["dc_power"], 64 * 4.0)

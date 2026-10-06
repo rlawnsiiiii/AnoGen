@@ -335,6 +335,7 @@ def guided_ddim(
     lam_contrast: float = 0.0,
     n_recur: int = 1,
     anomaly_mask: np.ndarray | None = None,
+    guidance_decay: float = 0.0,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Noise nominal windows to ν, DDIM with clipped constraint gradients.
 
@@ -426,6 +427,13 @@ def guided_ddim(
                        (not ``start_from_noise``). Dilate the mask a few bins
                        beyond the target onset so the denoiser, not the mask edge,
                        makes the transition.
+    guidance_decay     per-step weight on the gradient terms, (σ_t/σ_start)^decay
+                       normalized to mean 1 over the chain (``guidance_weights``).
+                       0 = the frozen constant kick. With decay = 1 an edit is
+                       proportional to the noise still to be removed, so the
+                       last, never-denoised steps get small edits (testbed E17).
+                       Projection (contrast) and parent-pull edits are not
+                       weighted.
     """
     _require_torch()
     from anogen.shell.diffusion import q_sample
@@ -523,6 +531,7 @@ def guided_ddim(
         kind_ids_t = torch.as_tensor(anom_kind_ids, device=device_t, dtype=torch.long)
     n_correct = max(1, int(n_correct))
     times = np.linspace(t_start, 0, max(1, int(ddim_steps)), dtype=int)
+    gweights = guidance_weights(sched.alpha_bar.detach().cpu().numpy(), times, guidance_decay)
     use_anom = ref_a is not None and lam_anom != 0.0
     use_rare = ref_r is not None and lam_rare != 0.0
     use_cls = classifier is not None and lam_cls != 0.0
@@ -612,6 +621,8 @@ def guided_ddim(
                     x0_win = x0_hat[..., win]
                     terms, h = objective_terms(x0_win)
                     total = guidance(xt, terms) if (active and terms) else torch.zeros_like(xt)
+                    if gweights[i] != 1.0:
+                        total = total * float(gweights[i])
                     # Contrast edit is in x̂₀ units; scaled by √ᾱ_next below so that
                     # subtracting it from x_{t'} moves the implied x̂₀ by exactly it.
                     c_edit = (
@@ -632,6 +643,8 @@ def guided_ddim(
                     leaf = x0_hat[..., win].detach().requires_grad_(True)
                     terms, h = objective_terms(leaf)
                     total = guidance(leaf, terms) if (active and terms) else torch.zeros_like(leaf)
+                    if gweights[i] != 1.0:
+                        total = total * float(gweights[i])
                     if use_contrast and active:
                         total = total + contrast_edit(leaf)
                     if float(lam_parent) != 0.0 and not start_from_noise and active:
@@ -676,6 +689,21 @@ def guided_ddim(
         samples = scaler.inverse(samples, ch_np)
     h_np = last_h.cpu().numpy() if last_h is not None else np.zeros(len(samples))
     return samples, h_np
+
+
+def guidance_weights(alpha_bar: Any, times: np.ndarray, decay: float) -> np.ndarray:
+    """Per-step weight on the gradient terms of ``guided_ddim``, mean 1 over the chain.
+
+    w_i ∝ (σ_{t_i}/σ_{t_0})^decay, σ_t = sqrt((1 − ᾱ_t)/ᾱ_t). ``decay = 0`` returns
+    exact ones (the frozen constant kick, bit-identical). Numpy twin of
+    ``testbed.gauss.guidance_weights``.
+    """
+    ab = np.asarray(alpha_bar, dtype=np.float64)[np.asarray(times, dtype=int)]
+    if float(decay) == 0.0:
+        return np.ones(len(ab))
+    sig = np.sqrt((1.0 - ab) / ab)
+    w = (sig / sig[0]) ** float(decay)
+    return w / w.mean()
 
 
 def chunked_guided_ddim(

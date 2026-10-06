@@ -4,7 +4,6 @@ from pathlib import Path
 import numpy as np
 from anogen.testbed.gauss import GPChannel, Schedule, LinearDenoiser, guided_ddim
 from anogen.shell.features import embed_windows
-from anogen.shell.evaluation import PHI_NAMES
 from anogen.testbed.metrics import edge_stats
 
 W, N = 512, 512

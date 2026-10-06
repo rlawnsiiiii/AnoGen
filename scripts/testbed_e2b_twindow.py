@@ -2,7 +2,8 @@
 import json
 from pathlib import Path
 import numpy as np
-from anogen.testbed.gauss import *
+from anogen.testbed.gauss import (BlockEncoder, GPChannel, GuideTerm, LinearDenoiser, Schedule, Shell, guided_ddim,
+                                  level_shift, proto_energy)
 from anogen.testbed.metrics import gallery_report
 W,N=512,256
 ch,sch=GPChannel(),Schedule(); rng=np.random.default_rng(0)

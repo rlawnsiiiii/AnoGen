@@ -136,7 +136,10 @@ def run_diffdetect(cfg: dict[str, Any]) -> dict[str, Any]:
         v_t_eval = [int(t) for t in (spec.get("t_eval") or t_eval)]
         pool = str(spec.get("pool", "mean"))
         fuse = str(spec.get("fuse", "mean"))
-        kw = dict(t_eval=_map_t_eval(sched, v_t_eval), n_draws=n_draws, bsz=bsz, skip=int(spec.get("skip_start", 0)), seed=seed)
+        from anogen.shell.scaler import load_minmax, unit_scale
+
+        u_scale = unit_scale(scaler, load_minmax(s0 / "minmax_scaler.npz"), ch_d)
+        kw = dict(t_eval=_map_t_eval(sched, v_t_eval, u_scale), n_draws=n_draws, bsz=bsz, skip=int(spec.get("skip_start", 0)), seed=seed)
         if pool != "mean":
             kw["pool"] = pool
         cache = out / f"{vname}_scores.npz"
@@ -287,16 +290,21 @@ def heldout_nominal_windows(
     return np.stack(xs), np.asarray(chs, dtype=np.int64), {"found_per_channel": json.dumps(found)}
 
 
-def _map_t_eval(schedule: Any, t_eval: list[int]) -> list[int]:
-    """t_eval is configured as linear-schedule indices; keep their noise levels."""
+def _map_t_eval(schedule: Any, t_eval: list[int], unit_scale: float = 1.0) -> list[int]:
+    """t_eval is configured as linear-schedule indices in the frozen units; keep
+    their (physical) noise levels. ``unit_scale``: see ``scaler.unit_scale``."""
     from anogen.shell.diffusion import DiffusionSchedule
 
     n = int(schedule.betas.numel())
     lin = DiffusionSchedule.linear(n).alpha_bar.numpy()
     ab = schedule.alpha_bar.detach().cpu().numpy()
-    if np.allclose(ab, lin):
+    if np.allclose(ab, lin) and abs(float(unit_scale) - 1.0) < 1e-9:
         return [int(t) for t in t_eval]
-    return [int(np.argmin(np.abs(ab - lin[int(t)]))) for t in t_eval]
+    out = []
+    for t in t_eval:
+        sigma = np.sqrt((1.0 - lin[int(t)]) / lin[int(t)]) * float(unit_scale)
+        out.append(int(np.argmin(np.abs(ab - 1.0 / (1.0 + sigma**2)))))
+    return out
 
 
 def _channel_stats(scores: np.ndarray, ch: np.ndarray) -> tuple[np.ndarray, np.ndarray]:

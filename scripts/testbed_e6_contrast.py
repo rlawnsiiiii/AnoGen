@@ -8,7 +8,7 @@ from anogen.testbed.gauss import (GPChannel, Schedule, LinearDenoiser, BlockEnco
                                   GuideTerm, guided_ddim, proto_energy, level_shift)
 from anogen.testbed.metrics import gallery_report
 from anogen.shell.contrast import measure_contrast, sample_targets
-from anogen.shell.realism import diag_cusum, diag_persistence
+from anogen.shell.realism import diag_persistence
 
 OUT = Path(sys.argv[1] if len(sys.argv) > 1 else "results/testbed"); OUT.mkdir(parents=True, exist_ok=True)
 W, N = 512, 384

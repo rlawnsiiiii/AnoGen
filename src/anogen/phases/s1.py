@@ -86,6 +86,14 @@ def run_s1(cfg: dict[str, Any]) -> dict[str, Any]:
         scaler = fit_channel_minmax(x, ch, panel.k, feature_range=(float(fr[0]), float(fr[1])))
         if not bool(cfg.get("_keep_s0_scaler", False)):
             scaler.save(s0 / "minmax_scaler.npz")
+    elif kind == "standard":
+        # z-score per channel; S1-only (never written to S0, whose min/max
+        # scaler the envelope diagnostics read)
+        if not bool(cfg.get("_keep_s0_scaler", False)):
+            raise ValueError("scaler kind 'standard' is for an isolated S1 (anogen s1v2 with scaler_v2)")
+        from anogen.shell.scaler import fit_channel_standard
+
+        scaler = fit_channel_standard(x, ch, panel.k)
     trained = train_denoiser(
         x,
         ch,
@@ -105,8 +113,11 @@ def run_s1(cfg: dict[str, Any]) -> dict[str, Any]:
         schedule_kind=str(dcfg.get("schedule", "linear")),
         sigma_min=float(dcfg.get("sigma_min", 1e-3)),
         sigma_max=float(dcfg.get("sigma_max", 10.0)),
+        parameterization=str(dcfg.get("parameterization", "eps")),
+        ema_decay=dcfg.get("ema_decay"),
     )
     model = trained.pop("model")
+    eps_model = trained.pop("eps_model", model)  # ε view for sampling (v-models are wrapped)
     schedule = trained.pop("schedule")
     loss_hist = {
         k: trained.pop(k)
@@ -126,7 +137,7 @@ def run_s1(cfg: dict[str, Any]) -> dict[str, Any]:
     n_show = min(int(dcfg.get("n_sample", 128)), len(x))
     pick = rng.choice(len(x), size=n_show, replace=False)
     samples = unguided_from_nominal(
-        model,
+        eps_model,
         schedule,
         x[pick],
         ch[pick],
@@ -153,6 +164,9 @@ def run_s1(cfg: dict[str, Any]) -> dict[str, Any]:
         "schedule": str(dcfg.get("schedule", "linear")),
         "sigma_min": float(dcfg.get("sigma_min", 1e-3)),
         "sigma_max": float(dcfg.get("sigma_max", 10.0)),
+        "parameterization": str(dcfg.get("parameterization", "eps")),
+        "ema_decay": dcfg.get("ema_decay"),
+        "scaler_fit": kind,
         "n_channels": panel.k,
         "n_times": int(dcfg.get("n_times", 200)),
         "W": width,

@@ -60,7 +60,7 @@ if p6.is_file():
     e6 = json.loads(p6.read_text())
     real = e6["real level shifts"]
     print("\n### E6 level shifts: 6 shared prototypes vs a parametric step contrast\n")
-    print(f"| sampler | target | shelf rate | step amp mean | step pos sd | pos W1 to real | diff p99.9 | start | end |")
+    print("| sampler | target | shelf rate | step amp mean | step pos sd | pos W1 to real | diff p99.9 | start | end |")
     print("|---|---|---:|---:|---:|---:|---:|---:|---:|")
     for k, r in e6.items():
         s, t = (k.split(" | ") + ["(target)"])[:2]
