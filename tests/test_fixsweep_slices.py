@@ -11,7 +11,7 @@ def _slice_lam(kind, proto_kinds, default):
     return True, default
 
 
-def _run(no_steer=False, only=False, masks=True):
+def _run(no_steer=False, only=False, masks=True, relative=False, jitter=None):
     calls = []
 
     def chunked(model, enc, x, ch, schedule, **kw):
@@ -21,7 +21,8 @@ def _run(no_steer=False, only=False, masks=True):
     n, w = 12, 128
     x0 = np.random.default_rng(0).normal(0.5, 0.05, (n, w))
     alloc = np.array([KINDS[i % 3] for i in range(n)])
-    plan = {k: {"kind": c, "amplitudes": np.array([0.1, -0.2]), "lam": 1.0, "only": only, "leaked": False}
+    plan = {k: {"kind": c, "amplitudes": np.array([0.1, -0.2]), "lam": 1.0, "only": only, "leaked": False,
+                "relative": relative, "jitter": jitter}
             for k, c in ((KINDS[0], "step"), (KINDS[1], "spike"))}
     mask_out = np.zeros((n, w), dtype=bool) if masks else None
     _generate_slices(chunked, None, None, x0, np.zeros(n, int), None,
@@ -58,3 +59,24 @@ def test_twin_block_in_table():
     r = {"arp_diff": 0.01, "arp_diff_ci": [-0.01, 0.03]}
     res = {"v": {"folds": [], "paired_vs_twin": {"twin": "t", "frozen_phi": [r], "standardized_phi": [r]}}}
     assert "| v | t | +0.010 | [-0.010, +0.030] |" in fixsweep_table(res)
+
+
+def test_relative_targets_add_the_donor_contrast_and_keep_positions():
+    absolute, m_abs, alloc = _run()
+    relative, m_rel, _ = _run(relative=True)
+    assert np.array_equal(m_abs, m_rel)  # same positions and masks as the absolute (and twin) run
+    x0 = np.random.default_rng(0).normal(0.5, 0.05, (12, 128))
+    for c_abs, c_rel, kind in zip(absolute[:2], relative[:2], KINDS[:2], strict=True):
+        w = c_rel["contrast_weights"]
+        donor_d = (x0[alloc == kind] * w).sum(axis=1)  # no scaler in common: raw units
+        assert np.allclose(c_rel["contrast_target"] - c_abs["contrast_target"], donor_d)
+        assert set(np.round(c_abs["contrast_target"], 6)) <= {0.1, -0.2}
+
+
+def test_amplitude_jitter_scales_sizes_within_range_and_keeps_masks():
+    base, m0, _ = _run()
+    jit, m1, _ = _run(jitter=(0.5, 1.5))
+    assert np.array_equal(m0, m1)
+    for c0, c1 in zip(base[:2], jit[:2], strict=True):
+        ratio = c1["contrast_target"] / c0["contrast_target"]
+        assert np.all((ratio >= 0.5) & (ratio <= 1.5)) and np.ptp(ratio) > 0

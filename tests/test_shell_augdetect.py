@@ -75,3 +75,27 @@ def test_fit_eval_separable():
     assert out["ap"] > 0.5
     assert "k" in out["per_kind_recall"]
     assert needs_torch()
+
+
+@pytest.mark.skipif(not torch_available(), reason="needs torch")
+def test_real_frac_draws_a_fixed_share_of_each_positive_batch_from_the_real_rows(monkeypatch):
+    import torch
+
+    from anogen.shell.detector import fit_detector
+
+    calls = []
+    orig = torch.randint
+
+    def spy(low, high, size, **kw):
+        calls.append((int(low), int(high), tuple(size)))
+        return orig(low, high, size, **kw)
+
+    monkeypatch.setattr(torch, "randint", spy)
+    rng = np.random.default_rng(0)
+    pos = rng.normal(size=(30, 64)).astype(np.float32)
+    neg = rng.normal(size=(20, 64)).astype(np.float32)
+    fit_detector(pos, neg, seed=0, steps=3, hidden=4, batch_size=8, device="cpu", real_frac=0.5, n_real=10)
+    assert calls.count((0, 10, (2,))) == 3 and calls.count((10, 30, (2,))) == 3
+    calls.clear()
+    fit_detector(pos, neg, seed=0, steps=3, hidden=4, batch_size=8, device="cpu")  # default: uniform
+    assert calls.count((0, 30, (4,))) == 3

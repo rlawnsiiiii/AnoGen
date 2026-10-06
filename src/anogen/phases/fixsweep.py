@@ -130,6 +130,25 @@ DEFAULT_VARIANTS: dict[str, dict[str, Any]] = {
         "guidance_decay": 1.0,
         "twin": "nosteer_flip_x0_masked",
     },
+    # Detection-oriented recipe (testbed E20): contrast targets relative to the
+    # donor (the planted size is the sampled size), sizes jittered ×U(0.5, 1.5),
+    # prototypes of the other kinds shifted by up to ±16 encoder steps. Same
+    # masks and seeds as flip_x0_contrast_masked, so the same no-steer twin.
+    "flip_x0_contrast_masked_div": {
+        "flip": "ramp",
+        "guidance_space": "x0",
+        "final_grad_scale": 0.25,
+        "contrast": {"real level shift": "step", "real ESA Point / Global": "spike"},
+        "contrast_only": True,
+        "contrast_relative": True,
+        "contrast_amp_jitter": [0.5, 1.5],
+        "proto_shift_max": 16,
+        "mask": True,
+        "mask_dilate": 8,
+        "n_recur": 2,
+        "guidance_decay": 1.0,
+        "twin": "nosteer_flip_x0_masked",
+    },
 }
 
 # Keys the phase interprets itself; everything else goes to guided_ddim.
@@ -150,6 +169,8 @@ _PHASE_KEYS = {
     "mask_dilate",
     "no_steer",
     "twin",
+    "contrast_relative",
+    "contrast_amp_jitter",
 }
 
 
@@ -611,6 +632,16 @@ def _generate_slices(
                 plan["amplitudes"],
                 rng=np.random.default_rng(seed + 53 * (1 + kind_order.index(kind))),
             )
+            # separate streams, so positions and masks match the no-steer twin's
+            if plan.get("jitter") is not None:
+                lo_j, hi_j = plan["jitter"]
+                delta = delta * np.random.default_rng(seed + 71 * (1 + kind_order.index(kind))).uniform(
+                    lo_j, hi_j, len(idx)
+                )
+            if plan.get("relative"):
+                sc = kw.get("scaler")
+                xs = sc.transform(x0[idx], ch[idx]) if sc is not None else np.asarray(x0[idx], dtype=np.float64)
+                delta = delta + (np.asarray(xs, dtype=np.float64) * wts).sum(axis=1)
             if not no_steer:  # under no_steer the plan only fixes positions and masks
                 kw.update(contrast_weights=wts, contrast_target=delta, lam_contrast=plan["lam"])
             if mask_out is not None:
@@ -869,7 +900,9 @@ def _contrast_plan(
 
     Uses the same reference rule as the proto term (``kind_ref_indices``:
     event-OOF, falling back to in-fold with ``leaked``), measured in the
-    denoiser's scaled units.
+    denoiser's scaled units. ``contrast_relative`` makes each target relative
+    to its donor; ``contrast_amp_jitter: [a, b]`` multiplies every sampled size
+    by U(a, b) (testbed E20: a wider size range than the few training events).
     """
     mapping = spec.get("contrast")
     if not mapping:
@@ -886,12 +919,18 @@ def _contrast_plan(
             continue
         xs = scaler.transform(x_a[idx], ch_a[idx]) if scaler is not None else x_a[idx]
         amps, _ = measure_contrast(str(ckind), xs)
+        jitter = spec.get("contrast_amp_jitter")
         plan[kind] = {
             "kind": str(ckind),
             "amplitudes": amps,
             "lam": float(spec.get("lam_contrast", 1.0)),
             "only": bool(spec.get("contrast_only", False)),
             "leaked": bool(leaked),
+            # relative: the target is the donor's own contrast at the sampled
+            # position plus the sampled size, so the planted anomaly has that size
+            # whatever the donor does there (absolute targets plant δ − w·donor)
+            "relative": bool(spec.get("contrast_relative", False)),
+            "jitter": None if jitter is None else (float(jitter[0]), float(jitter[1])),
         }
     return plan
 

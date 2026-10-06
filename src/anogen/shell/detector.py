@@ -92,6 +92,8 @@ def fit_detector(
     lr: float = 1e-3,
     device: str | None = None,
     shift_aug: int = 0,
+    real_frac: float | None = None,
+    n_real: int = 0,
 ) -> Any:
     """BCE, balanced batches. Returns a trained AnomalyClassifier.
 
@@ -99,6 +101,13 @@ def fit_detector(
     independent U{-s..s} offset per batch: reflect-pad by s, then crop W at a
     random offset. Unlike a circular roll there is no wrap seam, which would
     turn a level shift's Δ into a fake step at the seam. 0 = unchanged.
+
+    ``real_frac`` (with ``n_real`` > 0): the first ``n_real`` rows of ``x_pos``
+    are real anomalies, the rest synthetic; every positive half-batch then
+    draws round(real_frac · n_pos) rows from the real ones and the rest from
+    the synthetic ones, instead of sampling all positives uniformly (where 256
+    synthetic windows drown ~15 real ones). 0.5 gives both groups the same
+    weight. None (default) keeps the uniform draw, bit-identical to before.
     """
     from anogen.shell.adapters import AnomalyClassifier
     import torch
@@ -117,9 +126,20 @@ def fit_detector(
     xn = torch.from_numpy(np.asarray(x_neg, dtype=np.float32)).unsqueeze(1)
     n_pos = max(1, int(batch_size) // 2)
     n_neg = max(1, int(batch_size) - n_pos)
+    split = real_frac is not None and 0 < int(n_real) < len(xa)
+    if split:
+        n_pos_real = min(max(int(round(float(real_frac) * n_pos)), 0), n_pos)
     clf.train()
     for _ in range(int(steps)):
-        ia = torch.randint(0, len(xa), (n_pos,))
+        if split:
+            ia = torch.cat(
+                [
+                    torch.randint(0, int(n_real), (n_pos_real,)),
+                    torch.randint(int(n_real), len(xa), (n_pos - n_pos_real,)),
+                ]
+            )
+        else:
+            ia = torch.randint(0, len(xa), (n_pos,))
         inn = torch.randint(0, len(xn), (n_neg,))
         xb = torch.cat([xa[ia], xn[inn]], dim=0).to(device_t)
         if int(shift_aug) > 0:

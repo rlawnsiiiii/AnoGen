@@ -67,3 +67,30 @@ def test_twin_pairs_and_paired_contrasts_drop_leaked_folds():
     summ = _aggregate(rows, arms=("real_only", "fixsweep:steer+real"), seeds=[0, 1], folds=[0, 1])
     assert abs(summ["fixsweep:steer+real"]["vs_real_only"]["diff"] - 1 / 3) < 1e-9
     assert summ["fixsweep:steer+real"]["vs_real_only_noleak"]["diff"] == 0.0
+
+
+def test_synth_filter_drops_nominal_like_positives_and_caches_per_key():
+    from anogen.phases.augdetect import _filter_synth
+    from anogen.shell.novelty import KnnNovelty
+
+    class Identity:
+        def transform(self, x, ch):
+            return np.asarray(x, dtype=np.float64)
+
+    rng = np.random.default_rng(1)
+    t = np.arange(96)
+
+    def nominal(n):
+        return 0.5 + 0.1 * np.sin(2 * np.pi * t / 30 + rng.uniform(0, 6.3, (n, 1))) + 0.01 * rng.standard_normal((n, 96))
+
+    syn = nominal(40)
+    syn[:20, 40:44] += 0.7  # half real anomalies, half regenerated nominals
+    cache = {}
+    kw = dict(synth_filter=KnnNovelty(n_kernels=80, n_components=12), scaler=Identity(), x_ref=nominal(250),
+              ch_ref=np.zeros(250, int), x_cal=nominal(150), ch_cal=np.zeros(150, int), cache=cache, key=(0, 0))
+    xs, ch, rate = _filter_synth(syn, np.arange(40), **kw)
+    assert set(ch.tolist()) >= set(range(18)) and len(set(ch.tolist()) & set(range(20, 40))) <= 2
+    assert abs(rate - len(xs) / 40) < 1e-12 and (0, 0) in cache
+    fitted = cache[(0, 0)]
+    _filter_synth(syn, np.arange(40), **kw)
+    assert cache[(0, 0)] is fitted  # reused, not refitted

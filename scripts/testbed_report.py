@@ -204,3 +204,94 @@ if p15b.is_file():
     print("|---|" + "---:|" * len(cols))
     for k, r in e15b.items():
         print(f"| {k} | " + " | ".join(f"{r[c]:.3f}" for c in cols) + " |")
+p12b = d / "e12b_level_shift_queries.json"
+if p12b.is_file():
+    e12b = json.loads(p12b.read_text())
+    print("\n### E12b level-shift queries only: ARP of the real donors, unchanged or low-passed\n")
+    print("| queries | ARP frozen φ: donors / low-pass 1 / low-pass 2 | ARP φ without HF: donors / low-pass 1 / low-pass 2 |")
+    print("|---|---|---|")
+    for k, r in e12b.items():
+        print(f"| {k} | {r['arp_lowpass_0']:.3f} / {r['arp_lowpass_1']:.3f} / {r['arp_lowpass_2']:.3f} | "
+              f"{r['arp_noHF_lowpass_0']:.3f} / {r['arp_noHF_lowpass_1']:.3f} / {r['arp_noHF_lowpass_2']:.3f} |")
+p16 = d / "e16_vpred.json"
+if p16.is_file():
+    e16 = json.loads(p16.read_text())
+    print("\n### E16 trained bidirectional nets: ε vs v prediction, linear vs log-spaced schedule\n")
+    print("| net, schedule | run | level bias (sd) | variance ratio | first-difference variance ratio | start | end |")
+    print("|---|---|---:|---:|---:|---:|---:|")
+    for k, r in e16.items():
+        a, b = k.split(" | ")
+        print(f"| {a} | {b} | {r['level_bias_in_sd']:+.2f} | {r['var_ratio']:.2f} | {r['diff_var_ratio']:.2f} | "
+              f"{r['peak_at_start']:.2f} | {r['peak_at_end']:.2f} |")
+p17 = d / "e17_guidance_decay.json"
+if p17.is_file():
+    e17 = json.loads(p17.read_text())
+    print("\n### E17 guidance weight ∝ σ_t^p (mean 1 over the chain), level-shift prototype slice\n")
+    print("| denoiser | final scale, decay p, recurrences | diff p99.9 | start | end | proto dist. |")
+    print("|---|---|---:|---:|---:|---:|")
+    for k, r in e17.items():
+        a, b = (k.split(" | ") + ["(target)"])[:2]
+        pdist = r.get("proto_dist")
+        print(f"| {a} | {b} | {r['diff_p999']:.3f} | {r['peak_at_start']:.2f} | {r['peak_at_end']:.2f} | "
+              f"{'' if pdist is None else f'{pdist:.3f}'} |")
+p17b = d / "e17b_decay_diversity.json"
+if p17b.is_file():
+    e17b = json.loads(p17b.read_text())
+    print("\n### E17b does decay collapse samples onto their prototype? (spread of samples sharing a prototype / spread of the donors)\n")
+    print("| denoiser | proto weight, decay, recurrences | proto dist. | within-prototype spread / donor spread | diff p99.9 |")
+    print("|---|---|---:|---:|---:|")
+    for k, r in e17b.items():
+        if not isinstance(r, dict):
+            continue
+        a, b = k.split(" | ")
+        print(f"| {a} | {b} | {r['proto_dist']:.3f} | {r['spread_vs_donors']:.3f} | {r['diff_p999']:.3f} |")
+p18 = d / "e18_metrics.json"
+if p18.is_file():
+    e18 = json.loads(p18.read_text())
+    print("\n### E18 which metric sees which defect (real anomaly queries against a gallery; C2ST grouped by event)\n")
+    print("| gallery | C2ST AUC raw (linear) | C2ST AUC φ | C2ST AUC ROCKET | ARP φ | ARP ROCKET |")
+    print("|---|---:|---:|---:|---:|---:|")
+    for k, r in e18.items():
+        print(f"| {k} | {r['c2st_auc_raw']:.3f} | {r['c2st_auc_phi']:.3f} | {r['c2st_auc_rocket']:.3f} | "
+              f"{r['arp_phi']:.3f} | {r['arp_rocket']:.3f} |")
+p19 = d / "e19_sigma_max.json"
+if p19.is_file():
+    e19 = json.loads(p19.read_text())
+    print("\n### E19 σ_max from the data: from-noise sampling with the exact bidirectional denoiser\n")
+    print("| data | schedule | level bias (sd) | variance ratio | first-difference variance ratio |")
+    print("|---|---|---:|---:|---:|")
+    for data, rows in e19.items():
+        pr = rows.get("predicted", {})
+        for k, r in rows.items():
+            if k == "predicted":
+                continue
+            print(f"| {data} | {k} | {r['level_bias_in_sd']:+.3f} | {r['var_ratio']:.2f} | {r['diff_var_ratio']:.2f} |")
+        print(f"| {data} | rule (texture.schedule_bounds): σ_min {pr.get('sigma_min', float('nan')):.2g}, "
+              f"σ_max {pr.get('sigma_max', float('nan')):.3g} (without DC {pr.get('sigma_max_without_dc', float('nan')):.3g}) | | | |")
+p20 = d / "e20_detect_utility.json"
+if p20.is_file():
+    e20 = json.loads(p20.read_text())
+    su = e20["setup"]
+    for dt, summ in e20["summary"].items():
+        print(f"\n### E20 detector utility ({dt}): 18 real anomalies + up to 255 generated, ROCKET features, "
+              f"recall at 1 % FAR ({su['reps']} repetitions × {3 * su['n_test_per_kind']} test anomalies)\n")
+        print("| training positives | n generated kept | recall @ 1 % FAR | spike | level shift | drift | AUROC | AP |")
+        print("|---|---:|---:|---:|---:|---:|---:|---:|")
+        for arm, r in summ.items():
+            print(f"| {arm} | {r.get('n_synth', 0):.0f} | {r['recall@1%FAR']:.3f} ± {r['recall_sd_over_reps']:.3f} | "
+                  f"{r['recall spike']:.3f} | {r['recall level shift']:.3f} | {r['recall drift']:.3f} | "
+                  f"{r['auroc']:.3f} | {r['ap']:.3f} |")
+        print(f"\nPaired differences in recall ({dt}; same test anomalies, pooled over repetitions, bootstrap 95 % CI):\n")
+        print("| A − B | all kinds | spike | level shift | drift | per repetition |")
+        print("|---|---|---:|---:|---:|---|")
+        for name, p in e20["pairs"][dt].items():
+            a = p["all"]
+            print(f"| {name} | {a['diff']:+.3f} [{a['lo']:+.3f}, {a['hi']:+.3f}] | {p['spike']['diff']:+.3f} | "
+                  f"{p['level shift']['diff']:+.3f} | {p['drift']['diff']:+.3f} | {' '.join(f'{v:+.2f}' for v in p['per_rep'])} |")
+    pr = e20.get("pass_rate") or {}
+    if pr:
+        print("\nShare of generated windows the kNN novelty filter keeps (outside the nominal 99 % set), per kind:\n")
+        print("| generator | spike | level shift | drift |")
+        print("|---|---:|---:|---:|")
+        for g, v in pr.items():
+            print(f"| {g} | " + " | ".join(f"{v[k]:.2f}" for k in ("spike", "level shift", "drift")) + " |")

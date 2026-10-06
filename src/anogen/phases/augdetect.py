@@ -6,6 +6,7 @@ Does not overwrite shell_s3 or shell_s4. Quiet-kind recipe was not promoted.
 
 from __future__ import annotations
 
+import copy
 import csv
 import json
 import shutil
@@ -107,6 +108,14 @@ def run_augdetect(cfg: dict[str, Any]) -> dict[str, Any]:
     donor_disjoint = bool(acfg.get("donor_disjoint", True))
     shift_aug = int(acfg.get("shift_aug", 0))
     flip_test = bool(acfg.get("flip_test", True))
+    # real_frac: share of real anomalies in every positive half-batch of a
+    # "+real" arm (None = uniform over all positives, the frozen behaviour).
+    real_frac = acfg.get("real_frac")
+    real_frac = None if real_frac is None else float(real_frac)
+    from anogen.shell.novelty import novelty_from_cfg
+
+    synth_filter = novelty_from_cfg(acfg.get("synth_filter"), seed=int(cfg.get("seed", 0)))
+    novelty_cache: dict[tuple[int, int], Any] = {}
     # Optional label-free score from `anogen diffdetect`, rank-fused with the CNN.
     diff_scores = None
     if acfg.get("fuse_diffscore"):
@@ -208,6 +217,9 @@ def run_augdetect(cfg: dict[str, Any]) -> dict[str, Any]:
                         flip_test=flip_test,
                         diff_scores=diff_scores,
                         fixsweep_dir=fixsweep_dir,
+                        real_frac=real_frac,
+                        synth_filter=synth_filter,
+                        novelty_cache=novelty_cache,
                     )
                 except FileNotFoundError as exc:
                     row = {
@@ -246,6 +258,8 @@ def run_augdetect(cfg: dict[str, Any]) -> dict[str, Any]:
         "skipped": False,
         "primary": "event_recall@1%FAR",
         "n_synth": n_synth,
+        "real_frac": real_frac,
+        "synth_filter": acfg.get("synth_filter"),
         "steps": steps,
         "seeds": seeds,
         "arms": list(arms),
@@ -265,6 +279,31 @@ def run_augdetect(cfg: dict[str, Any]) -> dict[str, Any]:
     }
     (out / "summary.json").write_text(json.dumps(_jsonable(report), indent=2) + "\n")
     return report
+
+
+def _filter_synth(
+    x_syn: np.ndarray,
+    ch_syn: np.ndarray,
+    *,
+    synth_filter: Any,
+    scaler: Any,
+    x_ref: np.ndarray,
+    ch_ref: np.ndarray,
+    x_cal: np.ndarray,
+    ch_cal: np.ndarray,
+    cache: dict[tuple[int, int], Any] | None = None,
+    key: tuple[int, int] = (0, 0),
+) -> tuple[np.ndarray, np.ndarray, float]:
+    """Keep the generated windows ``synth_filter`` (an unfitted ``KnnNovelty``)
+    places outside the nominal set; returns them, their channels and the share
+    kept. The filter is fitted in the detector's scaled units, once per key."""
+    nov = None if cache is None else cache.get(key)
+    if nov is None:
+        nov = copy.deepcopy(synth_filter).fit(scaler.transform(x_ref, ch_ref), scaler.transform(x_cal, ch_cal))
+        if cache is not None:
+            cache[key] = nov
+    keep = nov.keep(scaler.transform(x_syn, ch_syn))
+    return np.asarray(x_syn)[keep], np.asarray(ch_syn)[keep], float(keep.mean())
 
 
 def _arm_leaks_fold0(arm: str) -> bool:
@@ -311,6 +350,9 @@ def _run_one(
     flip_test: bool = False,
     diff_scores: dict[str, np.ndarray] | None = None,
     fixsweep_dir: Path | None = None,
+    real_frac: float | None = None,
+    synth_filter: Any = None,
+    novelty_cache: dict[tuple[int, int], Any] | None = None,
 ) -> dict[str, Any]:
     rng = np.random.default_rng(seed + 1000 * fold_id)
     train_a = fold_a != fold_id
@@ -351,6 +393,34 @@ def _run_one(
         exclude_donor_fold=fold_id if donor_disjoint else None,
         fixsweep_dir=fixsweep_dir,
     )
+    # 20 % of the training nominals are always kept out of fitting (so the CNN
+    # rows do not depend on whether fusion is on); they serve as the CNN's
+    # reference distribution for rank fusion (training negatives would sit
+    # below every test score and saturate the empirical CDF).
+    ref_nom = np.zeros(len(x_nom_tr), dtype=bool)
+    ref_nom[rng.choice(len(x_nom_tr), size=max(1, len(x_nom_tr) // 5), replace=False)] = True
+    x_fit_nom, ch_fit_nom = x_nom_tr[~ref_nom], ch_nom_tr[~ref_nom]
+
+    # Novelty filter (synth_filter): drop generated windows a nominal-only model
+    # cannot tell from the training nominals (shell/novelty.py, testbed E20).
+    # Reference = fitting nominals, threshold from the held-out 20 %; the test
+    # fold is never touched. Fitted once per (fold, seed) and shared by arms.
+    n_synth_generated = int(len(x_syn))
+    synth_pass = float("nan")
+    if synth_filter is not None and len(x_syn) and arm != "real_only":
+        x_syn, ch_syn, synth_pass = _filter_synth(
+            x_syn,
+            ch_syn,
+            synth_filter=synth_filter,
+            scaler=scaler,
+            x_ref=x_fit_nom,
+            ch_ref=ch_fit_nom,
+            x_cal=x_nom_tr[ref_nom],
+            ch_cal=ch_nom_tr[ref_nom],
+            cache=novelty_cache,
+            key=(int(fold_id), int(seed)),
+        )
+
     if arm == "real_only":
         x_pos, ch_pos = x_pos_real, ch_pos_real
     elif plus_real:
@@ -359,15 +429,13 @@ def _run_one(
     else:
         x_pos, ch_pos = x_syn, ch_syn
     if len(x_pos) == 0:
-        raise RuntimeError(f"{arm} produced no train positives")
-
-    # 20 % of the training nominals are always kept out of fitting (so the CNN
-    # rows do not depend on whether fusion is on); they serve as the CNN's
-    # reference distribution for rank fusion (training negatives would sit
-    # below every test score and saturate the empirical CDF).
-    ref_nom = np.zeros(len(x_nom_tr), dtype=bool)
-    ref_nom[rng.choice(len(x_nom_tr), size=max(1, len(x_nom_tr) // 5), replace=False)] = True
-    x_fit_nom, ch_fit_nom = x_nom_tr[~ref_nom], ch_nom_tr[~ref_nom]
+        return {
+            "arm": arm,
+            "fold": int(fold_id),
+            "seed": int(seed),
+            "ok": False,
+            "reason": f"{arm} has no train positives (synth pass rate {synth_pass:.3f})",
+        }
     x_neg = np.concatenate([x_fit_nom, x_r[train_r]], axis=0) if int(train_r.sum()) else x_fit_nom
     ch_neg = np.concatenate([ch_fit_nom, ch_r[train_r]], axis=0) if int(train_r.sum()) else ch_fit_nom
 
@@ -391,6 +459,8 @@ def _run_one(
         lr=lr,
         device=device,
         shift_aug=shift_aug,
+        real_frac=real_frac if (plus_real and arm != "real_only") else None,
+        n_real=int(len(x_pos_real)),
     )
     ev = eval_detector(
         clf,
@@ -508,6 +578,9 @@ def _run_one(
         "n_pos": int(len(x_pos)),
         "n_pos_real": int(len(x_pos_real)),
         "n_pos_synth": int(len(x_syn) if arm != "real_only" else 0),
+        "n_synth_generated": n_synth_generated if arm != "real_only" else 0,
+        "synth_pass_rate": synth_pass,
+        "real_frac": real_frac if (plus_real and arm != "real_only") else None,
         "n_neg": int(len(x_neg)),
         "n_nom_train": int(len(x_nom_tr)),
         "n_fit_nominals": int((~ref_nom).sum()),
@@ -670,6 +743,11 @@ def _aggregate(
             "per_kind_recall_mean": per_kind,
             "n_runs": len(pool),
             "leaked_runs": int(sum(1 for r in pool if r.get("leaked"))),
+            "synth_pass_rate_mean": float(
+                np.nanmean([r.get("synth_pass_rate", float("nan")) for r in pool])
+            )
+            if any(np.isfinite(r.get("synth_pass_rate", float("nan"))) for r in pool)
+            else float("nan"),
             "seed_event_recall": seed_rec,
             "event_recall_flipped_mean": float(
                 np.nanmean([r.get("event_recall_flipped", float("nan")) for r in pool])
