@@ -127,7 +127,10 @@ S1 in the mid-noise bins. If the mid-noise fit is worse, raise
 | `lam_repel` (+`repel_project`) | `steer._repulsion` | particle-guidance RBF repulsion inside a batch, projected off the band gradient (P2a) | no | 3 |
 | `contrast: {"real level shift": step, "real ESA Point / Global": spike}` (+`contrast_only`) | `shell/contrast.py`, `steer.guided_ddim` | projection onto x̂₀·w = δ (step: whole-window mean difference; spike: centre vs flanks) at a uniformly sampled position, δ resampled from the train-fold examples; no prototype, no position collapse | no | 3, L1, L5 |
 | `noise_init_mean/std` (`matched_noise: true`) | `steer.guided_ddim` | x_T ~ N(√ᾱ_T m_c, (1−ᾱ_T+ᾱ_T s_c²)I) | no | 4 |
-| `guidance_t_window` | `steer.guided_ddim` | guidance only on part of the trajectory (P2.2) | no | 2 |
+| `guidance_t_window` | `steer.guided_ddim` | guidance only on part of the trajectory (P2.2); made edges sharper in the testbed (E2b), not adopted | no | 2 |
+| `n_recur: 2` (06.10) | `steer.guided_ddim` | self-recurrence / time travel: re-noise x_{t'} to t with fresh noise and redo the step; skipped at repeated DDIM times | no | 2 (x̂₀-space sharpness with trained nets, E13: 0.076 → 0.060) |
+| `mask: true`, `mask_dilate` (06.10) | `steer.guided_ddim(anomaly_mask=)`, `contrast.contrast_mask`, fixsweep | RePaint-style masked edit: only the anomaly segment is generated, the donor is kept elsewhere; contrast projects along the masked direction; mask saved as a bin-level label | no | 3, position control (E14) |
+| `no_steer`, `twin` (06.10) | fixsweep | same chain, seeds and masks with every objective off; paired ΔARP vs the twin in frozen and standardized φ ("what steering adds") | no | evaluation |
 
 Not adopted: noise-space (classifier-guidance) steering
 `ε' = ε + √(1−ᾱ)·∇`. In a DDIM chain whose consecutive times are close, the
@@ -205,6 +208,11 @@ variants share the torch seed per fold, so the paired ARP differences against
 recipe, because the frozen galleries were made without a torch seed.
 
 ## 7. Decision rule, declared before the ESA run
+
+(06.10 addition, also in the GenFSDiff project doc: a variant's paired ARP
+difference against its own no-steer twin must be positive in frozen and in
+standardized φ before the paper claims that steering adds realism.)
+
 
 A variant replaces C1 as the paper default only if, averaged over the three
 folds:
