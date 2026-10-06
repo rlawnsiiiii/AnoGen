@@ -204,6 +204,13 @@ def _dispatch(phase: str, cfg: dict) -> dict:
         diff.update(bidirectional=True, schedule="geometric")
         diff.update(dict(shell.get("diffusion_v2") or {}))
         shell["diffusion"] = diff
+        # Optional S1-only scaler (e.g. feature_range [-1, 1] to centre the data).
+        # It is stored in the checkpoint and every phase reads it from there
+        # (scaler.resolve_scaler); S0's minmax_scaler.npz is never rewritten.
+        if shell.get("scaler_v2"):
+            sc = dict(shell.get("scaler") or {})
+            sc.update(dict(shell["scaler_v2"]))
+            shell["scaler"] = sc
         cfg["shell"] = shell
         cfg["s1_dir"] = cfg.get("s1_v2_dir", "results/shell_s1_v2")
         cfg["_keep_s0_scaler"] = True

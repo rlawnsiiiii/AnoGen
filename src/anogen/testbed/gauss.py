@@ -300,6 +300,8 @@ def guided_ddim(
     noise_init: tuple[float, float] | None = None,
     eta: float = 0.0,
     final_denoise: bool = True,
+    n_recur: int = 1,
+    gen_mask: np.ndarray | None = None,
 ) -> np.ndarray:
     """Numpy mirror of ``steer.guided_ddim`` (eta = 0 by default).
 
@@ -319,6 +321,10 @@ def guided_ddim(
     ``crop`` > 0 runs the chain on a longer sequence (burn-in prefix) and the
     objective only sees ``x0_hat[:, crop:]``; the prefix is dropped at the end.
     ``t_window`` restricts guidance to steps whose t / t_start lies inside it.
+    ``n_recur`` > 1: time travel, as steer.guided_ddim (re-noise x_{t'} to t with
+    fresh noise and redo the step). ``gen_mask`` (N, L over the full chain incl.
+    crop): RePaint, bins outside it follow the noised donor and are returned as
+    the donor; edits act inside it only.
     """
     if space not in GUIDANCE_SPACES:
         raise ValueError(space)
@@ -358,47 +364,62 @@ def guided_ddim(
             tot += term.lam * _unit(g, c_max, normalize_grad)
         return tot
 
+    if gen_mask is not None and start_from_noise:
+        raise ValueError("gen_mask needs a donor")
     for i, t in enumerate(times):
         t = int(t)
         t_prev = int(times[i + 1]) if i + 1 < len(times) else -1
-        ab = float(sch.alpha_bar[t])
-        x0h = den.x0_hat(xt, t)
-        eps = (xt - np.sqrt(ab) * x0h) / np.sqrt(1.0 - ab)
-        frac = t / max(t_start, 1)
-        active = t_window[0] <= frac <= t_window[1]
-        edit = np.zeros_like(xt)
-        proj = np.zeros_like(xt)
-        if active and terms:
-            proj = total_grad(x0h, t, False, project=True)
-            if space == "x":
-                edit = total_grad(x0h, t, True)
-            elif space == "x0":
-                edit = total_grad(x0h, t, False)
-            else:  # eps: fold the x_t-gradient into the noise estimate
-                g = total_grad(x0h, t, True)
-                eps = eps + np.sqrt(1.0 - ab) * g
-                x0h = (xt - np.sqrt(1.0 - ab) * eps) / np.sqrt(ab)
-        if t_prev < 0:
-            edit = edit + proj
-            if final_denoise:
-                xt = x0h - final_scale * edit
+        for rec in range(1 if t_prev < 0 else max(1, int(n_recur))):
+            ab = float(sch.alpha_bar[t])
+            if gen_mask is not None:
+                known = np.sqrt(ab) * x0 + np.sqrt(1.0 - ab) * rng.standard_normal(x0.shape)
+                xt = np.where(gen_mask, xt, known)
+            x0h = den.x0_hat(xt, t)
+            eps = (xt - np.sqrt(ab) * x0h) / np.sqrt(1.0 - ab)
+            frac = t / max(t_start, 1)
+            active = t_window[0] <= frac <= t_window[1]
+            edit = np.zeros_like(xt)
+            proj = np.zeros_like(xt)
+            if active and terms:
+                proj = total_grad(x0h, t, False, project=True)
+                if space == "x":
+                    edit = total_grad(x0h, t, True)
+                elif space == "x0":
+                    edit = total_grad(x0h, t, False)
+                else:  # eps: fold the x_t-gradient into the noise estimate
+                    g = total_grad(x0h, t, True)
+                    eps = eps + np.sqrt(1.0 - ab) * g
+                    x0h = (xt - np.sqrt(1.0 - ab) * eps) / np.sqrt(ab)
+            if gen_mask is not None:
+                edit, proj = edit * gen_mask, proj * gen_mask
+            if t_prev < 0:
+                edit = edit + proj
+                if final_denoise:
+                    xt = x0h - final_scale * edit
+                else:
+                    # Keep the last state's residual noise instead of the Tweedie
+                    # mean: x_t / sqrt(ab) = x0_hat + sqrt(1-ab)/sqrt(ab) eps_hat.
+                    xt = (xt / np.sqrt(ab)) - final_scale * edit
+                if gen_mask is not None:
+                    xt = np.where(gen_mask, xt, x0)
+                break
+            abp = float(sch.alpha_bar[t_prev])
+            sig = 0.0
+            if eta > 0.0 and t_prev != t:
+                sig = float(eta) * np.sqrt((1.0 - abp) / (1.0 - ab)) * np.sqrt(max(1.0 - ab / abp, 0.0))
+            c_eps = np.sqrt(max(1.0 - abp - sig**2, 0.0))
+            noise = sig * rng.standard_normal(xt.shape) if sig > 0 else 0.0
+            if space == "x0":
+                xt = np.sqrt(abp) * (x0h - edit - proj) + c_eps * eps + noise
             else:
-                # Keep the last state's residual noise instead of the Tweedie
-                # mean: x_t / sqrt(ab) = x0_hat + sqrt(1-ab)/sqrt(ab) eps_hat.
-                xt = (xt / np.sqrt(ab)) - final_scale * edit
+                # as steer.guided_ddim: projection edits are in x̂₀ units, so they are
+                # scaled by sqrt(ab') when subtracted from x_{t'}
+                xt = np.sqrt(abp) * x0h + c_eps * eps - edit - np.sqrt(abp) * proj + noise
+            if rec < max(1, int(n_recur)) - 1 and abp > ab:
+                a = ab / abp
+                xt = np.sqrt(a) * xt + np.sqrt(1.0 - a) * rng.standard_normal(xt.shape)
+        if t_prev < 0:
             break
-        abp = float(sch.alpha_bar[t_prev])
-        sig = 0.0
-        if eta > 0.0 and t_prev != t:
-            sig = float(eta) * np.sqrt((1.0 - abp) / (1.0 - ab)) * np.sqrt(max(1.0 - ab / abp, 0.0))
-        c_eps = np.sqrt(max(1.0 - abp - sig**2, 0.0))
-        noise = sig * rng.standard_normal(xt.shape) if sig > 0 else 0.0
-        if space == "x0":
-            xt = np.sqrt(abp) * (x0h - edit - proj) + c_eps * eps + noise
-        else:
-            # as steer.guided_ddim: projection edits are in x̂₀ units, so they are
-            # scaled by sqrt(ab') when subtracted from x_{t'}
-            xt = np.sqrt(abp) * x0h + c_eps * eps - edit - np.sqrt(abp) * proj + noise
     return xt[:, crop : xt.shape[1] - crop_end]
 
 

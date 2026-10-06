@@ -450,7 +450,9 @@ def train_denoiser(
         "n_layers": int(n_layers),
         "d_state": int(d_state),
         "bidirectional": bool(bidirectional),
-        "schedule": str(schedule_kind),
+        # not "schedule": that key holds the DiffusionSchedule object above
+        # (a duplicate key silently replaced it and broke s1's unguided pass)
+        "schedule_kind": str(schedule_kind),
         "sigma_min": float(sigma_min),
         "sigma_max": float(sigma_max),
         "steps": steps,

@@ -80,6 +80,28 @@ DEFAULT_VARIANTS: dict[str, dict[str, Any]] = {
         "start_from_noise": True,
         "matched_noise": True,
     },
+    # Controls: the same sampler with every objective off. Paired against its
+    # steered twin this is "what steering adds" beyond regeneration (SDEdit).
+    "nosteer_c1": {"no_steer": True},
+    "nosteer_flip_x0": {"flip": "ramp", "guidance_space": "x0", "no_steer": True},
+    # Self-recurrence (time travel) against the x̂₀-space sharpening (testbed E13).
+    "flip_x0_final025_recur2": {
+        "flip": "ramp",
+        "guidance_space": "x0",
+        "final_grad_scale": 0.25,
+        "n_recur": 2,
+    },
+    # Contrast kinds generated as masked (RePaint) edits: exact position and a
+    # bin-level label; the rest of the window stays donor (testbed E14).
+    "flip_x0_contrast_masked": {
+        "flip": "ramp",
+        "guidance_space": "x0",
+        "final_grad_scale": 0.25,
+        "contrast": {"real level shift": "step", "real ESA Point / Global": "spike"},
+        "mask": True,
+        "mask_dilate": 8,
+        "n_recur": 2,
+    },
 }
 
 # Keys the phase interprets itself; everything else goes to guided_ddim.
@@ -96,6 +118,9 @@ _PHASE_KEYS = {
     "contrast_only",
     "lam_contrast",
     "context",
+    "mask",
+    "mask_dilate",
+    "no_steer",
 }
 
 
@@ -275,7 +300,9 @@ def run_fixsweep(cfg: dict[str, Any]) -> dict[str, Any]:
             if cache.is_file() and not force:
                 blob = np.load(cache, allow_pickle=True)
                 x, h = np.asarray(blob["x"]), np.asarray(blob["h"])
+                masks = np.asarray(blob["mask"]) if "mask" in blob.files else None
             else:
+                masks = np.zeros(x_cond.shape, dtype=bool) if bool(spec.get("mask")) else None
                 print(f"fixsweep {vname} fold={fold_id}", flush=True)
                 torch.manual_seed(fseed)
                 x, h = _generate_slices(
@@ -298,9 +325,19 @@ def run_fixsweep(cfg: dict[str, Any]) -> dict[str, Any]:
                     contrast=_contrast_plan(
                         spec, kind_lab, fold_a, fold_id, x_a, ch_a, scaler, KIND_ORDER
                     ),
+                    mask_out=masks,
+                    mask_dilate=int(spec.get("mask_dilate", 8)),
+                    no_steer=bool(spec.get("no_steer", False)),
                 )
+                extra_npz = {"mask": masks} if masks is not None else {}
                 np.savez_compressed(
-                    cache, x=x, h=h, channel_idx=cond_ch, kind_alloc=alloc.astype(str), spec=json.dumps(spec)
+                    cache,
+                    x=x,
+                    h=h,
+                    channel_idx=cond_ch,
+                    kind_alloc=alloc.astype(str),
+                    spec=json.dumps(spec),
+                    **extra_npz,
                 )
             galleries[(vname, fold_id)] = (x, alloc.astype(str))
             if fold_id == folds[0]:
@@ -424,6 +461,9 @@ def _generate_slices(
     proto_shift_max: int,
     suffix: np.ndarray | None = None,
     contrast: dict[str, Any] | None = None,
+    mask_out: np.ndarray | None = None,
+    mask_dilate: int = 8,
+    no_steer: bool = False,
 ) -> tuple[np.ndarray, np.ndarray]:
     """``kindmix._stratified`` with per-donor arrays (prefix) sliced per kind.
 
@@ -432,6 +472,11 @@ def _generate_slices(
     torch seed, so ``c1_repro`` is a fresh draw of the same recipe, not a
     bit-for-bit copy: compare variants against ``c1_repro`` (shared torch seed),
     not against the frozen table.
+
+    ``mask_out`` (N, W) bool, when given, turns every contrast slice into a
+    masked (RePaint) edit: only ``contrast_mask`` bins are generated and the
+    mask is written into ``mask_out`` as the bin-level label. Slices without a
+    contrast target are left unmasked (their row of ``mask_out`` stays False).
     """
     labels = np.asarray(alloc).astype(str)
     default_lam = float(common.get("lam_anom", 1.0))
@@ -443,6 +488,9 @@ def _generate_slices(
             continue
         use_proto, lam_k = slice_lam_anom(kind, proto_kinds, default_lam)
         kw = dict(common)
+        if no_steer:  # same chain, same seeds, every objective off
+            use_proto = False
+            kw.update(mode="off", lam=0.0, lam_rare=0.0, lam_cls=0.0, lam_parent=0.0)
         if prefix is not None:
             kw["burnin_prefix"] = prefix[idx]
         if suffix is not None:
@@ -458,11 +506,11 @@ def _generate_slices(
             )
         else:
             kw.update(lam_anom=0.0, lam_rare=0.0)
-        plan = (contrast or {}).get(kind)
+        plan = None if no_steer else (contrast or {}).get(kind)
         if plan is not None:
-            from anogen.shell.contrast import sample_targets
+            from anogen.shell.contrast import contrast_mask, sample_targets
 
-            _, delta, wts = sample_targets(
+            c_pos, delta, wts = sample_targets(
                 plan["kind"],
                 len(idx),
                 x0.shape[1],
@@ -470,6 +518,10 @@ def _generate_slices(
                 rng=np.random.default_rng(seed + 53 * (1 + kind_order.index(kind))),
             )
             kw.update(contrast_weights=wts, contrast_target=delta, lam_contrast=plan["lam"])
+            if mask_out is not None:
+                m = contrast_mask(plan["kind"], c_pos, x0.shape[1], dilate=int(mask_dilate))
+                kw["anomaly_mask"] = m
+                mask_out[idx] = m
             if plan["only"]:
                 for key in ("ref_anom", "anom_energy_kind", "anom_proto_seed", "anom_proto_shift_max", "anom_proto_shift_seed"):
                     kw.pop(key, None)

@@ -127,3 +127,31 @@ def test_tiny_eps_net_gradients_and_causality():
         x2[:, 10] += 1.0
         d = np.abs(net.forward(x2, t) - base)
         assert (d[:, :10].max() == 0.0) == causal
+
+
+def test_mirror_mask_and_recurrence():
+    import numpy as np
+    from anogen.testbed.gauss import GPChannel, GuideTerm, LinearDenoiser, Schedule, guided_ddim
+
+    ch, sch, w = GPChannel(), Schedule(), 64
+    rng = np.random.default_rng(0)
+    donor = ch.sample(8, w, rng)
+    den = LinearDenoiser(ch, w, sch, "bidir")
+    target = np.full(8, 0.2)
+    wts = np.zeros((8, w)); wts[:, 32:] = 1 / 32; wts[:, :32] = -1 / 32
+
+    def fn(x):
+        d = (x * wts).sum(1)
+        return (d - target) ** 2, ((d - target) / (wts * wts).sum(1))[:, None] * wts
+
+    terms = [GuideTerm(1.0, fn, project=True)]
+    base = guided_ddim(den, donor, terms, rng=np.random.default_rng(1), space="x0")
+    same = guided_ddim(den, donor, terms, rng=np.random.default_rng(1), space="x0", n_recur=1)
+    assert np.array_equal(base, same)
+    rec = guided_ddim(den, donor, terms, rng=np.random.default_rng(1), space="x0", n_recur=3)
+    assert np.isfinite(rec).all() and not np.array_equal(base, rec)
+    m = np.zeros((8, w), dtype=bool); m[:, 28:] = True
+    out = guided_ddim(den, donor, terms, rng=np.random.default_rng(1), space="x0", gen_mask=m)
+    assert np.array_equal(out[~m], donor[~m])
+    d = (out * wts).sum(1)
+    assert np.all(np.abs(d - target) < 0.08)

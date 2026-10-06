@@ -7,7 +7,10 @@ labels (DDPM-based TSAD in the spirit of ImDiffusion / DiffusionAD):
     s(x) = mean over t ∈ T_eval and K noise draws of
            mean_i ( ε_θ(√ᾱ_t x + √(1−ᾱ_t) ε, t, c)[i] − ε[i] )²
 
-computed in the scaled units the score was trained in.
+computed in the scaled units the score was trained in. Variants can pool the
+per-bin error over its largest bins (``pool: top16``) and fuse noise levels by
+the max of per-channel z-scores (``fuse: zmax``), the multiscale idea of
+Mahmood et al. (ICLR 2021); testbed E15/E15b.
 
 Held-out negatives. S1 trained on every window of ``train_index.csv``: all
 S3 donors and all labelled Rare Events. Scoring those would be in-sample
@@ -103,6 +106,17 @@ def run_diffdetect(cfg: dict[str, Any]) -> dict[str, Any]:
             "causal_skip32": {"skip_start": 32},
             "causal_full": {"skip_start": 0},
             "flip_ramp": {"flip": "ramp", "skip_start": 0},
+            # Localized, multiscale score (testbed E15/E15b): the mean over 512
+            # bins dilutes a 3-bin spike; small t sees spikes, large t sees
+            # drifts. Top-16 bins per t, z-scored per channel on held-out
+            # nominals, max over t.
+            "flip_ramp_top16_multiscale": {
+                "flip": "ramp",
+                "skip_start": 0,
+                "pool": "top16",
+                "fuse": "zmax",
+                "t_eval": [10, 20, 40, 60, 100, 150],
+            },
         }
     )
     t_eval = [int(t) for t in (dcfg.get("t_eval") or [10, 20, 40])]
@@ -119,31 +133,58 @@ def run_diffdetect(cfg: dict[str, Any]) -> dict[str, Any]:
         model = wrap_denoiser(denoiser_from_ckpt(den, device=torch.device(device)), spec.get("flip"))
         scaler = resolve_scaler(den, s0)
         sched = DiffusionSchedule.from_ckpt(den, allow_nonlinear=True).to(torch.device(device))
-        kw = dict(t_eval=_map_t_eval(sched, t_eval), n_draws=n_draws, bsz=bsz, skip=int(spec.get("skip_start", 0)), seed=seed)
+        v_t_eval = [int(t) for t in (spec.get("t_eval") or t_eval)]
+        pool = str(spec.get("pool", "mean"))
+        fuse = str(spec.get("fuse", "mean"))
+        kw = dict(t_eval=_map_t_eval(sched, v_t_eval), n_draws=n_draws, bsz=bsz, skip=int(spec.get("skip_start", 0)), seed=seed)
+        if pool != "mean":
+            kw["pool"] = pool
         cache = out / f"{vname}_scores.npz"
         key = json.dumps({**kw, "denoiser": str(den_path), "flip": spec.get("flip"), "n_fresh": int(len(x_d))}, sort_keys=True)
         blob = np.load(cache) if cache.is_file() else None
-        if blob is not None and "key" in blob.files and str(blob["key"]) == key and not bool(dcfg.get("force", False)):
-            sa, sr, sd = blob["anomaly"], blob["rare"], blob["fresh"]
+        if (
+            blob is not None
+            and "key" in blob.files
+            and "fresh_t" in blob.files
+            and str(blob["key"]) == key
+            and not bool(dcfg.get("force", False))
+        ):
+            sa_t, sr_t, sd_t = blob["anomaly_t"], blob["rare_t"], blob["fresh_t"]
         else:
             print(f"diffdetect {vname}", flush=True)
-            sa = denoising_scores(model, sched, scaler, x_a, ch_a, device=device, **kw)
-            sr = denoising_scores(model, sched, scaler, x_r, ch_r, device=device, **kw)
-            sd = denoising_scores(model, sched, scaler, x_d, ch_d, device=device, **kw)
-            np.savez_compressed(
-                cache, anomaly=sa, rare=sr, fresh=sd, fresh_channel=ch_d, key=np.asarray(key)
-            )
+            sa_t = denoising_scores(model, sched, scaler, x_a, ch_a, device=device, **kw)
+            sr_t = denoising_scores(model, sched, scaler, x_r, ch_r, device=device, **kw)
+            sd_t = denoising_scores(model, sched, scaler, x_d, ch_d, device=device, **kw)
+        # 1-D scores aligned with S0 arrays for augdetect's rank fusion. For
+        # fuse=zmax these use per-channel stats of *all* fresh windows (score
+        # distribution only, no labels); the fold evaluation below re-fits them
+        # on the fold's training negatives.
+        sa, sr, sd = (fuse_scores(a, c, sd_t, ch_d, fuse) for a, c in ((sa_t, ch_a), (sr_t, ch_r), (sd_t, ch_d)))
+        np.savez_compressed(
+            cache,
+            anomaly=sa,
+            rare=sr,
+            fresh=sd,
+            anomaly_t=sa_t,
+            rare_t=sr_t,
+            fresh_t=sd_t,
+            fresh_channel=ch_d,
+            key=np.asarray(key),
+        )
         rows = []
         for k in folds:
             train_d = np.arange(len(x_d)) % 3 != k
             test_d = ~train_d
-            mu, sdv = _channel_stats(sd[train_d], ch_d[train_d])
+            fa = fuse_scores(sa_t, ch_a, sd_t[train_d], ch_d[train_d], fuse)
+            fr = fuse_scores(sr_t, ch_r, sd_t[train_d], ch_d[train_d], fuse)
+            fd = fuse_scores(sd_t, ch_d, sd_t[train_d], ch_d[train_d], fuse)
+            mu, sdv = _channel_stats(fd[train_d], ch_d[train_d])
             z = lambda s, c: (s - mu[c]) / sdv[c]  # noqa: E731
             ta, tr = fold_a == k, fold_r == k
             ev = eval_scores(
-                z(sa[ta], ch_a[ta]),
-                z(sd[test_d], ch_d[test_d]),
-                z(sr[tr], ch_r[tr]),
+                z(fa[ta], ch_a[ta]),
+                z(fd[test_d], ch_d[test_d]),
+                z(fr[tr], ch_r[tr]),
                 event_id=event_a[ta],
                 kind=kind_a[ta],
                 far=far,
@@ -269,6 +310,50 @@ def _channel_stats(scores: np.ndarray, ch: np.ndarray) -> tuple[np.ndarray, np.n
     return mu, sd
 
 
+def pool_bins_np(err: np.ndarray, pool: str = "mean", k: int = 16) -> np.ndarray:
+    """Numpy twin of the per-window pooling in ``denoising_scores`` (rows = windows).
+
+    mean   mean over bins (the original score; dilutes short anomalies ~W/len)
+    topK   mean of the K largest per-bin errors (``top16``)
+    maxK   max over bins of the K-bin moving average (``max16``)
+    """
+    e = np.asarray(err, dtype=np.float64)
+    if pool == "mean":
+        return e.mean(axis=1)
+    if pool.startswith("top"):
+        kk = int(pool[3:] or k)
+        return np.sort(e, axis=1)[:, -kk:].mean(axis=1)
+    if pool.startswith("max"):
+        kk = int(pool[3:] or k)
+        c = np.cumsum(np.pad(e, ((0, 0), (1, 0))), axis=1)
+        return ((c[:, kk:] - c[:, :-kk]) / kk).max(axis=1)
+    raise ValueError(f"unknown pool {pool!r} (mean | topK | maxK)")
+
+
+def fuse_scores(
+    s_t: np.ndarray, ch: np.ndarray, ref_t: np.ndarray, ref_ch: np.ndarray, fuse: str = "mean"
+) -> np.ndarray:
+    """(N, T) per-noise-level scores -> (N,) window score.
+
+    mean  mean over t of the raw scores (the original diffdetect score)
+    zmax  z-score each t per channel on the reference (held-out nominal) rows,
+          then the max over t: small t catches spikes, large t catches drifts
+    """
+    s = np.asarray(s_t, dtype=np.float64)
+    if s.ndim == 1:
+        s = s[:, None]
+    if fuse == "mean":
+        return s.mean(axis=1)
+    if fuse != "zmax":
+        raise ValueError(f"unknown fuse {fuse!r} (mean | zmax)")
+    ref = np.asarray(ref_t, dtype=np.float64).reshape(len(ref_ch), -1)
+    z = np.zeros_like(s)
+    for j in range(s.shape[1]):
+        mu, sd = _channel_stats(ref[:, j], np.asarray(ref_ch))
+        z[:, j] = (s[:, j] - mu[ch]) / sd[ch]
+    return z.max(axis=1)
+
+
 def denoising_scores(
     model: Any,
     schedule: Any,
@@ -282,29 +367,44 @@ def denoising_scores(
     skip: int,
     seed: int,
     device: str,
+    pool: str = "mean",
 ) -> np.ndarray:
-    """Mean ε-prediction error per window (higher = less nominal)."""
+    """(N, len(t_eval)) ε-prediction error per window and noise level (higher = less nominal).
+
+    The per-bin squared error is averaged over the K draws at each t, then
+    pooled over bins (``pool_bins_np``: mean | topK | maxK).
+    """
     import torch
+    import torch.nn.functional as F
 
     from anogen.shell.diffusion import q_sample
 
     if len(x) == 0:
-        return np.zeros(0, dtype=np.float64)
+        return np.zeros((0, len(t_eval)), dtype=np.float64)
     xs = scaler.transform(x, ch) if scaler is not None else np.asarray(x, dtype=np.float32)
-    out = np.zeros(len(xs), dtype=np.float64)
+    out = np.zeros((len(xs), len(t_eval)), dtype=np.float64)
     gen = torch.Generator(device="cpu").manual_seed(int(seed))
     model.eval()
     with torch.no_grad():
         for i in range(0, len(xs), int(bsz)):
             xb = torch.from_numpy(np.asarray(xs[i : i + bsz], dtype=np.float32)).unsqueeze(1).to(device)
             cb = torch.from_numpy(np.asarray(ch[i : i + bsz], dtype=np.int64)).to(device)
-            acc = torch.zeros(xb.size(0), device=device)
-            for t in t_eval:
+            for j, t in enumerate(t_eval):
                 tb = torch.full((xb.size(0),), int(t), dtype=torch.long, device=device)
+                acc = torch.zeros_like(xb[..., int(skip) :])
                 for _ in range(int(n_draws)):
                     noise = torch.randn(xb.shape, generator=gen).to(device)
                     xt, _ = q_sample(xb, tb, schedule, noise=noise)
-                    err = (model(xt, tb, cb) - noise) ** 2
-                    acc += err[..., int(skip) :].mean(dim=(1, 2))
-            out[i : i + len(xb)] = (acc / (len(t_eval) * int(n_draws))).cpu().numpy()
+                    acc += ((model(xt, tb, cb) - noise) ** 2)[..., int(skip) :]
+                err = (acc / int(n_draws)).squeeze(1)  # (B, L - skip)
+                if pool == "mean":
+                    pooled = err.mean(dim=-1)
+                elif pool.startswith("top"):
+                    pooled = err.topk(int(pool[3:] or 16), dim=-1).values.mean(dim=-1)
+                elif pool.startswith("max"):
+                    kk = int(pool[3:] or 16)
+                    pooled = F.avg_pool1d(err.unsqueeze(1), kk, stride=1).squeeze(1).amax(dim=-1)
+                else:
+                    raise ValueError(f"unknown pool {pool!r}")
+                out[i : i + len(xb), j] = pooled.cpu().numpy()
     return out

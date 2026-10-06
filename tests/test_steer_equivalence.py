@@ -163,3 +163,45 @@ def test_context_crop_keeps_the_window_in_x_space():
     torch.manual_seed(5)
     out, _ = guided_ddim(model, enc, x0, ch, sched, burnin_prefix=pre, burnin_suffix=pre, **common)
     assert out.shape == x0.shape and np.isfinite(out).all()
+
+
+@pytest.mark.parametrize("space", ["x", "x0"])
+def test_anomaly_mask_keeps_donor_outside_and_edits_inside(space):
+    model, enc, sched, x0, ch, ref, scaler = _setup()
+    common = dict(ref=ref, Q_q=0.5, tau=1.0, nu=0.3, lam=0.3, c_max=1.0, ddim_steps=8, normalize_grad=True,
+                  device="cpu", scaler=scaler, guidance_space=space)
+    mask = np.zeros((6, W), dtype=bool)
+    mask[:, 20:40] = True
+    torch.manual_seed(5)
+    out, _ = guided_ddim(model, enc, x0, ch, sched, anomaly_mask=mask, **common)
+    # outside the mask the donor comes back (up to the scaler round trip)
+    assert np.allclose(out[~mask], x0[~mask], atol=1e-5)
+    assert not np.allclose(out[mask], x0[mask], atol=1e-3)
+    with pytest.raises(ValueError):
+        guided_ddim(model, enc, x0, ch, sched, anomaly_mask=mask, start_from_noise=True, **common)
+
+
+def test_n_recur_one_is_identity_and_more_passes_change_the_sample():
+    model, enc, sched, x0, ch, ref, scaler = _setup()
+    common = dict(ref=ref, Q_q=0.5, tau=1.0, nu=0.3, lam=0.3, c_max=1.0, ddim_steps=8, normalize_grad=True,
+                  device="cpu", guidance_space="x0")
+    torch.manual_seed(7)
+    a, _ = guided_ddim(model, enc, x0, ch, sched, **common)
+    torch.manual_seed(7)
+    b, _ = guided_ddim(model, enc, x0, ch, sched, n_recur=1, **common)
+    torch.manual_seed(7)
+    c, _ = guided_ddim(model, enc, x0, ch, sched, n_recur=3, **common)
+    assert np.array_equal(a, b)
+    assert np.isfinite(c).all() and not np.array_equal(a, c)
+
+
+def test_chunked_slices_anomaly_mask():
+    model, enc, sched, x0, ch, ref, scaler = _setup()
+    common = dict(ref=ref, Q_q=0.5, tau=1.0, nu=0.3, lam=0.3, c_max=1.0, ddim_steps=6, normalize_grad=True,
+                  device="cpu", guidance_space="x0")
+    mask = np.zeros((6, W), dtype=bool)
+    mask[::2, 10:30] = True
+    mask[1::2, 30:50] = True
+    torch.manual_seed(2)
+    out, _ = chunked_guided_ddim(model, enc, x0, ch, sched, bsz=4, anomaly_mask=mask, **common)
+    assert np.allclose(out[~mask], x0[~mask], atol=1e-5)

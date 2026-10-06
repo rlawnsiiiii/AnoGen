@@ -126,8 +126,8 @@ x̂₀ error at t=40 (ν=0.2 edit time), MSE first 16 / middle 16 / last 16 bins
 |---|---|---:|---:|---:|---:|---:|---:|---:|
 | real level shifts | (target) | 0.90 | 0.280 | 0.315 | 0.000 | 0.050 | 0.08 | 0.09 |
 | repo (causal, x, final 1) | proto (6 shared) | 1.00 | 0.262 | 0.261 | 0.075 | 0.150 | 0.28 | 0.03 |
-| repo (causal, x, final 1) | step contrast | 0.84 | 0.326 | 0.304 | 0.132 | 0.056 | 0.26 | 0.01 |
-| repo (causal, x, final 1) | proto + step contrast | 0.99 | 0.301 | 0.262 | 0.074 | 0.137 | 0.10 | 0.00 |
+| repo (causal, x, final 1) | step contrast | 0.84 | 0.325 | 0.305 | 0.132 | 0.056 | 0.27 | 0.01 |
+| repo (causal, x, final 1) | proto + step contrast | 0.99 | 0.302 | 0.262 | 0.074 | 0.138 | 0.10 | 0.00 |
 | fixed (flip_ramp, x0, final 0.25) | proto (6 shared) | 1.00 | 0.271 | 0.261 | 0.076 | 0.068 | 0.02 | 0.07 |
 | fixed (flip_ramp, x0, final 0.25) | step contrast | 0.75 | 0.302 | 0.301 | 0.021 | 0.047 | 0.14 | 0.10 |
 | fixed (flip_ramp, x0, final 0.25) | proto + step contrast | 1.00 | 0.293 | 0.261 | 0.075 | 0.083 | 0.02 | 0.03 |
@@ -236,6 +236,129 @@ Label-free detection by denoising error (spikes of 0.15 at uniform positions vs 
 | causal net, context 128 bins (both), nu=0.2 | 0.089 | 0.099 |
 | bidir net, context 128 bins (both), nu=1.0 | 0.120 | 0.104 |
 | bidir net, context 128 bins (both), nu=0.2 | 0.130 | 0.104 |
+
+### E2b leaving the end of the trajectory unguided (level-shift slice, exact denoisers, x̂₀-space)
+
+| denoiser | final scale | guided t / t* window | diff p99.9 | start | end | proto dist. |
+|---|---:|---|---:|---:|---:|---:|
+| flip_ramp | 1.0 | (0, 1) | 0.069 | 0.06 | 0.15 | 0.18 |
+| flip_ramp | 0.25 | (0, 1) | 0.069 | 0.08 | 0.14 | 0.11 |
+| flip_ramp | 1.0 | (0.1, 1) | 0.099 | 0.02 | 0.14 | 0.24 |
+| flip_ramp | 1.0 | (0.2, 1) | 0.112 | 0.00 | 0.14 | 0.49 |
+| flip_ramp | 0.0 | (0.1, 1) | 0.099 | 0.02 | 0.14 | 0.24 |
+| bidir | 1.0 | (0, 1) | 0.044 | 0.11 | 0.03 | 0.17 |
+| bidir | 0.25 | (0, 1) | 0.045 | 0.14 | 0.03 | 0.12 |
+| bidir | 1.0 | (0.1, 1) | 0.070 | 0.06 | 0.01 | 0.23 |
+| bidir | 1.0 | (0.2, 1) | 0.094 | 0.00 | 0.00 | 0.41 |
+| bidir | 0.0 | (0.1, 1) | 0.070 | 0.06 | 0.01 | 0.23 |
+
+### E6b ±64-bin step contrast instead of whole-window segments
+
+| sampler | target | shelf rate | step amp mean | pos W1 to real |
+|---|---|---:|---:|---:|
+| real level shifts | (target) | 0.90 | 0.280 | 0.000 |
+| repo (causal, x, final 1) | proto (6 shared) | 1.00 | 0.262 | 0.075 |
+| repo (causal, x, final 1) | step contrast | 0.05 | 0.042 | 0.130 |
+| repo (causal, x, final 1) | proto + step contrast | 0.99 | 0.273 | 0.064 |
+| fixed (flip_ramp, x0, final 0.25) | proto (6 shared) | 1.00 | 0.271 | 0.076 |
+| fixed (flip_ramp, x0, final 0.25) | step contrast | 0.00 | 0.042 | 0.121 |
+| fixed (flip_ramp, x0, final 0.25) | proto + step contrast | 0.99 | 0.271 | 0.066 |
+
+### E10b trained bidirectional nets: linear vs geometric schedule (32 bins of context each side)
+
+| net | run | variance ratio | first-difference variance ratio | high-band log10 power shift | start | end |
+|---|---|---:|---:|---:|---:|---:|
+| bidir net, linear schedule | from noise, 20 steps | 0.84 | 1.24 | +0.06 | 0.09 | 0.08 |
+| bidir net, linear schedule | from noise, 50 steps | 0.91 | 1.43 | +0.11 | 0.11 | 0.08 |
+| bidir net, linear schedule | edit at nu=0.2 noise level, 50 steps | 1.02 | 0.98 | +0.05 | 0.09 | 0.09 |
+| bidir net, geometric schedule | from noise, 20 steps | 0.71 | 0.79 | -0.21 | 0.10 | 0.09 |
+| bidir net, geometric schedule | from noise, 50 steps | 0.78 | 0.93 | -0.15 | 0.09 | 0.07 |
+| bidir net, geometric schedule | edit at nu=0.2 noise level, 50 steps | 0.97 | 0.95 | -0.03 | 0.06 | 0.09 |
+
+### E11 where the error goes: generated / true variance by position (closed form, exact denoisers)
+
+| denoiser, edit | variance first 16 / middle / last 16 | first-difference variance first 16 / middle / last 16 | deviation from donor first 16 / middle |
+|---|---|---|---|
+| bidir nu=1.0 | 0.92 / 0.92 / 0.92 | 0.37 / 0.37 / 0.37 | 1.01 / 1.01 |
+| bidir nu=0.2 | 0.99 / 0.99 / 0.99 | 0.48 / 0.48 / 0.48 | 0.11 / 0.10 |
+| causal nu=1.0 | 0.47 / 0.41 / 0.40 | 4.19 / 0.92 / 0.83 | 1.32 / 1.01 |
+| causal nu=0.2 | 0.69 / 0.83 / 0.84 | 3.44 / 1.19 / 1.13 | 0.61 / 0.17 |
+| flip_ramp nu=1.0 | 0.62 / 0.59 / 0.62 | 0.86 / 0.82 / 0.86 | 0.87 / 0.86 |
+| flip_ramp nu=0.2 | 0.93 / 0.93 / 0.93 | 1.14 / 1.09 / 1.14 | 0.10 / 0.10 |
+
+### E12 what ARP in φ rewards: galleries without anomaly content vs an oracle
+
+| gallery | ARP, frozen φ | ARP, standardized φ | ARP, φ without HF bands | diff sd vs donors |
+|---|---:|---:|---:|---:|
+| donors, low-pass sd 0 bins | 0.301 | 0.094 | 0.339 | 1.00× |
+| donors, low-pass sd 0.5 bins | 0.289 | 0.087 | 0.337 | 0.83× |
+| donors, low-pass sd 1 bins | 0.263 | 0.077 | 0.330 | 0.62× |
+| donors, low-pass sd 1.5 bins | 0.256 | 0.074 | 0.326 | 0.55× |
+| donors, low-pass sd 2 bins | 0.251 | 0.073 | 0.323 | 0.52× |
+| donors, low-pass sd 3 bins | 0.251 | 0.073 | 0.317 | 0.48× |
+| donors + white texture sd 0.01 | 0.279 | 0.105 | 0.346 | 1.73× |
+| donors + white texture sd 0.02 | 0.249 | 0.100 | 0.346 | 2.98× |
+| oracle: fresh anomalies, same generator | 0.748 | 0.356 | 0.881 | 3.37× |
+| oracle, low-pass sd 1.5 bins | 0.341 | 0.105 | 0.821 | 1.28× |
+
+### E13 x̂₀-space guidance with trained nets: self-recurrence vs smoothing the edit (level-shift slice)
+
+| denoiser | variant | diff p99.9 | start | end | proto dist. |
+|---|---|---:|---:|---:|---:|
+| real level shifts | (target) | 0.051 | 0.04 | 0.07 |  |
+| bidir net | x0, final 0.25 | 0.076 | 0.18 | 0.05 | 0.10 |
+| bidir net | x0, final 0 | 0.076 | 0.17 | 0.05 | 0.19 |
+| bidir net | x0, recurrence k=2 | 0.060 | 0.11 | 0.05 | 0.10 |
+| bidir net | x0, recurrence k=4 | 0.057 | 0.14 | 0.03 | 0.10 |
+| bidir net | x0, edit low-pass sd 4 | 0.056 | 0.33 | 0.39 | 0.10 |
+| bidir net | x0, edit low-pass sd 8 | 0.052 | 0.37 | 0.42 | 0.12 |
+| bidir net | x0, recurrence k=2 + low-pass sd 4 | 0.050 | 0.32 | 0.41 | 0.10 |
+| causal net + flip ramp | x0, final 0.25 | 0.107 | 0.06 | 0.07 | 0.10 |
+| causal net + flip ramp | x0, final 0 | 0.106 | 0.07 | 0.06 | 0.18 |
+| causal net + flip ramp | x0, recurrence k=2 | 0.078 | 0.05 | 0.12 | 0.10 |
+| causal net + flip ramp | x0, recurrence k=4 | 0.073 | 0.10 | 0.09 | 0.09 |
+| causal net + flip ramp | x0, edit low-pass sd 4 | 0.073 | 0.05 | 0.20 | 0.10 |
+| causal net + flip ramp | x0, edit low-pass sd 8 | 0.069 | 0.05 | 0.26 | 0.12 |
+| causal net + flip ramp | x0, recurrence k=2 + low-pass sd 4 | 0.062 | 0.06 | 0.17 | 0.11 |
+
+### E14 masked (RePaint) level shifts vs a whole-window contrast (exact bidirectional denoiser)
+
+| sampler | onset error (bins, median) | amplitude / target | seam: max diff near onset | texture inside | change outside the mask |
+|---|---:|---:|---:|---:|---:|
+| real level shifts (ramp 6 bins) | 4.5 | 0.93 | 0.051 | 1.00 | 0.000 |
+| whole-window contrast, nu 0.2 (E6 style) | 5.0 | 1.10 | 0.022 | 0.73 | 0.062 |
+| masked, nu 0.2 | 4.0 | 1.07 | 0.080 | 0.79 | 0.000 |
+| masked, nu 0.2, resample 3 | 6.5 | 1.12 | 0.065 | 0.86 | 0.000 |
+| masked + 8-bin dilation, nu 0.2 | 14.0 | 0.99 | 0.074 | 0.89 | 0.000 |
+| masked + 8-bin dilation, nu 0.5, resample 3 | 18.0 | 1.00 | 0.058 | 1.03 | 0.000 |
+| masked, nu 0.5 | 5.0 | 1.12 | 0.079 | 0.86 | 0.000 |
+| masked, nu 0.5, resample 3 | 7.0 | 1.13 | 0.068 | 0.91 | 0.000 |
+| masked, from t_max | 6.0 | 1.14 | 0.079 | 0.87 | 0.000 |
+| masked, from t_max, resample 3 | 6.0 | 1.13 | 0.085 | 0.88 | 0.000 |
+
+### E15 pooling the per-bin denoising error (trained bidirectional net, t = 10, 20, 40; AUROC)
+
+| anomaly | mean | max16 | top16 | MSMA (mean) | MSMA (max16) |
+|---|---:|---:|---:|---:|---:|
+| spike 0.15, 3 bins | 0.855 | 0.938 | 0.997 | 0.748 | 0.937 |
+| level shift 0.10 | 0.628 | 0.619 | 0.661 | 0.500 | 0.504 |
+| drift 0.15 over 128 bins | 0.583 | 0.629 | 0.603 | 0.497 | 0.581 |
+
+### E15 the same at t = 60, 100, 150
+
+| anomaly | mean | max16 | top16 | MSMA (mean) | MSMA (max16) |
+|---|---:|---:|---:|---:|---:|
+| spike 0.15, 3 bins | 0.572 | 0.569 | 0.660 | 0.502 | 0.509 |
+| level shift 0.10 | 0.647 | 0.679 | 0.680 | 0.486 | 0.582 |
+| drift 0.15 over 128 bins | 0.743 | 0.774 | 0.774 | 0.666 | 0.734 |
+
+### E15b one score for every kind: top-16 error per t, z-scored on held-out nominals (AUROC)
+
+| anomaly | t=10 | t=20 | t=40 | t=60 | t=100 | t=150 | z-max over t | z-mean over t |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| spike 0.15, 3 bins | 0.999 | 0.979 | 0.776 | 0.658 | 0.603 | 0.586 | 0.995 | 0.947 |
+| level shift 0.10 | 0.647 | 0.644 | 0.572 | 0.587 | 0.694 | 0.710 | 0.667 | 0.694 |
+| drift 0.15 over 128 bins | 0.575 | 0.586 | 0.590 | 0.640 | 0.790 | 0.832 | 0.749 | 0.744 |
 
 ## Reading
 
@@ -364,3 +487,59 @@ vs centred ("same", zero) padding.
   uniform positions. The causal net reaches 0.634, and skipping its first 32
   bins does not help. A causal backbone is a much weaker detector, so run
   `diffdetect` with `flip: ramp` or the retrained bidirectional S1.
+
+
+**E10b — the schedule with trained nets.** With the small numpy nets, the
+schedule made almost no texture difference on the ν = 0.2 edit
+(first-difference variance 0.98× linear, 0.95× log-spaced). Network error,
+not the schedule's σ_min, limits texture at this net size, and from noise the
+linear-schedule net is even too rough (1.24–1.43×). The closed-form result
+(E10, E11) is an upper bound for a perfect denoiser. ESA's unguided gallery
+is 0.71× too smooth, which matches that bound, so the retrain should help
+there, but it has to show it.
+
+**E11 — where the causal error goes.** Closed form, per bin. The causal
+denoiser does not create large excursions at the start. It leaves residual
+noise there: 3.4× the true first-difference variance in the first 16 bins
+after a ν = 0.2 edit (11× at bin 0), decaying over the first quarter of the
+window (E11b). Its total variance is *too low* (0.40–0.47 at ν = 1). The
+edit also rewrites the window start 3.6× more than the middle (deviation
+from the donor 0.61 against 0.17). A perfect bidirectional denoiser is
+uniform but keeps only 0.48× of the texture on the frozen schedule, 0.93×
+on the log-spaced one (E11b). Most of that loss is the final Tweedie step at
+σ_min: the spectral formula in `shell/texture.py` predicts 0.51 kept for this
+channel, and the coarse low-noise steps account for the rest.
+
+**E12 — what ARP rewards.** ARP in frozen φ is mostly a texture-match score.
+Lightly low-passing a perfect anomaly gallery (the oracle) drops its ARP from
+0.748 to 0.341. In φ without the three high-frequency bands it drops only
+from 0.881 to 0.821. Whether smoothing *raises* ARP depends on whether the
+real anomalies are smoother than nominal windows in z-scored units: in this
+testbed (spikes add roughness) smoothing lowers it, with level-shift-only
+queries the effect is small. On ESA the regenerated galleries are smoother
+and ARP rises, which `audit_metrics.py`'s φ attribution can confirm.
+
+**E13 — x̂₀-space sharpness with trained nets.** Self-recurrence fixes it.
+Two passes take level-shift edges from 0.076 to 0.060 (bidirectional net)
+and from 0.107 to 0.078 (flip ensemble), four passes to 0.057 / 0.073,
+against 0.051 real, at the same prototype distance. Low-passing the edit
+also softens edges, but it moves the excursions to the window edges (end
+share 0.26–0.42), so it is not adopted.
+
+**E14 — masked edits.** Generating only the anomaly segment and keeping the
+donor elsewhere puts the onset 4–7 bins from the requested position (an ideal
+injected shift on the same donors: 4.5) with zero change outside the mask,
+and gives an exact bin-level label. The mask edge itself makes the seam
+too sharp (0.080 against 0.051). Resampling (0.065) and an 8-bin dilation with
+a ν = 0.5 edit (0.058) soften it; dilation costs onset precision (14–18 bins).
+`fixsweep`'s `flip_x0_contrast_masked` uses dilation 8 and two recurrences.
+
+**E15 — detection pooling.** Averaging the per-bin error over the window
+dilutes short anomalies: spike AUROC 0.855 with the mean, 0.997 with the mean
+of the 16 largest bins. Noise level matters per kind: spikes need small t
+(0.999 at t = 10, 0.586 at t = 150), drifts large t (0.575 → 0.832). Max over
+t of per-t scores z-scored on held-out nominals keeps 0.995 on spikes and
+reaches 0.75 on drifts (E15b), the multiscale idea of MSMA. Persistent level
+shifts stay hard for any denoising-error score (0.65–0.71): after the onset
+the window is locally nominal again. MSMA's Mahalanobis on mean errors was
+worse than either pooling here.

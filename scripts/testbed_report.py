@@ -150,3 +150,57 @@ if p10b.is_file():
     for k, r in e10b.items():
         net, run = k.split(" | ")
         print(f"| {net} | {run} | {r['var_ratio']:.2f} | {r['diff_var_ratio']:.2f} | {r['hf_logpower_shift']:+.2f} | {r['peak_at_start']:.2f} | {r['peak_at_end']:.2f} |")
+p11 = d / "e11_variance_profile.json"
+if p11.is_file():
+    e11 = json.loads(p11.read_text())
+    print("\n### E11 where the error goes: generated / true variance by position (closed form, exact denoisers)\n")
+    print("| denoiser, edit | variance first 16 / middle / last 16 | first-difference variance first 16 / middle / last 16 | deviation from donor first 16 / middle |")
+    print("|---|---|---|---|")
+    for k, r in e11.items():
+        v, dv, dev = r["var_ratio"], r["diff_var_ratio"], r["deviation_from_donor"]
+        print(f"| {k} | {v['first16']:.2f} / {v['middle']:.2f} / {v['last16']:.2f} | {dv['first16']:.2f} / {dv['middle']:.2f} / {dv['last16']:.2f} | {dev['first16']:.2f} / {dev['middle']:.2f} |")
+p12 = d / "e12_phi_smoothing.json"
+if p12.is_file():
+    e12 = json.loads(p12.read_text())
+    print("\n### E12 what ARP in φ rewards: galleries without anomaly content vs an oracle\n")
+    print("| gallery | ARP, frozen φ | ARP, standardized φ | ARP, φ without HF bands | diff sd vs donors |")
+    print("|---|---:|---:|---:|---:|")
+    for k, r in e12.items():
+        print(f"| {k} | {r['arp_frozen_phi']:.3f} | {r['arp_standardized_phi']:.3f} | {r['arp_phi_without_hf_bands']:.3f} | {r['diff_sd_ratio']:.2f}× |")
+p13 = d / "e13_recurrence.json"
+if p13.is_file():
+    e13 = json.loads(p13.read_text())
+    print("\n### E13 x̂₀-space guidance with trained nets: self-recurrence vs smoothing the edit (level-shift slice)\n")
+    print("| denoiser | variant | diff p99.9 | start | end | proto dist. |")
+    print("|---|---|---:|---:|---:|---:|")
+    for k, r in e13.items():
+        a, b = (k.split(" | ") + ["(target)"])[:2]
+        pd_ = r.get("proto_dist")
+        print(f"| {a} | {b} | {r['diff_p999']:.3f} | {r['peak_at_start']:.2f} | {r['peak_at_end']:.2f} | {'' if pd_ is None else f'{pd_:.2f}'} |")
+p14 = d / "e14_masked.json"
+if p14.is_file():
+    e14 = json.loads(p14.read_text())
+    print("\n### E14 masked (RePaint) level shifts vs a whole-window contrast (exact bidirectional denoiser)\n")
+    print("| sampler | onset error (bins, median) | amplitude / target | seam: max diff near onset | texture inside | change outside the mask |")
+    print("|---|---:|---:|---:|---:|---:|")
+    for k, r in e14.items():
+        print(f"| {k} | {r['onset_abs_err_median']:.1f} | {r['amp_at_requested_over_target']:.2f} | {r['seam_max_diff_median']:.3f} | {r['texture_inside_ratio']:.2f} | {r['outside_change_mean']:.3f} |")
+for name, title in (("e15_detect_pooling.json", "E15 pooling the per-bin denoising error (trained bidirectional net, t = 10, 20, 40; AUROC)"),
+                    ("e15_detect_pooling_t60-100-150.json", "E15 the same at t = 60, 100, 150")):
+    p15 = d / name
+    if p15.is_file():
+        e15 = json.loads(p15.read_text())
+        print(f"\n### {title}\n")
+        print("| anomaly | mean | max16 | top16 | MSMA (mean) | MSMA (max16) |")
+        print("|---|---:|---:|---:|---:|---:|")
+        for k, r in e15.items():
+            print(f"| {k} | {r['mean']:.3f} | {r['max16']:.3f} | {r['top16']:.3f} | {r['msma']:.3f} | {r['msma_max16']:.3f} |")
+p15b = d / "e15b_multiscale.json"
+if p15b.is_file():
+    e15b = json.loads(p15b.read_text())
+    cols = list(next(iter(e15b.values())).keys())
+    print("\n### E15b one score for every kind: top-16 error per t, z-scored on held-out nominals (AUROC)\n")
+    print("| anomaly | " + " | ".join(cols) + " |")
+    print("|---|" + "---:|" * len(cols))
+    for k, r in e15b.items():
+        print(f"| {k} | " + " | ".join(f"{r[c]:.3f}" for c in cols) + " |")

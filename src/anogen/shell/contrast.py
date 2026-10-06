@@ -116,3 +116,32 @@ def sample_targets(
     pos = rng.integers(lo, hi, size=int(n))
     delta = rng.choice(amps, size=int(n), replace=True)
     return pos, delta, contrast_weights(kind, pos, width, **kw)
+
+
+def contrast_mask(
+    kind: str,
+    positions: np.ndarray,
+    width: int,
+    *,
+    dilate: int = 8,
+    spike_half: int = 1,
+    flank_gap: int = 3,
+) -> np.ndarray:
+    """(N, width) bool: the bins to *generate* for a masked (RePaint) edit.
+
+    step   [p − dilate, end): the shifted tail, starting ``dilate`` bins early so
+           the denoiser makes the transition instead of the mask edge;
+    spike  [p − h − gap − dilate, p + h + gap + dilate]: the excursion and the gap
+           to its flanks (the flanks themselves stay donor, so the contrast is
+           measured against real context).
+    The mask is also the bin-level label of the generated anomaly.
+    """
+    pos = np.asarray(positions, dtype=np.int64).reshape(-1)
+    idx = np.arange(int(width))[None, :]
+    if kind == "step":
+        lo = np.maximum(pos - int(dilate), 0)[:, None]
+        return idx >= lo
+    if kind == "spike":
+        r = int(spike_half) + int(flank_gap) + int(dilate)
+        return (idx >= (pos - r)[:, None]) & (idx <= (pos + r)[:, None])
+    raise ValueError(f"unknown contrast kind {kind!r} (use {CONTRAST_KINDS})")

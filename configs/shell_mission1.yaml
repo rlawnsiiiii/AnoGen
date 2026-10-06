@@ -57,6 +57,11 @@ shell:
     # false = frozen causal S4-D (every layer sees only x_t[0..i]).
     # `anogen s1bidir` trains the bidirectional variant into results/shell_s1_bidir.
     bidirectional: false
+  # `anogen s1v2` (bidirectional + log-spaced schedule, results/shell_s1_v2).
+  # Pick sigma_min with scripts/schedule_check.py (95 % texture on every channel).
+  # scaler_v2 is used by S1 only and stored in its checkpoint; S0 is untouched.
+  # diffusion_v2: {sigma_min: 1.0e-3, sigma_max: 10.0}
+  # scaler_v2: {feature_range: [-1.0, 1.0]}
   steer:
     enc_hidden: 32
     emb: 32

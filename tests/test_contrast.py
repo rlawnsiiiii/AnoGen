@@ -33,3 +33,13 @@ def test_sample_targets_spread_positions_and_resample_amplitudes():
 def test_bad_kind():
     with pytest.raises(ValueError):
         contrast_weights("ramp", np.array([10]), 64)
+
+
+def test_contrast_mask_shapes_and_extent():
+    from anogen.shell.contrast import contrast_mask
+
+    m = contrast_mask("step", np.array([100, 300]), 512, dilate=8)
+    assert m.shape == (2, 512) and m.dtype == bool
+    assert not m[0, 91] and m[0, 92] and m[0, -1]
+    s = contrast_mask("spike", np.array([200]), 512, dilate=4, spike_half=1, flank_gap=3)
+    assert s[0].sum() == 2 * (1 + 3 + 4) + 1 and s[0, 200]

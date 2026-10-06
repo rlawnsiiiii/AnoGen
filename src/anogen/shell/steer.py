@@ -333,6 +333,8 @@ def guided_ddim(
     contrast_weights: np.ndarray | None = None,
     contrast_target: np.ndarray | None = None,
     lam_contrast: float = 0.0,
+    n_recur: int = 1,
+    anomaly_mask: np.ndarray | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Noise nominal windows to ν, DDIM with clipped constraint gradients.
 
@@ -407,6 +409,23 @@ def guided_ddim(
                        embeddings, median bandwidth. With repel_project the
                        component along the band gradient is removed so spread
                        happens along constant shell energy.
+    n_recur            self-recurrence / time travel (Bansal et al. 2023, Yu et
+                       al. 2023, TFG): after each guided step t → t', re-noise
+                       x_{t'} back to t with fresh noise and redo the step, n_recur
+                       times in total (the last pass advances). The denoiser then
+                       re-projects the edit onto its manifold; in the testbed two
+                       passes take x̂₀-space level-shift edges from 0.076 to 0.060
+                       (real 0.051) at the same prototype distance (E13). 1 = off.
+                       Unlike ``n_correct`` it injects fresh noise.
+    anomaly_mask       (N, W) bool over the window: True = bins to generate.
+                       Every other bin, and any burn-in context, is replaced at
+                       each step by the donor noised to the current level
+                       (RePaint, Lugmayr et al. 2022) and returned unchanged; edits
+                       are applied inside the mask only. Gives an exact bin-level
+                       label and a requested position (testbed E14). Needs a donor
+                       (not ``start_from_noise``). Dilate the mask a few bins
+                       beyond the target onset so the denoiser, not the mask edge,
+                       makes the transition.
     """
     _require_torch()
     from anogen.shell.diffusion import q_sample
@@ -459,6 +478,16 @@ def guided_ddim(
         x_np = scaler.transform(x_np, ch_np)
     xt0 = torch.from_numpy(x_np).unsqueeze(1).to(device_t)
     cb = torch.from_numpy(ch_np).to(device_t)
+    gen_mask = None
+    if anomaly_mask is not None:
+        if start_from_noise:
+            raise ValueError("anomaly_mask needs a donor: it keeps the bins outside the mask")
+        m_np = np.asarray(anomaly_mask, dtype=bool)
+        if m_np.shape != (len(ch_np), width):
+            raise ValueError(f"anomaly_mask must be (N, W)=({len(ch_np)}, {width}), got {m_np.shape}")
+        m_np = np.pad(m_np, ((0, 0), (crop, int(x_np.shape[1]) - width - crop)), constant_values=False)
+        gen_mask = torch.from_numpy(m_np).unsqueeze(1).to(device_t)
+    n_recur = max(1, int(n_recur))
     if start_from_noise:
         xt = torch.randn_like(xt0)
         if noise_init_mean is not None:
@@ -561,61 +590,77 @@ def guided_ddim(
         t_prev = times[i + 1] if i + 1 < len(times) else -1
         frac = float(t) / float(max(t_start, 1))
         active = t_lo <= frac <= t_hi
-        for corr in range(n_correct):
-            t_batch = torch.full((xt.size(0),), int(t), device=device_t, dtype=torch.long)
-            ab = sched.alpha_bar[int(t)]
-            if space == "x":
-                xt = xt.detach().requires_grad_(True)
-                eps = model(xt, t_batch, cb)
-                x0_hat = (xt - (1.0 - ab).sqrt() * eps) / ab.sqrt()
-                x0_win = x0_hat[..., win]
-                terms, h = objective_terms(x0_win)
-                total = guidance(xt, terms) if (active and terms) else torch.zeros_like(xt)
-                # Contrast edit is in x̂₀ units; scaled by √ᾱ_next below so that
-                # subtracting it from x_{t'} moves the implied x̂₀ by exactly it.
-                c_edit = (
-                    F.pad(contrast_edit(x0_win), (crop, crop_end)) if (use_contrast and active) else None
-                )
-                if float(lam_parent) != 0.0 and not start_from_noise and active:
-                    pull = _parent_pull(
-                        x0_win - xt0[..., win], kind=parent_leash, delta=parent_delta
-                    ).clamp(-c_max, c_max)
-                    total = total + float(lam_parent) * F.pad(pull, (crop, crop_end))
-                x0_next = x0_hat.detach()
-                edit = total.detach()
-                eps = eps.detach()
-            else:  # x0-space: no backward pass through the denoiser
-                with torch.no_grad():
-                    eps = model(xt.detach(), t_batch, cb)
-                    x0_hat = (xt.detach() - (1.0 - ab).sqrt() * eps) / ab.sqrt()
-                leaf = x0_hat[..., win].detach().requires_grad_(True)
-                terms, h = objective_terms(leaf)
-                total = guidance(leaf, terms) if (active and terms) else torch.zeros_like(leaf)
-                if use_contrast and active:
-                    total = total + contrast_edit(leaf)
-                if float(lam_parent) != 0.0 and not start_from_noise and active:
-                    total = total + float(lam_parent) * _parent_pull(
-                        leaf.detach() - xt0[..., win], kind=parent_leash, delta=parent_delta
-                    ).clamp(-c_max, c_max)
-                x0_next = x0_hat
-                edit = F.pad(total.detach(), (crop, crop_end))
-                c_edit = None
-            last_h = h.detach()
-            advance = corr == n_correct - 1
-            if t_prev < 0 and advance:
-                if c_edit is not None:
-                    edit = edit + c_edit
-                xt = (x0_next - final_scale * edit).detach()
+        n_rec = 1 if t_prev < 0 else n_recur
+        for rec in range(n_rec):
+            for corr in range(n_correct):
+                t_batch = torch.full((xt.size(0),), int(t), device=device_t, dtype=torch.long)
+                ab = sched.alpha_bar[int(t)]
+                if gen_mask is not None:  # RePaint: known bins follow the noised donor
+                    known, _ = q_sample(xt0, t_batch, sched)
+                    xt = torch.where(gen_mask, xt.detach(), known)
+                if space == "x":
+                    xt = xt.detach().requires_grad_(True)
+                    eps = model(xt, t_batch, cb)
+                    x0_hat = (xt - (1.0 - ab).sqrt() * eps) / ab.sqrt()
+                    x0_win = x0_hat[..., win]
+                    terms, h = objective_terms(x0_win)
+                    total = guidance(xt, terms) if (active and terms) else torch.zeros_like(xt)
+                    # Contrast edit is in x̂₀ units; scaled by √ᾱ_next below so that
+                    # subtracting it from x_{t'} moves the implied x̂₀ by exactly it.
+                    c_edit = (
+                        F.pad(contrast_edit(x0_win), (crop, crop_end)) if (use_contrast and active) else None
+                    )
+                    if float(lam_parent) != 0.0 and not start_from_noise and active:
+                        pull = _parent_pull(
+                            x0_win - xt0[..., win], kind=parent_leash, delta=parent_delta
+                        ).clamp(-c_max, c_max)
+                        total = total + float(lam_parent) * F.pad(pull, (crop, crop_end))
+                    x0_next = x0_hat.detach()
+                    edit = total.detach()
+                    eps = eps.detach()
+                else:  # x0-space: no backward pass through the denoiser
+                    with torch.no_grad():
+                        eps = model(xt.detach(), t_batch, cb)
+                        x0_hat = (xt.detach() - (1.0 - ab).sqrt() * eps) / ab.sqrt()
+                    leaf = x0_hat[..., win].detach().requires_grad_(True)
+                    terms, h = objective_terms(leaf)
+                    total = guidance(leaf, terms) if (active and terms) else torch.zeros_like(leaf)
+                    if use_contrast and active:
+                        total = total + contrast_edit(leaf)
+                    if float(lam_parent) != 0.0 and not start_from_noise and active:
+                        total = total + float(lam_parent) * _parent_pull(
+                            leaf.detach() - xt0[..., win], kind=parent_leash, delta=parent_delta
+                        ).clamp(-c_max, c_max)
+                    x0_next = x0_hat
+                    edit = F.pad(total.detach(), (crop, crop_end))
+                    c_edit = None
+                if gen_mask is not None:  # edits only inside the mask
+                    edit = edit * gen_mask.to(edit.dtype)
+                    if c_edit is not None:
+                        c_edit = c_edit * gen_mask.to(c_edit.dtype)
+                last_h = h.detach()
+                advance = corr == n_correct - 1
+                if t_prev < 0 and advance:
+                    if c_edit is not None:
+                        edit = edit + c_edit
+                    xt = (x0_next - final_scale * edit).detach()
+                    if gen_mask is not None:
+                        xt = torch.where(gen_mask, xt, xt0)
+                    break
+                if space == "x":
+                    # Locked algebra: subtract the x_t-gradient from the DDIM output.
+                    a_next = ab if not advance else sched.alpha_bar[int(t_prev)]
+                    if c_edit is not None:
+                        edit = edit + a_next.sqrt() * c_edit
+                    xt = (a_next.sqrt() * x0_next + (1.0 - a_next).sqrt() * eps - edit).detach()
+                else:
+                    a_next = ab if not advance else sched.alpha_bar[int(t_prev)]
+                    xt = (a_next.sqrt() * (x0_next - edit) + (1.0 - a_next).sqrt() * eps).detach()
+            if t_prev < 0:
                 break
-            if space == "x":
-                # Locked algebra: subtract the x_t-gradient from the DDIM output.
-                a_next = ab if not advance else sched.alpha_bar[int(t_prev)]
-                if c_edit is not None:
-                    edit = edit + a_next.sqrt() * c_edit
-                xt = (a_next.sqrt() * x0_next + (1.0 - a_next).sqrt() * eps - edit).detach()
-            else:
-                a_next = ab if not advance else sched.alpha_bar[int(t_prev)]
-                xt = (a_next.sqrt() * (x0_next - edit) + (1.0 - a_next).sqrt() * eps).detach()
+            if rec < n_rec - 1:  # time travel: back to t with fresh noise, then redo the step
+                ratio = (sched.alpha_bar[int(t)] / sched.alpha_bar[int(t_prev)]).clamp(max=1.0)
+                xt = (ratio.sqrt() * xt + (1.0 - ratio).sqrt() * torch.randn_like(xt)).detach()
         if t_prev < 0:
             break
     # Occupancy uses the last predicted x0 energy (before the final subtract).
@@ -638,8 +683,8 @@ def chunked_guided_ddim(
 ) -> tuple[np.ndarray, np.ndarray]:
     """``guided_ddim`` in batches. Extra kwargs are forwarded as-is.
 
-    Per-sample arrays (proto index, proto shift, burn-in prefix) are sliced with
-    the batch. ``anom_proto_shift_max`` > 0 draws one integer shift per sample
+    Per-sample arrays (proto index, proto shift, burn-in prefix and suffix,
+    contrast weights and targets, anomaly mask) are sliced with the batch. ``anom_proto_shift_max`` > 0 draws one integer shift per sample
     from U{-m..m} (seeded by ``anom_proto_shift_seed``).
     """
     xs, hs = [], []
@@ -654,6 +699,7 @@ def chunked_guided_ddim(
     suffix = kwargs.pop("burnin_suffix", None)
     c_w = kwargs.pop("contrast_weights", None)
     c_t = kwargs.pop("contrast_target", None)
+    a_mask = kwargs.pop("anomaly_mask", None)
     if str(kwargs.get("anom_energy_kind", "soft")).lower() == "proto":
         ref_a = kwargs.get("ref_anom")
         if ref_a is None:
@@ -687,6 +733,8 @@ def chunked_guided_ddim(
         if c_w is not None:
             extra["contrast_weights"] = np.asarray(c_w)[i : i + step]
             extra["contrast_target"] = np.asarray(c_t)[i : i + step]
+        if a_mask is not None:
+            extra["anomaly_mask"] = np.asarray(a_mask)[i : i + step]
         s, h = guided_ddim(model, encoder, x0[i : i + step], ch[i : i + step], schedule, **extra)
         xs.append(s)
         hs.append(h)
