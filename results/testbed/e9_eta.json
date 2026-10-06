@@ -1,0 +1,92 @@
+{
+ "nu=1.0 steps=20 eta=0.0": {
+  "band_shift": {
+   "fft_band1": 0.65,
+   "fft_band2": -1.01,
+   "fft_band3": -1.24,
+   "fft_band4": -1.4
+  },
+  "dstd_ratio_mid": 0.606914844870879,
+  "std_ratio_mid": 0.9057692357412716
+ },
+ "nu=1.0 steps=20 eta=0.5": {
+  "band_shift": {
+   "fft_band1": 0.63,
+   "fft_band2": -0.99,
+   "fft_band3": -1.22,
+   "fft_band4": -1.37
+  },
+  "dstd_ratio_mid": 0.6076284740626594,
+  "std_ratio_mid": 0.8935445077384203
+ },
+ "nu=1.0 steps=20 eta=1.0": {
+  "band_shift": {
+   "fft_band1": 0.65,
+   "fft_band2": -1.04,
+   "fft_band3": -1.22,
+   "fft_band4": -1.38
+  },
+  "dstd_ratio_mid": 0.5772454141197458,
+  "std_ratio_mid": 0.8617565804304548
+ },
+ "nu=1.0 steps=50 eta=0.0": {
+  "band_shift": {
+   "fft_band1": 0.64,
+   "fft_band2": -0.95,
+   "fft_band3": -1.25,
+   "fft_band4": -1.42
+  },
+  "dstd_ratio_mid": 0.647060710400095,
+  "std_ratio_mid": 0.9256734072111016
+ },
+ "nu=1.0 steps=50 eta=0.5": {
+  "band_shift": {
+   "fft_band1": 0.64,
+   "fft_band2": -0.94,
+   "fft_band3": -1.23,
+   "fft_band4": -1.39
+  },
+  "dstd_ratio_mid": 0.6396516695653107,
+  "std_ratio_mid": 0.9325441310323811
+ },
+ "nu=1.0 steps=50 eta=1.0": {
+  "band_shift": {
+   "fft_band1": 0.68,
+   "fft_band2": -1.08,
+   "fft_band3": -1.29,
+   "fft_band4": -1.44
+  },
+  "dstd_ratio_mid": 0.6088440989489943,
+  "std_ratio_mid": 0.9406153516171057
+ },
+ "nu=0.2 steps=50 eta=0.0": {
+  "band_shift": {
+   "fft_band1": 0.6,
+   "fft_band2": -0.77,
+   "fft_band3": -1.14,
+   "fft_band4": -1.33
+  },
+  "dstd_ratio_mid": 0.6952671205227794,
+  "std_ratio_mid": 0.9087392762032851
+ },
+ "nu=0.2 steps=50 eta=0.5": {
+  "band_shift": {
+   "fft_band1": 0.59,
+   "fft_band2": -0.78,
+   "fft_band3": -1.15,
+   "fft_band4": -1.34
+  },
+  "dstd_ratio_mid": 0.6961854368085041,
+  "std_ratio_mid": 0.9073105379769112
+ },
+ "nu=0.2 steps=50 eta=1.0": {
+  "band_shift": {
+   "fft_band1": 0.61,
+   "fft_band2": -0.85,
+   "fft_band3": -1.2,
+   "fft_band4": -1.38
+  },
+  "dstd_ratio_mid": 0.679058386115568,
+  "std_ratio_mid": 0.904634485745041
+ }
+}

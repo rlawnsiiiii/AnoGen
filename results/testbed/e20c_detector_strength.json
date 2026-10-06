@@ -1,0 +1,367 @@
+{
+ "reps": 3,
+ "summary": {
+  "C=0.01 | real_only": {
+   "recall@1%FAR": 0.41333333333333333,
+   "auroc": 0.7652958024691358,
+   "recall spike": 0.8611111111111112,
+   "recall level shift": 0.20222222222222222,
+   "recall drift": 0.17666666666666667
+  },
+  "C=0.01 | +recipe/rel+div": {
+   "recall@1%FAR": 0.47370370370370374,
+   "auroc": 0.8230071604938272,
+   "recall spike": 0.9500000000000001,
+   "recall level shift": 0.31666666666666665,
+   "recall drift": 0.15444444444444447
+  },
+  "C=0.01 | +oracle": {
+   "recall@1%FAR": 0.7422222222222222,
+   "auroc": 0.9436035802469135,
+   "recall spike": 0.9622222222222222,
+   "recall level shift": 0.5844444444444444,
+   "recall drift": 0.68
+  },
+  "C=0.1 | real_only": {
+   "recall@1%FAR": 0.4477777777777778,
+   "auroc": 0.7719565432098765,
+   "recall spike": 0.8666666666666667,
+   "recall level shift": 0.23222222222222222,
+   "recall drift": 0.24444444444444444
+  },
+  "C=0.1 | +recipe/rel+div": {
+   "recall@1%FAR": 0.52,
+   "auroc": 0.8357482716049383,
+   "recall spike": 0.9566666666666667,
+   "recall level shift": 0.35333333333333333,
+   "recall drift": 0.25
+  },
+  "C=0.1 | +oracle": {
+   "recall@1%FAR": 0.7600000000000001,
+   "auroc": 0.9438704938271605,
+   "recall spike": 0.9555555555555556,
+   "recall level shift": 0.5977777777777779,
+   "recall drift": 0.7266666666666667
+  },
+  "C=1 | real_only": {
+   "recall@1%FAR": 0.4822222222222223,
+   "auroc": 0.77544,
+   "recall spike": 0.8766666666666666,
+   "recall level shift": 0.2644444444444444,
+   "recall drift": 0.3055555555555556
+  },
+  "C=1 | +recipe/rel+div": {
+   "recall@1%FAR": 0.551111111111111,
+   "auroc": 0.8472301234567902,
+   "recall spike": 0.96,
+   "recall level shift": 0.3833333333333333,
+   "recall drift": 0.31
+  },
+  "C=1 | +oracle": {
+   "recall@1%FAR": 0.7562962962962962,
+   "auroc": 0.9420554320987655,
+   "recall spike": 0.9477777777777777,
+   "recall level shift": 0.5977777777777779,
+   "recall drift": 0.7233333333333333
+  },
+  "C=10 | real_only": {
+   "recall@1%FAR": 0.5633333333333334,
+   "auroc": 0.7749272839506173,
+   "recall spike": 0.8933333333333332,
+   "recall level shift": 0.34888888888888886,
+   "recall drift": 0.4477777777777778
+  },
+  "C=10 | +recipe/rel+div": {
+   "recall@1%FAR": 0.6029629629629629,
+   "auroc": 0.8540787654320988,
+   "recall spike": 0.96,
+   "recall level shift": 0.41888888888888887,
+   "recall drift": 0.43
+  },
+  "C=10 | +oracle": {
+   "recall@1%FAR": 0.7496296296296295,
+   "auroc": 0.9410201234567901,
+   "recall spike": 0.94,
+   "recall level shift": 0.5911111111111111,
+   "recall drift": 0.7177777777777777
+  }
+ },
+ "per_rep": {
+  "C=0.01 | real_only": [
+   {
+    "recall@1%FAR": 0.46555555555555556,
+    "auroc": 0.7444385185185185,
+    "recall spike": 0.88,
+    "recall level shift": 0.24666666666666667,
+    "recall drift": 0.27
+   },
+   {
+    "recall@1%FAR": 0.4288888888888889,
+    "auroc": 0.8419322222222222,
+    "recall spike": 0.8333333333333334,
+    "recall level shift": 0.28,
+    "recall drift": 0.17333333333333334
+   },
+   {
+    "recall@1%FAR": 0.34555555555555556,
+    "auroc": 0.7095166666666667,
+    "recall spike": 0.87,
+    "recall level shift": 0.08,
+    "recall drift": 0.08666666666666667
+   }
+  ],
+  "C=0.01 | +recipe/rel+div": [
+   {
+    "recall@1%FAR": 0.4955555555555556,
+    "auroc": 0.8018407407407406,
+    "recall spike": 0.96,
+    "recall level shift": 0.32666666666666666,
+    "recall drift": 0.2
+   },
+   {
+    "recall@1%FAR": 0.4888888888888889,
+    "auroc": 0.8695114814814814,
+    "recall spike": 0.9266666666666666,
+    "recall level shift": 0.36666666666666664,
+    "recall drift": 0.17333333333333334
+   },
+   {
+    "recall@1%FAR": 0.43666666666666665,
+    "auroc": 0.7976692592592592,
+    "recall spike": 0.9633333333333334,
+    "recall level shift": 0.25666666666666665,
+    "recall drift": 0.09
+   }
+  ],
+  "C=0.01 | +oracle": [
+   {
+    "recall@1%FAR": 0.7388888888888889,
+    "auroc": 0.9429248148148146,
+    "recall spike": 0.97,
+    "recall level shift": 0.56,
+    "recall drift": 0.6866666666666666
+   },
+   {
+    "recall@1%FAR": 0.7222222222222222,
+    "auroc": 0.9382137037037038,
+    "recall spike": 0.9366666666666666,
+    "recall level shift": 0.56,
+    "recall drift": 0.67
+   },
+   {
+    "recall@1%FAR": 0.7655555555555555,
+    "auroc": 0.949672222222222,
+    "recall spike": 0.98,
+    "recall level shift": 0.6333333333333333,
+    "recall drift": 0.6833333333333333
+   }
+  ],
+  "C=0.1 | real_only": [
+   {
+    "recall@1%FAR": 0.5111111111111111,
+    "auroc": 0.7531818518518518,
+    "recall spike": 0.89,
+    "recall level shift": 0.2866666666666667,
+    "recall drift": 0.3566666666666667
+   },
+   {
+    "recall@1%FAR": 0.47555555555555556,
+    "auroc": 0.8542314814814813,
+    "recall spike": 0.8433333333333334,
+    "recall level shift": 0.31666666666666665,
+    "recall drift": 0.26666666666666666
+   },
+   {
+    "recall@1%FAR": 0.3566666666666667,
+    "auroc": 0.7084562962962964,
+    "recall spike": 0.8666666666666667,
+    "recall level shift": 0.09333333333333334,
+    "recall drift": 0.11
+   }
+  ],
+  "C=0.1 | +recipe/rel+div": [
+   {
+    "recall@1%FAR": 0.5388888888888889,
+    "auroc": 0.8137962962962964,
+    "recall spike": 0.97,
+    "recall level shift": 0.35,
+    "recall drift": 0.2966666666666667
+   },
+   {
+    "recall@1%FAR": 0.5644444444444444,
+    "auroc": 0.8882574074074074,
+    "recall spike": 0.9333333333333333,
+    "recall level shift": 0.44,
+    "recall drift": 0.32
+   },
+   {
+    "recall@1%FAR": 0.45666666666666667,
+    "auroc": 0.8051911111111111,
+    "recall spike": 0.9666666666666667,
+    "recall level shift": 0.27,
+    "recall drift": 0.13333333333333333
+   }
+  ],
+  "C=0.1 | +oracle": [
+   {
+    "recall@1%FAR": 0.7544444444444445,
+    "auroc": 0.9426466666666666,
+    "recall spike": 0.9666666666666667,
+    "recall level shift": 0.5866666666666667,
+    "recall drift": 0.71
+   },
+   {
+    "recall@1%FAR": 0.7388888888888889,
+    "auroc": 0.9366822222222222,
+    "recall spike": 0.93,
+    "recall level shift": 0.57,
+    "recall drift": 0.7166666666666667
+   },
+   {
+    "recall@1%FAR": 0.7866666666666666,
+    "auroc": 0.9522825925925927,
+    "recall spike": 0.97,
+    "recall level shift": 0.6366666666666667,
+    "recall drift": 0.7533333333333333
+   }
+  ],
+  "C=1 | real_only": [
+   {
+    "recall@1%FAR": 0.5811111111111111,
+    "auroc": 0.7575970370370371,
+    "recall spike": 0.9266666666666666,
+    "recall level shift": 0.38666666666666666,
+    "recall drift": 0.43
+   },
+   {
+    "recall@1%FAR": 0.5144444444444445,
+    "auroc": 0.8622718518518517,
+    "recall spike": 0.83,
+    "recall level shift": 0.3333333333333333,
+    "recall drift": 0.38
+   },
+   {
+    "recall@1%FAR": 0.3511111111111111,
+    "auroc": 0.7064511111111111,
+    "recall spike": 0.8733333333333333,
+    "recall level shift": 0.07333333333333333,
+    "recall drift": 0.10666666666666667
+   }
+  ],
+  "C=1 | +recipe/rel+div": [
+   {
+    "recall@1%FAR": 0.5622222222222222,
+    "auroc": 0.8230496296296297,
+    "recall spike": 0.9733333333333334,
+    "recall level shift": 0.37666666666666665,
+    "recall drift": 0.33666666666666667
+   },
+   {
+    "recall@1%FAR": 0.61,
+    "auroc": 0.9016181481481481,
+    "recall spike": 0.9466666666666667,
+    "recall level shift": 0.45666666666666667,
+    "recall drift": 0.4266666666666667
+   },
+   {
+    "recall@1%FAR": 0.4811111111111111,
+    "auroc": 0.8170225925925925,
+    "recall spike": 0.96,
+    "recall level shift": 0.31666666666666665,
+    "recall drift": 0.16666666666666666
+   }
+  ],
+  "C=1 | +oracle": [
+   {
+    "recall@1%FAR": 0.7533333333333333,
+    "auroc": 0.942007037037037,
+    "recall spike": 0.9633333333333334,
+    "recall level shift": 0.58,
+    "recall drift": 0.7166666666666667
+   },
+   {
+    "recall@1%FAR": 0.7288888888888889,
+    "auroc": 0.933558888888889,
+    "recall spike": 0.9133333333333333,
+    "recall level shift": 0.5766666666666667,
+    "recall drift": 0.6966666666666667
+   },
+   {
+    "recall@1%FAR": 0.7866666666666666,
+    "auroc": 0.9506003703703703,
+    "recall spike": 0.9666666666666667,
+    "recall level shift": 0.6366666666666667,
+    "recall drift": 0.7566666666666667
+   }
+  ],
+  "C=10 | real_only": [
+   {
+    "recall@1%FAR": 0.6266666666666667,
+    "auroc": 0.7285,
+    "recall spike": 0.9133333333333333,
+    "recall level shift": 0.47,
+    "recall drift": 0.49666666666666665
+   },
+   {
+    "recall@1%FAR": 0.62,
+    "auroc": 0.8467533333333335,
+    "recall spike": 0.89,
+    "recall level shift": 0.39,
+    "recall drift": 0.58
+   },
+   {
+    "recall@1%FAR": 0.44333333333333336,
+    "auroc": 0.7495285185185185,
+    "recall spike": 0.8766666666666667,
+    "recall level shift": 0.18666666666666668,
+    "recall drift": 0.26666666666666666
+   }
+  ],
+  "C=10 | +recipe/rel+div": [
+   {
+    "recall@1%FAR": 0.6355555555555555,
+    "auroc": 0.8166559259259258,
+    "recall spike": 0.9566666666666667,
+    "recall level shift": 0.4766666666666667,
+    "recall drift": 0.47333333333333333
+   },
+   {
+    "recall@1%FAR": 0.6511111111111111,
+    "auroc": 0.9170462962962964,
+    "recall spike": 0.96,
+    "recall level shift": 0.45666666666666667,
+    "recall drift": 0.5366666666666666
+   },
+   {
+    "recall@1%FAR": 0.5222222222222223,
+    "auroc": 0.8285340740740741,
+    "recall spike": 0.9633333333333334,
+    "recall level shift": 0.3233333333333333,
+    "recall drift": 0.28
+   }
+  ],
+  "C=10 | +oracle": [
+   {
+    "recall@1%FAR": 0.7666666666666667,
+    "auroc": 0.94254,
+    "recall spike": 0.9566666666666667,
+    "recall level shift": 0.6033333333333334,
+    "recall drift": 0.74
+   },
+   {
+    "recall@1%FAR": 0.7166666666666667,
+    "auroc": 0.9314337037037037,
+    "recall spike": 0.9066666666666666,
+    "recall level shift": 0.5633333333333334,
+    "recall drift": 0.68
+   },
+   {
+    "recall@1%FAR": 0.7655555555555555,
+    "auroc": 0.9490866666666665,
+    "recall spike": 0.9566666666666667,
+    "recall level shift": 0.6066666666666667,
+    "recall drift": 0.7333333333333333
+   }
+  ]
+ }
+}

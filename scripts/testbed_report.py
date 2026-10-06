@@ -295,3 +295,22 @@ if p20.is_file():
         print("|---|---:|---:|---:|")
         for g, v in pr.items():
             print(f"| {g} | " + " | ".join(f"{v[k]:.2f}" for k in ("spike", "level shift", "drift")) + " |")
+p20b = d / "e20b_shape_checks.json"
+if p20b.is_file():
+    e20b = json.loads(p20b.read_text())
+    print(f"\n### E20b more anomalous is not more useful (logistic, {e20b['reps']} repetitions, recall at 1 % FAR)\n")
+    print("| training positives | all | spike | level shift | drift | drift windows outside the nominal set |")
+    print("|---|---:|---:|---:|---:|---:|")
+    for arm, r in e20b["summary"].items():
+        kept = r.get("drift kept by kNN filter")
+        print(f"| {arm} | {r['recall@1%FAR']:.3f} | {r['recall spike']:.3f} | {r['recall level shift']:.3f} | "
+              f"{r['recall drift']:.3f} | {'' if kept is None else f'{kept:.2f}'} |")
+p20c = d / "e20c_detector_strength.json"
+if p20c.is_file():
+    e20c = json.loads(p20c.read_text())
+    print(f"\n### E20c the gain against a better-tuned detector (logistic, penalty C swept, {e20c['reps']} repetitions)\n")
+    print("| C, training positives | recall @ 1 % FAR | spike | level shift | drift | AUROC |")
+    print("|---|---:|---:|---:|---:|---:|")
+    for arm, r in e20c["summary"].items():
+        print(f"| {arm} | {r['recall@1%FAR']:.3f} | {r['recall spike']:.3f} | {r['recall level shift']:.3f} | "
+              f"{r['recall drift']:.3f} | {r['auroc']:.3f} |")

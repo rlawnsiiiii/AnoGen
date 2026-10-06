@@ -1,0 +1,20 @@
+{
+ "level shifts only, size 0.25": {
+  "query_hf_minus_donor_hf": -0.3906974184732178,
+  "arp_lowpass_0": 0.7606310271428222,
+  "arp_noHF_lowpass_0": 0.9062940847463669,
+  "arp_lowpass_1": 0.7246107586741279,
+  "arp_noHF_lowpass_1": 0.910588787171872,
+  "arp_lowpass_2": 0.7658959274543958,
+  "arp_noHF_lowpass_2": 0.9062021762634594
+ },
+ "level shifts only, size 0.5": {
+  "query_hf_minus_donor_hf": -0.4722261137945515,
+  "arp_lowpass_0": 0.7137103522423301,
+  "arp_noHF_lowpass_0": 0.8457241996044187,
+  "arp_lowpass_1": 0.7113072705522322,
+  "arp_noHF_lowpass_1": 0.8549231249494227,
+  "arp_lowpass_2": 0.7403342379948121,
+  "arp_noHF_lowpass_2": 0.8575952274151336
+ }
+}

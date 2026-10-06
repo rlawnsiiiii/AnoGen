@@ -1,0 +1,86 @@
+{
+ "\u03b5-net, linear schedule | from noise, 20 steps": {
+  "var_ratio": 0.8390766788376446,
+  "diff_var_ratio": 1.240306286035007,
+  "level_bias_in_sd": -1.6905943867195086,
+  "peak_at_start": 0.09375,
+  "peak_at_end": 0.078125
+ },
+ "\u03b5-net, linear schedule | from noise, 50 steps": {
+  "var_ratio": 0.9106224615097247,
+  "diff_var_ratio": 1.4291988807884994,
+  "level_bias_in_sd": -1.745615672820022,
+  "peak_at_start": 0.11458333333333333,
+  "peak_at_end": 0.08333333333333333
+ },
+ "\u03b5-net, linear schedule | from matched noise, 50 steps": {
+  "var_ratio": 0.7782032514887813,
+  "diff_var_ratio": 0.8059995884670423,
+  "level_bias_in_sd": -0.23499799893943452,
+  "peak_at_start": 0.109375,
+  "peak_at_end": 0.09375
+ },
+ "\u03b5-net, linear schedule | edit at the \u03bd = 0.2 noise level, 50 steps": {
+  "var_ratio": 1.024819278116149,
+  "diff_var_ratio": 0.9815754178666433,
+  "level_bias_in_sd": -0.06479800298357509,
+  "peak_at_start": 0.08854166666666667,
+  "peak_at_end": 0.09375
+ },
+ "\u03b5-net, log-spaced schedule | from noise, 20 steps": {
+  "var_ratio": 0.7107630165728425,
+  "diff_var_ratio": 0.7909360826741951,
+  "level_bias_in_sd": -0.6524776770849704,
+  "peak_at_start": 0.09895833333333333,
+  "peak_at_end": 0.08854166666666667
+ },
+ "\u03b5-net, log-spaced schedule | from noise, 50 steps": {
+  "var_ratio": 0.7848503971259858,
+  "diff_var_ratio": 0.9320431864115108,
+  "level_bias_in_sd": -0.6541249637038151,
+  "peak_at_start": 0.09375,
+  "peak_at_end": 0.06770833333333333
+ },
+ "\u03b5-net, log-spaced schedule | from matched noise, 50 steps": {
+  "var_ratio": 0.7657759285679021,
+  "diff_var_ratio": 0.9243555342576425,
+  "level_bias_in_sd": -0.28844203487910136,
+  "peak_at_start": 0.09375,
+  "peak_at_end": 0.06770833333333333
+ },
+ "\u03b5-net, log-spaced schedule | edit at the \u03bd = 0.2 noise level, 50 steps": {
+  "var_ratio": 0.9677352402977167,
+  "diff_var_ratio": 0.9540957829199916,
+  "level_bias_in_sd": -0.04228304856510552,
+  "peak_at_start": 0.057291666666666664,
+  "peak_at_end": 0.08854166666666667
+ },
+ "v-net, log-spaced schedule | from noise, 20 steps": {
+  "var_ratio": 0.6523360042948386,
+  "diff_var_ratio": 0.790289938961536,
+  "level_bias_in_sd": -0.4814867508407653,
+  "peak_at_start": 0.109375,
+  "peak_at_end": 0.078125
+ },
+ "v-net, log-spaced schedule | from noise, 50 steps": {
+  "var_ratio": 0.7510288348414047,
+  "diff_var_ratio": 0.9328664796835391,
+  "level_bias_in_sd": -0.5222909952644537,
+  "peak_at_start": 0.11458333333333333,
+  "peak_at_end": 0.08854166666666667
+ },
+ "v-net, log-spaced schedule | from matched noise, 50 steps": {
+  "var_ratio": 0.7351529185874034,
+  "diff_var_ratio": 0.9227810239301755,
+  "level_bias_in_sd": -0.15954301473901905,
+  "peak_at_start": 0.109375,
+  "peak_at_end": 0.08854166666666667
+ },
+ "v-net, log-spaced schedule | edit at the \u03bd = 0.2 noise level, 50 steps": {
+  "var_ratio": 0.9549649371248212,
+  "diff_var_ratio": 0.9579995218327564,
+  "level_bias_in_sd": -0.03514343728110229,
+  "peak_at_start": 0.0625,
+  "peak_at_end": 0.07291666666666667
+ }
+}

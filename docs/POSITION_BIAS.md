@@ -131,6 +131,11 @@ S1 in the mid-noise bins. If the mid-noise fit is worse, raise
 | `n_recur: 2` (06.10) | `steer.guided_ddim` | self-recurrence / time travel: re-noise x_{t'} to t with fresh noise and redo the step; skipped at repeated DDIM times | no | 2 (x̂₀-space sharpness with trained nets, E13: 0.076 → 0.060) |
 | `mask: true`, `mask_dilate` (06.10) | `steer.guided_ddim(anomaly_mask=)`, `contrast.contrast_mask`, fixsweep | RePaint-style masked edit: only the anomaly segment is generated, the donor is kept elsewhere; contrast projects along the masked direction; mask saved as a bin-level label | no | 3, position control (E14) |
 | `no_steer`, `twin` (06.10) | fixsweep | same chain, seeds and masks with every objective off; paired ΔARP vs the twin in frozen and standardized φ ("what steering adds") | no | evaluation |
+| `guidance_decay: 1.0` (06.10) | `steer.guidance_weights` | unit-norm kick × (σ_t/σ_start)^p, normalized to mean 1 over the chain: the same budget, spent while the denoiser can still harmonize it | no | 2 (E17: prototype distance 0.100 → 0.002, edges 0.059 vs 0.051 real with a trained net) |
+| `contrast_relative: true`, `contrast_amp_jitter: [0.5, 1.5]` (06.10) | fixsweep `_contrast_plan`, `_generate_slices` | contrast target = the donor's own contrast at the sampled position + the sampled size, so the planted anomaly has that size; sizes × U(a, b); positions and masks unchanged (same twin) | no | detection (E20: +2.1 points with `proto_shift_max: 16`, variant `flip_x0_contrast_masked_div`) |
+| `diffusion_v2.parameterization: v`, `ema_decay` (06.10) | `diffusion.VToEps`, `train_denoiser` | v-prediction (ε = √(1−ᾱ)·x_t + √ᾱ·v, so samplers are unchanged) and EMA weights with warm-up | **yes** | 4, optional (E16: no gain for the edit) |
+| `scaler_v2: {kind: standard}` + `unit_scale` (06.10) | `scaler.fit_channel_standard`, `scaler.unit_scale`, fixsweep, diffdetect | per-channel z-score for the retrained S1 only; the edit's noise level and the guidance weights are rescaled by the ratio of the two scalers, so the physical edit stays the frozen one | **yes** | 4, 4b (E19: no level bias at any σ_max) |
+| augdetect `fixsweep:<variant>[+real]`, `<arm>+real`, `compare`, `synth_filter`, `real_frac` (06.10) | augdetect, `shell/novelty.py`, `detector.fit_detector` | fixsweep galleries as detector arms; paired A − B event-recall contrasts (each steered arm against its twin automatically, all folds / no-leak / fused); optional kNN novelty filter for generated positives; optional real share per positive batch | no | the detection test (E20) |
 
 Not adopted: noise-space (classifier-guidance) steering
 `ε' = ε + √(1−ᾱ)·∇`. In a DDIM chain whose consecutive times are close, the
@@ -169,6 +174,16 @@ What the testbed says to expect, in order of cost:
    (sd 0.20 → 0.23, real 0.24), at the cost of a lower shelf rate. On ESA,
    judge it on `cusum_position` / `signed_peak_position`, never on EDI, which
    is position-blind.
+6. **Detection (E20, the paper's headline).** With a BCE detector on
+   random-convolution features, 18 real windows plus 255 generated ones,
+   recall at 1 % false alarms: real only 0.489; + no-steer twin 0.316;
+   + C1-like 0.498; + masked recipe 0.507; + `flip_x0_contrast_masked_div`
+   0.536 (paired +4.7 [3.8, 5.7] over real only, +3.8 over C1-like, +22
+   over the twin); + perfect positives 0.742. The gain survives a
+   better-tuned detector (+4.0 at C = 10, E20c). Steering is what makes
+   regenerated windows useful; most of the headroom is in the prototype
+   kinds (the subsequence kinds on ESA). A squared-loss detector lost recall
+   with every generator except the perfect one, so keep BCE.
 
 ---
 
@@ -183,7 +198,7 @@ What the testbed says to expect, in order of cost:
 # 1. minutes, numpy only: re-score every saved gallery with CIs, controls, PRDC
 .venv/bin/python scripts/audit_metrics.py -c configs/shell_mission1.yaml
 
-# 2. zero-retrain sweep (15 variants × 3 folds × 1536 windows; x0-space variants
+# 2. zero-retrain sweep (23 variants × 3 folds × 1536 windows; x0-space variants
 #    skip the backward pass through the denoiser and are faster than C1)
 .venv/bin/anogen -c configs/shell_mission1.yaml fixsweep
 
@@ -192,14 +207,23 @@ What the testbed says to expect, in order of cost:
 #      bidir_x0: {denoiser: results/shell_s1_bidir/denoiser.pt, guidance_space: x0, final_grad_scale: 0.25,
 #                 burnin: true, context: both}
 #      v2_x0:    {denoiser: results/shell_s1_v2/denoiser.pt,    guidance_space: x0, final_grad_scale: 0.25,
-#                 burnin: true, context: both}
+#                 n_recur: 2, guidance_decay: 1.0, burnin: true, context: both}
+#    (s1v2 reads shell.diffusion_v2 / shell.scaler_v2; run scripts/schedule_check.py
+#    --standardize first for sigma_min / sigma_max)
 #    and rerun fixsweep (cached variants are reused)
 .venv/bin/anogen -c configs/shell_mission1.yaml s1bidir
 .venv/bin/anogen -c configs/shell_mission1.yaml s1v2
 
-# 4. honest GenIAS baseline (P6), then the downstream check with the leak fixed
+# 4. honest GenIAS baseline (P6), then the downstream check with the leak fixed.
+#    The headline result: uncomment shell.augdetect.arms / compare in the config
+#    (real_only, genias+real, posthoc+real, unguided+real, c1_plus_real, the two
+#    masked recipes and their no-steer twin, all "+real"); fuse_diffscore pointing
+#    at diffdetect's flip_ramp_top16_multiscale scores
 .venv/bin/anogen -c configs/shell_mission1.yaml geniasfair
+.venv/bin/anogen -c configs/shell_mission1.yaml diffdetect
 .venv/bin/anogen -c configs/shell_mission1.yaml augdetect
+#    results/shell_augdetect/INDEX.txt: per-arm event recall and the paired A − B
+#    differences (all folds, no-leak folds, fused) that decide the paper's claim
 ```
 
 `fixsweep` writes `results/shell_fixsweep/{summary.json,TABLE.md}`. All
@@ -208,6 +232,15 @@ variants share the torch seed per fold, so the paired ARP differences against
 recipe, because the frozen galleries were made without a torch seed.
 
 ## 7. Decision rule, declared before the ESA run
+
+(06.10, detection first, as in the GenFSDiff project doc.) A variant must pass
+the sanity checks below; among those that pass, the default is the variant
+whose `+real` augdetect arm has the highest event recall at 1 % FAR. The paper
+may say generated anomalies improve detection only if that arm's paired
+difference against `real_only` has a 95 % interval above zero; "steering
+improves detection" also needs the difference against its no-steer twin above
+zero, and "better than GenIAS" the same against `genias+real`. Each is read on
+all folds and on the no-leak folds.
 
 (06.10 addition, also in the GenFSDiff project doc: a variant's paired ARP
 difference against its own no-steer twin must be positive in frozen and in

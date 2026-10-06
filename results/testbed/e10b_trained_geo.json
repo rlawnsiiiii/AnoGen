@@ -1,0 +1,62 @@
+{
+ "bidir net, linear schedule | from noise, 20 steps": {
+  "var_ratio": 0.8390766788376438,
+  "diff_var_ratio": 1.2403062860349836,
+  "hf_logpower_shift": 0.06269669571004097,
+  "peak_at_start": 0.09375,
+  "peak_at_end": 0.078125,
+  "diff_p999": 0.046910899116294945,
+  "env_window_frac": 0.08333333333333333,
+  "ref_diff_p999": 0.030708921395568977
+ },
+ "bidir net, linear schedule | from noise, 50 steps": {
+  "var_ratio": 0.9106224615097238,
+  "diff_var_ratio": 1.4291988807884726,
+  "hf_logpower_shift": 0.11355081807418671,
+  "peak_at_start": 0.11458333333333333,
+  "peak_at_end": 0.08333333333333333,
+  "diff_p999": 0.049148453838114003,
+  "env_window_frac": 0.11458333333333333,
+  "ref_diff_p999": 0.030708921395568977
+ },
+ "bidir net, linear schedule | edit at nu=0.2 noise level, 50 steps": {
+  "var_ratio": 1.0248192781161483,
+  "diff_var_ratio": 0.9815754178666252,
+  "hf_logpower_shift": 0.04623030969843188,
+  "peak_at_start": 0.08854166666666667,
+  "peak_at_end": 0.09375,
+  "diff_p999": 0.03434897865346458,
+  "env_window_frac": 0.0,
+  "ref_diff_p999": 0.030708921395568977
+ },
+ "bidir net, geometric schedule | from noise, 20 steps": {
+  "var_ratio": 0.7107630165728418,
+  "diff_var_ratio": 0.7909360826741803,
+  "hf_logpower_shift": -0.21491855061618864,
+  "peak_at_start": 0.09895833333333333,
+  "peak_at_end": 0.08854166666666667,
+  "diff_p999": 0.030487431630228618,
+  "env_window_frac": 0.0,
+  "ref_diff_p999": 0.030708921395568977
+ },
+ "bidir net, geometric schedule | from noise, 50 steps": {
+  "var_ratio": 0.784850397125985,
+  "diff_var_ratio": 0.9320431864114933,
+  "hf_logpower_shift": -0.14791267929469504,
+  "peak_at_start": 0.09375,
+  "peak_at_end": 0.06770833333333333,
+  "diff_p999": 0.0327047741213215,
+  "env_window_frac": 0.0,
+  "ref_diff_p999": 0.030708921395568977
+ },
+ "bidir net, geometric schedule | edit at nu=0.2 noise level, 50 steps": {
+  "var_ratio": 0.9677352402977161,
+  "diff_var_ratio": 0.9540957829199742,
+  "hf_logpower_shift": -0.02951049282316212,
+  "peak_at_start": 0.057291666666666664,
+  "peak_at_end": 0.08854166666666667,
+  "diff_p999": 0.031797598056384505,
+  "env_window_frac": 0.0,
+  "ref_diff_p999": 0.030708921395568977
+ }
+}

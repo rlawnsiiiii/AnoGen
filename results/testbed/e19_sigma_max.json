@@ -1,0 +1,70 @@
+{
+ "min/max-style data (mean 0.5)": {
+  "predicted": {
+   "sigma_min": 0.001584893192461114,
+   "sigma_max": 80.07305368990616,
+   "sigma_max_without_dc": 9.695152004790625,
+   "spectrum_max": 0.9399597239599567,
+   "dc_power": 64.11693927226594
+  },
+  "linear (frozen, sigma_max 2.56)": {
+   "level_bias_in_sd": -0.25982079815386394,
+   "var_ratio": 0.9489409988978228,
+   "diff_var_ratio": 0.4644427713474465
+  },
+  "geometric sigma_max 2.56": {
+   "level_bias_in_sd": -0.267487862635327,
+   "var_ratio": 0.9241102501795417,
+   "diff_var_ratio": 1.026811849860906
+  },
+  "geometric sigma_max 10": {
+   "level_bias_in_sd": -0.07093864119830501,
+   "var_ratio": 0.9100924513395684,
+   "diff_var_ratio": 0.9024420598378953
+  },
+  "geometric sigma_max 30": {
+   "level_bias_in_sd": -0.023570986836907688,
+   "var_ratio": 0.8988362800285099,
+   "diff_var_ratio": 0.8858942430645387
+  },
+  "geometric sigma_max 100": {
+   "level_bias_in_sd": -0.0070283947640735105,
+   "var_ratio": 0.8882225392063973,
+   "diff_var_ratio": 0.8749049470146943
+  }
+ },
+ "centred data (mean 0)": {
+  "predicted": {
+   "sigma_min": 0.001584893192461114,
+   "sigma_max": 9.695152004790625,
+   "sigma_max_without_dc": 9.695152004790625,
+   "spectrum_max": 0.9399597239599569,
+   "dc_power": 0.10480018343300254
+  },
+  "linear (frozen, sigma_max 2.56)": {
+   "level_bias_in_sd": 0.0,
+   "var_ratio": 0.9489409988978228,
+   "diff_var_ratio": 0.4644427713474465
+  },
+  "geometric sigma_max 2.56": {
+   "level_bias_in_sd": 0.0,
+   "var_ratio": 0.9241102501795417,
+   "diff_var_ratio": 1.026811849860906
+  },
+  "geometric sigma_max 10": {
+   "level_bias_in_sd": 0.0,
+   "var_ratio": 0.9100924513395684,
+   "diff_var_ratio": 0.9024420598378953
+  },
+  "geometric sigma_max 30": {
+   "level_bias_in_sd": 0.0,
+   "var_ratio": 0.8988362800285099,
+   "diff_var_ratio": 0.8858942430645387
+  },
+  "geometric sigma_max 100": {
+   "level_bias_in_sd": 0.0,
+   "var_ratio": 0.8882225392063973,
+   "diff_var_ratio": 0.8749049470146943
+  }
+ }
+}

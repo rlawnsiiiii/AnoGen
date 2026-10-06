@@ -1,0 +1,98 @@
+{
+ "texture sd 0.02 | linear (frozen; sigma 0.010..2.56) | 20 steps": {
+  "var_ratio": 0.8924233995047481,
+  "diff_var_ratio": 0.36149894666213916
+ },
+ "texture sd 0.02 | linear (frozen; sigma 0.010..2.56) | 50 steps": {
+  "var_ratio": 0.9535049636955856,
+  "diff_var_ratio": 0.4181527019475108
+ },
+ "texture sd 0.02 | linear (frozen; sigma 0.010..2.56) | 200 steps": {
+  "var_ratio": 0.9855613329959719,
+  "diff_var_ratio": 0.47725209790137063
+ },
+ "texture sd 0.02 | geometric sigma 0.001..2.56 | 20 steps": {
+  "var_ratio": 0.8262261847725464,
+  "diff_var_ratio": 0.8023202645614868
+ },
+ "texture sd 0.02 | geometric sigma 0.001..2.56 | 50 steps": {
+  "var_ratio": 0.9290118948131124,
+  "diff_var_ratio": 0.907600103170441
+ },
+ "texture sd 0.02 | geometric sigma 0.001..2.56 | 200 steps": {
+  "var_ratio": 0.9819969829361527,
+  "diff_var_ratio": 0.9624023620045926
+ },
+ "texture sd 0.02 | geometric sigma 0.001..10 | 20 steps": {
+  "var_ratio": 0.7849007364296546,
+  "diff_var_ratio": 0.7729595451366151
+ },
+ "texture sd 0.02 | geometric sigma 0.001..10 | 50 steps": {
+  "var_ratio": 0.9102162447971165,
+  "diff_var_ratio": 0.8947153143877425
+ },
+ "texture sd 0.02 | geometric sigma 0.001..10 | 200 steps": {
+  "var_ratio": 0.9771833001252469,
+  "diff_var_ratio": 0.9589809565083038
+ },
+ "texture sd 0.02 | geometric sigma 0.001..80 | 20 steps": {
+  "var_ratio": 0.7419792492829121,
+  "diff_var_ratio": 0.7324338003807991
+ },
+ "texture sd 0.02 | geometric sigma 0.001..80 | 50 steps": {
+  "var_ratio": 0.8906722815264058,
+  "diff_var_ratio": 0.8767757819390638
+ },
+ "texture sd 0.02 | geometric sigma 0.001..80 | 200 steps": {
+  "var_ratio": 0.9719603124066114,
+  "diff_var_ratio": 0.9540597812741969
+ },
+ "texture sd 0.05 | linear (frozen; sigma 0.010..2.56) | 20 steps": {
+  "var_ratio": 0.8707061311217072,
+  "diff_var_ratio": 0.37498286311696616
+ },
+ "texture sd 0.05 | linear (frozen; sigma 0.010..2.56) | 50 steps": {
+  "var_ratio": 0.9413394258562588,
+  "diff_var_ratio": 0.5179683593588138
+ },
+ "texture sd 0.05 | linear (frozen; sigma 0.010..2.56) | 200 steps": {
+  "var_ratio": 0.9807747508647081,
+  "diff_var_ratio": 0.6764779079713482
+ },
+ "texture sd 0.05 | geometric sigma 0.001..2.56 | 20 steps": {
+  "var_ratio": 0.8255568830618097,
+  "diff_var_ratio": 0.8106303575805514
+ },
+ "texture sd 0.05 | geometric sigma 0.001..2.56 | 50 steps": {
+  "var_ratio": 0.9286884974436065,
+  "diff_var_ratio": 0.919510751708714
+ },
+ "texture sd 0.05 | geometric sigma 0.001..2.56 | 200 steps": {
+  "var_ratio": 0.9819272149731925,
+  "diff_var_ratio": 0.9768614387498694
+ },
+ "texture sd 0.05 | geometric sigma 0.001..10 | 20 steps": {
+  "var_ratio": 0.7848519362673335,
+  "diff_var_ratio": 0.7816986811300509
+ },
+ "texture sd 0.05 | geometric sigma 0.001..10 | 50 steps": {
+  "var_ratio": 0.910236406174029,
+  "diff_var_ratio": 0.906517606041083
+ },
+ "texture sd 0.05 | geometric sigma 0.001..10 | 200 steps": {
+  "var_ratio": 0.9771867152178546,
+  "diff_var_ratio": 0.9734893859411581
+ },
+ "texture sd 0.05 | geometric sigma 0.001..80 | 20 steps": {
+  "var_ratio": 0.7419745411381432,
+  "diff_var_ratio": 0.740006588005573
+ },
+ "texture sd 0.05 | geometric sigma 0.001..80 | 50 steps": {
+  "var_ratio": 0.8906643009188254,
+  "diff_var_ratio": 0.887950366569871
+ },
+ "texture sd 0.05 | geometric sigma 0.001..80 | 200 steps": {
+  "var_ratio": 0.9719698235658684,
+  "diff_var_ratio": 0.9684315884804037
+ }
+}

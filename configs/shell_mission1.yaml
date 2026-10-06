@@ -139,11 +139,18 @@ shell:
     # synthetic positives to the real training anomalies; every fixsweep arm is
     # paired with its no-steer twin automatically when both are listed.
     # arms: [real_only, "genias+real", "posthoc+real", "unguided+real", c1_plus_real,
-    #        "fixsweep:flip_x0_contrast_masked+real", "fixsweep:nosteer_flip_x0_masked+real",
+    #        "fixsweep:flip_x0_contrast_masked+real", "fixsweep:flip_x0_contrast_masked_div+real",
+    #        "fixsweep:nosteer_flip_x0_masked+real",
     #        "fixsweep:flip_x0_final025_recur2_decay1+real", "fixsweep:nosteer_flip_x0_recur2+real"]
     # compare:
-    #   - ["fixsweep:flip_x0_contrast_masked+real", "genias+real"]
-    #   - ["fixsweep:flip_x0_contrast_masked+real", c1_plus_real]
+    #   - ["fixsweep:flip_x0_contrast_masked_div+real", "genias+real"]
+    #   - ["fixsweep:flip_x0_contrast_masked_div+real", c1_plus_real]
+    #   - ["fixsweep:flip_x0_contrast_masked_div+real", "fixsweep:flip_x0_contrast_masked+real"]
+    # Optional, both off by default (docs/TESTBED.md E20):
+    # synth_filter: {kind: rocket_knn, q: 0.99}  # drop generated windows inside the nominal set;
+    #   rescues near-nominal galleries (no-steer twin, unguided) but costs a little with good
+    #   ones; its pass rate (summary.json synth_pass_rate_mean) is worth reporting either way
+    # real_frac: 0.5   # share of real anomalies per positive batch (no effect with BCE in E20)
   # Published GenIAS objective (P6). Isolated results/shell_genias_fair.
   genias_fair:
     steps: 15000

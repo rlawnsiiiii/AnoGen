@@ -1,0 +1,37 @@
+{
+ "null: same generator, new events": {
+  "c2st_auc_raw": 0.5006154378255209,
+  "c2st_auc_phi": 0.537811279296875,
+  "c2st_auc_rocket": 0.5145161946614584,
+  "arp_phi": 0.7258204460559284,
+  "arp_rocket": 0.028233533231465328
+ },
+ "nominal windows, no anomaly": {
+  "c2st_auc_raw": 0.5111643473307291,
+  "c2st_auc_phi": 0.972991943359375,
+  "c2st_auc_rocket": 0.9928436279296875,
+  "arp_phi": 0.4544218661112516,
+  "arp_rocket": 0.005551221869377951
+ },
+ "texture smoothed (low-pass sd 1.5 bins)": {
+  "c2st_auc_raw": 0.5173238118489584,
+  "c2st_auc_phi": 0.978912353515625,
+  "c2st_auc_rocket": 1.0,
+  "arp_phi": 0.4749173393451796,
+  "arp_rocket": 0.00863635293856684
+ },
+ "amplitude x1.6": {
+  "c2st_auc_raw": 0.467864990234375,
+  "c2st_auc_phi": 0.7006581624348959,
+  "c2st_auc_rocket": 0.7890879313151041,
+  "arp_phi": 0.7082369308712814,
+  "arp_rocket": 0.027044590076363454
+ },
+ "all events in the first 10 % of the window": {
+  "c2st_auc_raw": 0.5068155924479166,
+  "c2st_auc_phi": 0.7648773193359375,
+  "c2st_auc_rocket": 0.9748687744140625,
+  "arp_phi": 0.7150197105226942,
+  "arp_rocket": 0.029047710406620682
+ }
+}

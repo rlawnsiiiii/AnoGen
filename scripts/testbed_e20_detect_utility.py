@@ -79,9 +79,8 @@ from anogen.testbed.gauss import (
     spike,
 )
 
-OUT = Path(sys.argv[1] if len(sys.argv) > 1 else "results/testbed")
-OUT.mkdir(parents=True, exist_ok=True)
-REPS = int(sys.argv[2]) if len(sys.argv) > 2 else 5
+OUT = Path(sys.argv[1] if (__name__ == "__main__" and len(sys.argv) > 1) else "results/testbed")
+REPS = int(sys.argv[2]) if (__name__ == "__main__" and len(sys.argv) > 2) else 5
 W, CROP = 512, 64
 N_PER_KIND, N_NEG, N_TEST_NOM, N_TEST_PER_KIND = 85, 2000, 3000, 300
 KINDS = ("spike", "level shift", "drift")
@@ -248,116 +247,123 @@ PAIRS = (
     ("+recipe/rel+div | weighted", "+recipe/rel+div"), ("+oracle | weighted", "+oracle"),
 )
 
-t0 = time.time()
-per_rep: list[dict] = []
-hits_all: dict[tuple[str, str], list[np.ndarray]] = {(dt, a): [] for dt in DETECTORS for a in ARMS}
-kinds_all: list[np.ndarray] = []
-for rep in range(REPS):
-    rng = np.random.default_rng(1000 + rep)
-    real = few_shot_events(rng)
-    x_real = np.concatenate([real[k] for k in KINDS])
-    neg = ch.sample(N_NEG, W, rng)
-    shell = Shell.from_nominal(enc, ch.sample(512, W, rng), ch.sample(512, W, rng))
-    donors = neg[rng.permutation(N_NEG)[: N_PER_KIND * len(KINDS)]]  # training nominals, as in augdetect
-    test_nom = ch.sample(N_TEST_NOM, W, rng)
-    kind_test = np.repeat(np.array(KINDS), N_TEST_PER_KIND)
-    test_an = np.concatenate([inject(k, ch.sample(N_TEST_PER_KIND, W, rng), positions(k, N_TEST_PER_KIND, rng),
-                                     amplitudes(k, N_TEST_PER_KIND, rng)) for k in KINDS])
-    seed = 7 + 100 * rep
-    realized = {}
-    synth = {"posthoc": posthoc_inject(donors, rng=np.random.default_rng(seed)).astype(np.float64),
-             "unguided": guided_ddim(DEN["causal"], donors, [], rng=np.random.default_rng(seed), nu=1.0),
-             "C1-like": c1_like(donors, real, seed=seed, shell=shell)}
-    synth["twin"], _ = recipe_slices(DEN["flip_ramp"], donors, real, seed=seed, shell=shell, steer=False)
-    synth["recipe"], realized["recipe"] = recipe_slices(DEN["flip_ramp"], donors, real, seed=seed, shell=shell)
-    synth["recipe/rel"], realized["recipe/rel"] = recipe_slices(DEN["flip_ramp"], donors, real, seed=seed,
-                                                                shell=shell, relative=True)
-    for name, kw in (("recipe/rel+jitter", {"jitter": (0.5, 1.5)}), ("recipe/rel+shift", {"shift_max": 16}),
-                     ("recipe/rel+div", {"jitter": (0.5, 1.5), "shift_max": 16})):
-        synth[name], realized[name] = recipe_slices(DEN["flip_ramp"], donors, real, seed=seed, shell=shell,
-                                                    relative=True, **kw)
-    synth["recipe/rel/bidir"], realized["recipe/rel/bidir"] = recipe_slices(DEN["bidir"], donors, real, seed=seed,
-                                                                            shell=shell, relative=True)
-    synth["oracle"] = oracle(donors, np.random.default_rng(seed))
-    print(f"rep {rep}: generated ({time.time() - t0:.0f}s)", flush=True)
 
-    space = RocketSpace(n_kernels=500, n_components=64, seed=rep).fit(neg[:1000])
-    f_neg, f_tn, f_ta, f_real = (space.features(a) for a in (neg, test_nom, test_an, x_real))
-    f_syn = {g: space.features(synth[g]) for g in GENS}
-    # novelty filters, both calibrated on nominal training windows only
-    nn = NearestNeighbors(n_neighbors=5).fit(space.embed_features(f_neg[:1500]))
-    knn_thr = float(np.quantile(nn.kneighbors(space.embed_features(f_neg[1500:]))[0].mean(axis=1), 0.99))
-    keep = {g: {"kNN filter": nn.kneighbors(space.embed_features(f_syn[g]))[0].mean(axis=1) > knn_thr} for g in GENS}
-    print(f"rep {rep}: features and filters ({time.time() - t0:.0f}s)", flush=True)
+def main() -> None:
+    OUT.mkdir(parents=True, exist_ok=True)
+    t0 = time.time()
+    per_rep: list[dict] = []
+    hits_all: dict[tuple[str, str], list[np.ndarray]] = {(dt, a): [] for dt in DETECTORS for a in ARMS}
+    kinds_all: list[np.ndarray] = []
+    for rep in range(REPS):
+        rng = np.random.default_rng(1000 + rep)
+        real = few_shot_events(rng)
+        x_real = np.concatenate([real[k] for k in KINDS])
+        neg = ch.sample(N_NEG, W, rng)
+        shell = Shell.from_nominal(enc, ch.sample(512, W, rng), ch.sample(512, W, rng))
+        donors = neg[rng.permutation(N_NEG)[: N_PER_KIND * len(KINDS)]]  # training nominals, as in augdetect
+        test_nom = ch.sample(N_TEST_NOM, W, rng)
+        kind_test = np.repeat(np.array(KINDS), N_TEST_PER_KIND)
+        test_an = np.concatenate([inject(k, ch.sample(N_TEST_PER_KIND, W, rng), positions(k, N_TEST_PER_KIND, rng),
+                                         amplitudes(k, N_TEST_PER_KIND, rng)) for k in KINDS])
+        seed = 7 + 100 * rep
+        realized = {}
+        synth = {"posthoc": posthoc_inject(donors, rng=np.random.default_rng(seed)).astype(np.float64),
+                 "unguided": guided_ddim(DEN["causal"], donors, [], rng=np.random.default_rng(seed), nu=1.0),
+                 "C1-like": c1_like(donors, real, seed=seed, shell=shell)}
+        synth["twin"], _ = recipe_slices(DEN["flip_ramp"], donors, real, seed=seed, shell=shell, steer=False)
+        synth["recipe"], realized["recipe"] = recipe_slices(DEN["flip_ramp"], donors, real, seed=seed, shell=shell)
+        synth["recipe/rel"], realized["recipe/rel"] = recipe_slices(DEN["flip_ramp"], donors, real, seed=seed,
+                                                                    shell=shell, relative=True)
+        for name, kw in (("recipe/rel+jitter", {"jitter": (0.5, 1.5)}), ("recipe/rel+shift", {"shift_max": 16}),
+                         ("recipe/rel+div", {"jitter": (0.5, 1.5), "shift_max": 16})):
+            synth[name], realized[name] = recipe_slices(DEN["flip_ramp"], donors, real, seed=seed, shell=shell,
+                                                        relative=True, **kw)
+        synth["recipe/rel/bidir"], realized["recipe/rel/bidir"] = recipe_slices(DEN["bidir"], donors, real, seed=seed,
+                                                                                shell=shell, relative=True)
+        synth["oracle"] = oracle(donors, np.random.default_rng(seed))
+        print(f"rep {rep}: generated ({time.time() - t0:.0f}s)", flush=True)
 
-    row = {"realized": realized, "pass_rate": {}, "n_real": int(len(x_real))}
-    kind_syn = np.repeat(np.array(KINDS), N_PER_KIND)
-    for g in GENS:
-        row["pass_rate"][g] = {k: float(keep[g]["kNN filter"][kind_syn == k].mean()) for k in KINDS}
-    for dt in DETECTORS:
-        row[dt] = {}
-        hits, row[dt]["real_only"] = evaluate(f_real, f_neg, f_tn, f_ta, kind_test, detector=dt)
-        hits_all[(dt, "real_only")].append(hits)
+        space = RocketSpace(n_kernels=500, n_components=64, seed=rep).fit(neg[:1000])
+        f_neg, f_tn, f_ta, f_real = (space.features(a) for a in (neg, test_nom, test_an, x_real))
+        f_syn = {g: space.features(synth[g]) for g in GENS}
+        # novelty filters, both calibrated on nominal training windows only
+        nn = NearestNeighbors(n_neighbors=5).fit(space.embed_features(f_neg[:1500]))
+        knn_thr = float(np.quantile(nn.kneighbors(space.embed_features(f_neg[1500:]))[0].mean(axis=1), 0.99))
+        keep = {g: {"kNN filter": nn.kneighbors(space.embed_features(f_syn[g]))[0].mean(axis=1) > knn_thr} for g in GENS}
+        print(f"rep {rep}: features and filters ({time.time() - t0:.0f}s)", flush=True)
+
+        row = {"realized": realized, "pass_rate": {}, "n_real": int(len(x_real))}
+        kind_syn = np.repeat(np.array(KINDS), N_PER_KIND)
         for g in GENS:
-            for v in VARIANTS:
-                arm = f"+{g}" + ("" if v == "plain" else f" | {v}")
-                sel = keep[g]["kNN filter"] if v == "kNN filter" else np.ones(len(f_syn[g]), dtype=bool)
-                fs, wgt = f_syn[g][sel], None
-                if v.startswith("weighted") and len(fs):
-                    # synthetic total weight = real total weight; the positive class keeps its total weight
-                    n_pos = len(f_real) + len(fs)
-                    c = n_pos / (2.0 * len(f_real))
-                    wgt = np.r_[np.full(len(f_real), c), np.full(len(fs), c * len(f_real) / len(fs))]
-                hits, m = evaluate(np.concatenate([f_real, fs]), f_neg, f_tn, f_ta, kind_test, weight=wgt, detector=dt)
-                m["n_synth"] = int(len(fs))
-                row[dt][arm] = m
-                hits_all[(dt, arm)].append(hits)
-        print(f"rep {rep} {dt} ({time.time() - t0:.0f}s): real_only {row[dt]['real_only']['recall@1%FAR']:.3f} | "
-              + " | ".join(f"{a} {row[dt][a]['recall@1%FAR']:.3f}" for a in ARMS[1:]
-                           if " | " not in a or a.endswith("| weighted")), flush=True)
-    kinds_all.append(kind_test)
-    per_rep.append(row)
+            row["pass_rate"][g] = {k: float(keep[g]["kNN filter"][kind_syn == k].mean()) for k in KINDS}
+        for dt in DETECTORS:
+            row[dt] = {}
+            hits, row[dt]["real_only"] = evaluate(f_real, f_neg, f_tn, f_ta, kind_test, detector=dt)
+            hits_all[(dt, "real_only")].append(hits)
+            for g in GENS:
+                for v in VARIANTS:
+                    arm = f"+{g}" + ("" if v == "plain" else f" | {v}")
+                    sel = keep[g]["kNN filter"] if v == "kNN filter" else np.ones(len(f_syn[g]), dtype=bool)
+                    fs, wgt = f_syn[g][sel], None
+                    if v.startswith("weighted") and len(fs):
+                        # synthetic total weight = real total weight; the positive class keeps its total weight
+                        n_pos = len(f_real) + len(fs)
+                        c = n_pos / (2.0 * len(f_real))
+                        wgt = np.r_[np.full(len(f_real), c), np.full(len(fs), c * len(f_real) / len(fs))]
+                    hits, m = evaluate(np.concatenate([f_real, fs]), f_neg, f_tn, f_ta, kind_test, weight=wgt, detector=dt)
+                    m["n_synth"] = int(len(fs))
+                    row[dt][arm] = m
+                    hits_all[(dt, arm)].append(hits)
+            print(f"rep {rep} {dt} ({time.time() - t0:.0f}s): real_only {row[dt]['real_only']['recall@1%FAR']:.3f} | "
+                  + " | ".join(f"{a} {row[dt][a]['recall@1%FAR']:.3f}" for a in ARMS[1:]
+                               if " | " not in a or a.endswith("| weighted")), flush=True)
+        kinds_all.append(kind_test)
+        per_rep.append(row)
 
-rng = np.random.default_rng(0)
-kinds_cat = np.concatenate(kinds_all)
-summary = {dt: {} for dt in DETECTORS}
-for dt in DETECTORS:
-    for arm in ARMS:
-        keys = [k for k in per_rep[0][dt][arm] if isinstance(per_rep[0][dt][arm][k], (int, float))]
-        summary[dt][arm] = {k: float(np.mean([r[dt][arm][k] for r in per_rep])) for k in keys}
-        summary[dt][arm]["recall_sd_over_reps"] = float(np.std([r[dt][arm]["recall@1%FAR"] for r in per_rep]))
-pass_rate = {g: {k: float(np.mean([r["pass_rate"][g][k] for r in per_rep])) for k in KINDS} for g in GENS}
-realized = {g: {k: {m: float(np.mean([r["realized"][g][k][m] for r in per_rep])) for m in per_rep[0]["realized"][g][k]}
-                for k in per_rep[0]["realized"][g]} for g in per_rep[0]["realized"]}
-pairs = {dt: {} for dt in DETECTORS}
-for dt in DETECTORS:
-    for a, b in PAIRS:
-        ha, hb = np.concatenate(hits_all[(dt, a)]), np.concatenate(hits_all[(dt, b)])
-        pairs[dt][f"{a} - {b}"] = {"all": paired(ha, hb, rng),
-                                   **{k: paired(ha[kinds_cat == k], hb[kinds_cat == k], rng) for k in KINDS},
-                                   "per_rep": [float((x.astype(float) - y.astype(float)).mean())
-                                               for x, y in zip(hits_all[(dt, a)], hits_all[(dt, b)], strict=True)]}
-res = {"setup": {"W": W, "reps": REPS, "n_synth_per_kind": N_PER_KIND, "n_real_train": 6 * len(KINDS),
-                 "n_neg": N_NEG, "n_test_nominal": N_TEST_NOM, "n_test_per_kind": N_TEST_PER_KIND, "amp": AMP,
-                 "detectors": "ROCKET 500 kernels (ppv, max) + RidgeClassifierCV (balanced) / "
-                              "LogisticRegression C=0.1 (balanced)",
-                 "filter": "5-NN distance in ROCKET PCA-64 space to 1500 nominal training windows; "
-                           "threshold = its 99th percentile on the other 500"},
-       "summary": summary, "pairs": pairs, "pass_rate": pass_rate, "realized": realized, "per_rep": per_rep}
-(OUT / "e20_detect_utility.json").write_text(json.dumps(res, indent=1))
-for dt in DETECTORS:
-    print(f"\n## {dt}\n\n| arm | n synth | recall @1% FAR | spike | level shift | drift | AUROC | AP |")
-    print("|---|---:|---:|---:|---:|---:|---:|---:|")
-    for arm in ARMS:
-        s_ = summary[dt][arm]
-        print(f"| {arm} | {s_.get('n_synth', 0):.0f} | {s_['recall@1%FAR']:.3f} ± {s_['recall_sd_over_reps']:.3f} | "
-              f"{s_['recall spike']:.3f} | {s_['recall level shift']:.3f} | {s_['recall drift']:.3f} | {s_['auroc']:.3f} | {s_['ap']:.3f} |")
-    print("\n| pair | Δ recall (95% CI) | spike | level shift | drift | per rep |")
-    print("|---|---|---:|---:|---:|---|")
-    for name, p in pairs[dt].items():
-        a = p["all"]
-        print(f"| {name} | {a['diff']:+.3f} [{a['lo']:+.3f}, {a['hi']:+.3f}] | {p['spike']['diff']:+.3f} | "
-              f"{p['level shift']['diff']:+.3f} | {p['drift']['diff']:+.3f} | {' '.join(f'{v:+.2f}' for v in p['per_rep'])} |")
-print("\npass rates (kNN filter):", json.dumps(pass_rate, indent=None)[:2000])
-print("realized sizes:", json.dumps(realized)[:2000])
-print(f"done in {time.time() - t0:.0f}s")
+    rng = np.random.default_rng(0)
+    kinds_cat = np.concatenate(kinds_all)
+    summary = {dt: {} for dt in DETECTORS}
+    for dt in DETECTORS:
+        for arm in ARMS:
+            keys = [k for k in per_rep[0][dt][arm] if isinstance(per_rep[0][dt][arm][k], (int, float))]
+            summary[dt][arm] = {k: float(np.mean([r[dt][arm][k] for r in per_rep])) for k in keys}
+            summary[dt][arm]["recall_sd_over_reps"] = float(np.std([r[dt][arm]["recall@1%FAR"] for r in per_rep]))
+    pass_rate = {g: {k: float(np.mean([r["pass_rate"][g][k] for r in per_rep])) for k in KINDS} for g in GENS}
+    realized = {g: {k: {m: float(np.mean([r["realized"][g][k][m] for r in per_rep])) for m in per_rep[0]["realized"][g][k]}
+                    for k in per_rep[0]["realized"][g]} for g in per_rep[0]["realized"]}
+    pairs = {dt: {} for dt in DETECTORS}
+    for dt in DETECTORS:
+        for a, b in PAIRS:
+            ha, hb = np.concatenate(hits_all[(dt, a)]), np.concatenate(hits_all[(dt, b)])
+            pairs[dt][f"{a} - {b}"] = {"all": paired(ha, hb, rng),
+                                       **{k: paired(ha[kinds_cat == k], hb[kinds_cat == k], rng) for k in KINDS},
+                                       "per_rep": [float((x.astype(float) - y.astype(float)).mean())
+                                                   for x, y in zip(hits_all[(dt, a)], hits_all[(dt, b)], strict=True)]}
+    res = {"setup": {"W": W, "reps": REPS, "n_synth_per_kind": N_PER_KIND, "n_real_train": 6 * len(KINDS),
+                     "n_neg": N_NEG, "n_test_nominal": N_TEST_NOM, "n_test_per_kind": N_TEST_PER_KIND, "amp": AMP,
+                     "detectors": "ROCKET 500 kernels (ppv, max) + RidgeClassifierCV (balanced) / "
+                                  "LogisticRegression C=0.1 (balanced)",
+                     "filter": "5-NN distance in ROCKET PCA-64 space to 1500 nominal training windows; "
+                               "threshold = its 99th percentile on the other 500"},
+           "summary": summary, "pairs": pairs, "pass_rate": pass_rate, "realized": realized, "per_rep": per_rep}
+    (OUT / "e20_detect_utility.json").write_text(json.dumps(res, indent=1))
+    for dt in DETECTORS:
+        print(f"\n## {dt}\n\n| arm | n synth | recall @1% FAR | spike | level shift | drift | AUROC | AP |")
+        print("|---|---:|---:|---:|---:|---:|---:|---:|")
+        for arm in ARMS:
+            s_ = summary[dt][arm]
+            print(f"| {arm} | {s_.get('n_synth', 0):.0f} | {s_['recall@1%FAR']:.3f} ± {s_['recall_sd_over_reps']:.3f} | "
+                  f"{s_['recall spike']:.3f} | {s_['recall level shift']:.3f} | {s_['recall drift']:.3f} | {s_['auroc']:.3f} | {s_['ap']:.3f} |")
+        print("\n| pair | Δ recall (95% CI) | spike | level shift | drift | per rep |")
+        print("|---|---|---:|---:|---:|---|")
+        for name, p in pairs[dt].items():
+            a = p["all"]
+            print(f"| {name} | {a['diff']:+.3f} [{a['lo']:+.3f}, {a['hi']:+.3f}] | {p['spike']['diff']:+.3f} | "
+                  f"{p['level shift']['diff']:+.3f} | {p['drift']['diff']:+.3f} | {' '.join(f'{v:+.2f}' for v in p['per_rep'])} |")
+    print("\npass rates (kNN filter):", json.dumps(pass_rate, indent=None)[:2000])
+    print("realized sizes:", json.dumps(realized)[:2000])
+    print(f"done in {time.time() - t0:.0f}s")
+
+
+if __name__ == "__main__":
+    main()

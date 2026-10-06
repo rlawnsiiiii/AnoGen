@@ -1,0 +1,66 @@
+{
+ "ar_sigma=0.02 bidir final_denoise=True": {
+  "hf_band_shift": [
+   -0.77,
+   -1.14,
+   -1.33
+  ],
+  "dstd_ratio_mid": 0.6952671205227794
+ },
+ "ar_sigma=0.02 bidir final_denoise=False": {
+  "hf_band_shift": [
+   0.88,
+   1.68,
+   2.04
+  ],
+  "dstd_ratio_mid": 1.6849165687040735
+ },
+ "ar_sigma=0.02 causal final_denoise=True": {
+  "hf_band_shift": [
+   0.66,
+   0.79,
+   0.8
+  ],
+  "dstd_ratio_mid": 1.0943281650151993
+ },
+ "ar_sigma=0.02 causal final_denoise=False": {
+  "hf_band_shift": [
+   1.78,
+   2.73,
+   3.14
+  ],
+  "dstd_ratio_mid": 2.104735396423851
+ },
+ "ar_sigma=0.05 bidir final_denoise=True": {
+  "hf_band_shift": [
+   -0.38,
+   -0.61,
+   -0.8
+  ],
+  "dstd_ratio_mid": 0.8217095251486309
+ },
+ "ar_sigma=0.05 bidir final_denoise=False": {
+  "hf_band_shift": [
+   0.14,
+   0.51,
+   0.7
+  ],
+  "dstd_ratio_mid": 1.1118285245790973
+ },
+ "ar_sigma=0.05 causal final_denoise=True": {
+  "hf_band_shift": [
+   1.1,
+   1.47,
+   1.58
+  ],
+  "dstd_ratio_mid": 1.2953249005211076
+ },
+ "ar_sigma=0.05 causal final_denoise=False": {
+  "hf_band_shift": [
+   1.39,
+   2.1,
+   2.41
+  ],
+  "dstd_ratio_mid": 1.584673676820406
+ }
+}

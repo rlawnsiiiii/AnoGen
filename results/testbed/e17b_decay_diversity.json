@@ -1,0 +1,83 @@
+{
+ "donor spread": 3.2570671124925448,
+ "exact flip ramp | proto weight 1.0, decay 0.0, recur 1": {
+  "proto_dist": 0.09191766120363513,
+  "spread_vs_donors": 0.10633133016406768,
+  "diff_p999": 0.0686518785398896
+ },
+ "exact flip ramp | proto weight 1.0, decay 0.0, recur 2": {
+  "proto_dist": 0.158119142770269,
+  "spread_vs_donors": 0.1504610068911836,
+  "diff_p999": 0.05069871307797805
+ },
+ "exact flip ramp | proto weight 1.0, decay 1.0, recur 1": {
+  "proto_dist": 0.021726628569030272,
+  "spread_vs_donors": 0.08832454735416612,
+  "diff_p999": 0.07752598414627139
+ },
+ "exact flip ramp | proto weight 1.0, decay 1.0, recur 2": {
+  "proto_dist": 0.05133178960898016,
+  "spread_vs_donors": 0.07775997891866523,
+  "diff_p999": 0.05039003635661937
+ },
+ "exact flip ramp | proto weight 0.5, decay 0.0, recur 1": {
+  "proto_dist": 0.06097709760427718,
+  "spread_vs_donors": 0.09390590590211342,
+  "diff_p999": 0.06161274475372126
+ },
+ "exact flip ramp | proto weight 0.5, decay 0.0, recur 2": {
+  "proto_dist": 0.05461727219601445,
+  "spread_vs_donors": 0.08060071977749401,
+  "diff_p999": 0.049031740374611485
+ },
+ "exact flip ramp | proto weight 0.5, decay 1.0, recur 1": {
+  "proto_dist": 0.05587037807668759,
+  "spread_vs_donors": 0.09066293519020384,
+  "diff_p999": 0.06433743988219326
+ },
+ "exact flip ramp | proto weight 0.5, decay 1.0, recur 2": {
+  "proto_dist": 0.2272013380128451,
+  "spread_vs_donors": 0.09630284168822781,
+  "diff_p999": 0.04195813387348795
+ },
+ "trained bidirectional net | proto weight 1.0, decay 0.0, recur 1": {
+  "proto_dist": 0.10032508465835789,
+  "spread_vs_donors": 0.13069398848041447,
+  "diff_p999": 0.07579569575508258
+ },
+ "trained bidirectional net | proto weight 1.0, decay 0.0, recur 2": {
+  "proto_dist": 0.10986818257147893,
+  "spread_vs_donors": 0.1314428401521852,
+  "diff_p999": 0.05627871686864086
+ },
+ "trained bidirectional net | proto weight 1.0, decay 1.0, recur 1": {
+  "proto_dist": 0.006139762138378089,
+  "spread_vs_donors": 0.08682188250917797,
+  "diff_p999": 0.08075747132131396
+ },
+ "trained bidirectional net | proto weight 1.0, decay 1.0, recur 2": {
+  "proto_dist": 0.0022839519247618368,
+  "spread_vs_donors": 0.07133897388147899,
+  "diff_p999": 0.05913431727300227
+ },
+ "trained bidirectional net | proto weight 0.5, decay 0.0, recur 1": {
+  "proto_dist": 0.0628812693301461,
+  "spread_vs_donors": 0.08381720818460199,
+  "diff_p999": 0.06923509048700217
+ },
+ "trained bidirectional net | proto weight 0.5, decay 0.0, recur 2": {
+  "proto_dist": 0.05652036087398751,
+  "spread_vs_donors": 0.07663198606610903,
+  "diff_p999": 0.05485606822111089
+ },
+ "trained bidirectional net | proto weight 0.5, decay 1.0, recur 1": {
+  "proto_dist": 0.01643180521669818,
+  "spread_vs_donors": 0.08936453503508852,
+  "diff_p999": 0.07688697818757212
+ },
+ "trained bidirectional net | proto weight 0.5, decay 1.0, recur 2": {
+  "proto_dist": 0.0472858919507311,
+  "spread_vs_donors": 0.07871731026965825,
+  "diff_p999": 0.05295356199011664
+ }
+}

@@ -1,0 +1,62 @@
+{
+ "donors, low-pass sd 0 bins": {
+  "arp_frozen_phi": 0.3013763111300433,
+  "arp_standardized_phi": 0.09363140340684634,
+  "arp_phi_without_hf_bands": 0.3391451308144362,
+  "diff_sd_ratio": 1.0
+ },
+ "donors, low-pass sd 0.5 bins": {
+  "arp_frozen_phi": 0.2885198289816892,
+  "arp_standardized_phi": 0.08712491481929001,
+  "arp_phi_without_hf_bands": 0.33675770663900656,
+  "diff_sd_ratio": 0.8318622850836238
+ },
+ "donors, low-pass sd 1 bins": {
+  "arp_frozen_phi": 0.2629205754854409,
+  "arp_standardized_phi": 0.07739600652243038,
+  "arp_phi_without_hf_bands": 0.32983317149186736,
+  "diff_sd_ratio": 0.6210506459272681
+ },
+ "donors, low-pass sd 1.5 bins": {
+  "arp_frozen_phi": 0.25594682339271957,
+  "arp_standardized_phi": 0.07430750269793333,
+  "arp_phi_without_hf_bands": 0.3257111555043968,
+  "diff_sd_ratio": 0.5540134022722778
+ },
+ "donors, low-pass sd 2 bins": {
+  "arp_frozen_phi": 0.2511977991352479,
+  "arp_standardized_phi": 0.07304049901748158,
+  "arp_phi_without_hf_bands": 0.322585563728866,
+  "diff_sd_ratio": 0.5174787567611149
+ },
+ "donors, low-pass sd 3 bins": {
+  "arp_frozen_phi": 0.25114600380965585,
+  "arp_standardized_phi": 0.07270177332441233,
+  "arp_phi_without_hf_bands": 0.31662907275060764,
+  "diff_sd_ratio": 0.4775142411213552
+ },
+ "donors + white texture sd 0.01": {
+  "arp_frozen_phi": 0.2793839519830754,
+  "arp_standardized_phi": 0.10532507098108385,
+  "arp_phi_without_hf_bands": 0.34636173333954945,
+  "diff_sd_ratio": 1.7255338815062324
+ },
+ "donors + white texture sd 0.02": {
+  "arp_frozen_phi": 0.24862760519903296,
+  "arp_standardized_phi": 0.09996047865846204,
+  "arp_phi_without_hf_bands": 0.34608950750017725,
+  "diff_sd_ratio": 2.9809464111032002
+ },
+ "oracle: fresh anomalies, same generator": {
+  "arp_frozen_phi": 0.748441405387508,
+  "arp_standardized_phi": 0.3556256247102784,
+  "arp_phi_without_hf_bands": 0.881452931346879,
+  "diff_sd_ratio": 3.3736273818622773
+ },
+ "oracle, low-pass sd 1.5 bins": {
+  "arp_frozen_phi": 0.34143210725475137,
+  "arp_standardized_phi": 0.10468906337459552,
+  "arp_phi_without_hf_bands": 0.8212082021199271,
+  "diff_sd_ratio": 1.280514504554366
+ }
+}
