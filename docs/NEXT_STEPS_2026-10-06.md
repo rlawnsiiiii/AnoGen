@@ -214,6 +214,12 @@ the next generator work is learning those kinds (the doc's Tier 2: masked
 kind tokens à la AnomalyDiffusion, or a few-shot adapter à la FaultDiffusion,
 evaluated on held-out events only), not more steering terms.
 
+## Results
+
+Steps 1–6 ran on 06.10.2026; step 7 was not run (`schedule_check` output and
+the reason are in §7 there). Numbers, verdicts against the decision rule and
+the five follow-ups: [ESA_RUN_2026-10-06.md](ESA_RUN_2026-10-06.md).
+
 ## What to send back
 
 - the pytest summary (and full output of any failure);

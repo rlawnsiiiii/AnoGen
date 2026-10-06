@@ -13,7 +13,10 @@ from anogen.shell.scaler import ChannelMinMax
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def _fake(tmp: Path) -> Path:
+def _fake(tmp: Path, monkeypatch) -> Path:
+    # the scripts resolve results/ and their output dir from REPO_ROOT, not from
+    # the config, so without this they read and write the real artifact tree
+    monkeypatch.setattr("anogen.config.REPO_ROOT", tmp)
     rng = np.random.default_rng(0)
     w, n_a, n_r, n_d = 64, 60, 20, 90
     s0, s3, s4 = (tmp / d for d in ("s0", "s3", "s4"))
@@ -45,7 +48,7 @@ def _fake(tmp: Path) -> Path:
 
 
 def test_audit_metrics_runs(tmp_path, monkeypatch, capsys):
-    cfg = _fake(tmp_path)
+    cfg = _fake(tmp_path, monkeypatch)
     monkeypatch.setattr(sys, "argv", ["audit_metrics.py", "-c", str(cfg), "--n-boot", "20", "--out", str(tmp_path / "audit")])
     runpy.run_path(str(ROOT / "scripts/audit_metrics.py"), run_name="__main__")
     out = capsys.readouterr().out
@@ -57,7 +60,7 @@ def test_audit_metrics_runs(tmp_path, monkeypatch, capsys):
 
 
 def test_diagnose_causality_numpy_part(tmp_path, monkeypatch, capsys):
-    cfg = _fake(tmp_path)
+    cfg = _fake(tmp_path, monkeypatch)
     monkeypatch.setattr(sys, "argv", ["diagnose_causality.py", "-c", str(cfg)])
     runpy.run_path(str(ROOT / "scripts/diagnose_causality.py"), run_name="__main__")
     out = capsys.readouterr().out
@@ -65,7 +68,7 @@ def test_diagnose_causality_numpy_part(tmp_path, monkeypatch, capsys):
 
 
 def test_plot_fixsweep_runs(tmp_path, monkeypatch):
-    cfg = _fake(tmp_path)
+    cfg = _fake(tmp_path, monkeypatch)
     fs = tmp_path / "fixsweep"
     fs.mkdir()
     rng = np.random.default_rng(1)

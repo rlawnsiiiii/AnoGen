@@ -49,7 +49,10 @@ def main() -> None:
         from anogen.shell.diffusion import DiffusionSchedule, denoiser_from_ckpt, q_sample
         from anogen.shell.scaler import resolve_scaler
 
-        den = torch.load(s1 / "denoiser.pt", map_location="cpu", weights_only=False)
+        ckpt = s1 / "denoiser.pt"
+        if not ckpt.is_file():
+            raise FileNotFoundError(f"no denoiser at {ckpt}")
+        den = torch.load(ckpt, map_location="cpu", weights_only=False)
         model = denoiser_from_ckpt(den)
         model.eval()
         w = int(den.get("W", 512))
@@ -64,12 +67,15 @@ def main() -> None:
                 x2 = x.clone()
                 x2[..., s] += 1.0
                 d = (model(x2, t, c) - base).abs().squeeze(1)
+                before, after = float(d[:, :s].max()), float(d[:, s:].max())
                 probes[str(s)] = {
-                    "max_change_before": float(d[:, :s].max()),
-                    "max_change_after": float(d[:, s:].max()),
+                    "max_change_before": before,
+                    "max_change_after": after,
+                    # float32 forbids exact zeros, so judge the leak relatively
+                    "leak_ratio": before / max(after, 1e-12),
                 }
         report["causality_probe"] = probes
-        report["is_causal"] = all(v["max_change_before"] < 1e-6 for v in probes.values())
+        report["is_causal"] = all(v["leak_ratio"] < 1e-4 for v in probes.values())
 
         # ε-MSE by position on train-pool windows (the val split is not stored).
         lab_csv = s0 / "train_index.csv"
@@ -113,13 +119,17 @@ def main() -> None:
             report["eps_mse_by_position"] = by_t
     except ImportError:
         report["torch"] = "not installed: probes 1-2 skipped"
+    except FileNotFoundError as exc:
+        report["torch"] = f"{exc}: probes 1-2 skipped"
 
     # 3. Peak position on saved galleries (numpy only).
     scaler = load_minmax(s0 / "minmax_scaler.npz")
     lab = np.load(s0 / "labeled_arrays.npz")
     sets = {"real anomalies": (lab["anomaly"], lab["anomaly_channel"])}
+    donor_ch = None
     if (s3 / "galleries.npz").is_file():
         g3 = np.load(s3 / "galleries.npz")
+        donor_ch = np.asarray(g3["channel_idx"])
         sets["donors (real nominal)"] = (g3["cond"], g3["channel_idx"])
         sets["genias"] = (g3["genias"], g3["channel_idx"])
     if (s4 / "shell_gallery.npz").is_file():
@@ -135,7 +145,11 @@ def main() -> None:
         p = root / rel
         if p.is_file():
             b = np.load(p, allow_pickle=True)
-            sets[name] = (b["x"], b["channel_idx"])
+            # the combined galleries store no channel_idx; their rows are the donors
+            ch_g = b["channel_idx"] if "channel_idx" in b.files else donor_ch
+            if ch_g is None or len(ch_g) != len(b["x"]):
+                continue
+            sets[name] = (b["x"], ch_g)
     pos = {}
     for name, (x, ch) in sets.items():
         u = channel_span_normalize(np.asarray(x), np.asarray(ch), scaler)
@@ -143,6 +157,8 @@ def main() -> None:
     report["peak_position"] = pos
     (out / "causality.json").write_text(json.dumps(report, indent=2) + "\n")
 
+    if "torch" in report:
+        print(f"probes 1-2: {report['torch']}")
     if "is_causal" in report:
         print(f"backbone causal: {report['is_causal']}")
     for tt, r in (report.get("eps_mse_by_position") or {}).items():

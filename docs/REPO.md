@@ -63,7 +63,7 @@ src/anogen/
   testbed/               torch-free exact Gaussian denoisers + numpy guided_ddim mirror (TESTBED.md)
     xfer_panel.py        slice G1 panel or mean-bin pickles (sealed crop)
     folds.py             event OOF + keep_fold_mask (named channels)
-docs/                    REVIEW_2026-10-03, POSITION_BIAS, TESTBED, PAPER_CANDIDATES, RESULTS, STEERING_MATH, ESA_LABELS, S5, XFER, DISCRETE_CHANNELS, COMBINED_VS_REFS, H_ANOM, LEVEL_SHIFT, KIND_PROTO, KIND_MIX, HYBRID, KIND_MIX_HTUNE, FINDINGS, QUIET_TUNE, GEN_BASELINES, EDITOR, TIME_LEASH, HASHFIX, REALISM, COMPARISON, CHANMIX, NEXT_STEPS_2026-09-30, AUGDETECT, this file
+docs/                    REVIEW_2026-10-03, POSITION_BIAS, TESTBED, PAPER_CANDIDATES, RESULTS, STEERING_MATH, ESA_LABELS, S5, XFER, DISCRETE_CHANNELS, COMBINED_VS_REFS, H_ANOM, LEVEL_SHIFT, KIND_PROTO, KIND_MIX, HYBRID, KIND_MIX_HTUNE, FINDINGS, QUIET_TUNE, GEN_BASELINES, EDITOR, TIME_LEASH, HASHFIX, REALISM, COMPARISON, CHANMIX, NEXT_STEPS_2026-09-30, NEXT_STEPS_2026-10-06, ESA_RUN_2026-10-06, AUGDETECT, this file
 configs/shell_mission1.yaml
 configs/xfer*.yaml       Mission 2 + M1 extra (not 41–46)
 results/                 gitignored artifacts

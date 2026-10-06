@@ -115,6 +115,8 @@ shell:
     burnin_bins: 256
     n_boot: 1000
     baseline: c1_repro
+    # `only: [...]` runs a subset; the per-fold npz cache is keyed by the spec, so
+    # removing it and rerunning adds the rest and reuses what is already there
     # variants: omit to use DEFAULT_VARIANTS in phases/fixsweep.py. Example of
     # adding the bidirectional backbone once `anogen s1bidir` has run:
     # variants:
@@ -134,20 +136,34 @@ shell:
     donor_disjoint: true
     flip_test: true
     shift_aug: 0
-    # fuse_diffscore: results/shell_diffdetect/flip_ramp_top16_multiscale_scores.npz
+    fuse_diffscore: results/shell_diffdetect/flip_ramp_top16_multiscale_scores.npz
     # Detector-utility test of the position-bias fixes (docs/POSITION_BIAS.md,
     # "Primary endpoint"). Needs `anogen fixsweep` first. "+real" adds the
     # synthetic positives to the real training anomalies; every fixsweep arm is
     # paired with its no-steer twin automatically when both are listed.
-    # arms: [real_only, "genias+real", "posthoc+real", "unguided+real", c1_plus_real,
-    #        "fixsweep:flip_x0_contrast_masked+real", "fixsweep:flip_x0_contrast_masked_div+real",
-    #        "fixsweep:nosteer_flip_x0_masked+real",
-    #        "fixsweep:flip_x0_final025_recur2_decay1+real", "fixsweep:nosteer_flip_x0_recur2+real"]
-    #   after `anogen geniasfair` also "geniasfair:genias_fair+real" (published GenIAS objective)
-    # compare:
-    #   - ["fixsweep:flip_x0_contrast_masked_div+real", "genias+real"]
-    #   - ["fixsweep:flip_x0_contrast_masked_div+real", c1_plus_real]
-    #   - ["fixsweep:flip_x0_contrast_masked_div+real", "fixsweep:flip_x0_contrast_masked+real"]
+    arms: [real_only, "genias+real", "posthoc+real", "unguided+real", c1_plus_real,
+           "fixsweep:flip_x0_contrast_masked+real", "fixsweep:flip_x0_contrast_masked_div+real",
+           "fixsweep:nosteer_flip_x0_masked+real", "fixsweep:flip_x0_contrast_only+real",
+           "fixsweep:flip_x0_final025_recur2_decay1+real", "fixsweep:nosteer_flip_x0_recur2+real",
+           "geniasfair:genias_fair+real"]
+    compare:
+      - ["fixsweep:flip_x0_contrast_masked_div+real", "genias+real"]
+      - ["fixsweep:flip_x0_contrast_masked_div+real", c1_plus_real]
+      - ["fixsweep:flip_x0_contrast_masked_div+real", "fixsweep:flip_x0_contrast_masked+real"]
+      # contrast_only keeps the position fix at a third of the masked variants'
+      # sharpness defect (fixsweep: diff p99.9 0.568 vs 1.507), so it is in the run
+      - ["fixsweep:flip_x0_contrast_only+real", "genias+real"]
+      - ["fixsweep:flip_x0_contrast_only+real", "fixsweep:flip_x0_contrast_masked_div+real"]
+      # claim "generated anomalies improve detection" is against real_only
+      - ["fixsweep:flip_x0_final025_recur2_decay1+real", real_only]
+      - ["fixsweep:flip_x0_contrast_only+real", real_only]
+      - ["fixsweep:flip_x0_contrast_masked_div+real", real_only]
+      - [c1_plus_real, real_only]
+      - ["genias+real", real_only]
+      # published GenIAS objective as the baseline instead of the locked S3 gallery
+      - ["geniasfair:genias_fair+real", real_only]
+      - ["fixsweep:flip_x0_contrast_only+real", "geniasfair:genias_fair+real"]
+      - [c1_plus_real, "geniasfair:genias_fair+real"]
     # Optional, both off by default (docs/TESTBED.md E20):
     # synth_filter: {kind: rocket_knn, q: 0.99}  # drop generated windows inside the nominal set;
     #   rescues near-nominal galleries (twin +15 points, unguided +3 in E20), neutral for the
