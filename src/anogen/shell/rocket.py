@@ -115,6 +115,10 @@ class RocketSpace:
         """PCA coordinates (for nearest-neighbour scores such as ARP)."""
         return self.features(x) @ self.components_.T
 
+    def embed_features(self, feats: np.ndarray) -> np.ndarray:
+        """PCA coordinates of already computed ``features`` (avoids a second transform)."""
+        return np.asarray(feats) @ self.components_.T
+
 
 def c2st_auc(
     feat_real: np.ndarray,
@@ -185,19 +189,21 @@ def rocket_c2st(
     *,
     seeds: tuple[int, ...] = (0, 1, 2),
     feat_real: np.ndarray | None = None,
+    feat_synth: np.ndarray | None = None,
 ) -> dict[str, float]:
     """Channel-balanced, event-grouped ROCKET C2ST (inputs in channel-span units).
 
     Each seed subsamples both sets to the same count per shared channel (as
     ``realism.classifier_two_sample_test`` does), so the classifier cannot win
     on channel composition alone, then runs ``c2st_auc`` with a ridge
-    classifier. ``feat_real`` lets callers reuse the real features across
-    galleries. Returns the mean and spread of the out-of-fold AUC.
+    classifier. ``feat_real`` / ``feat_synth`` let callers reuse features.
+    Group synthetic rows by what makes them dependent (an oracle of real
+    crops must be grouped by event, or crops of one event sit on both sides). Returns the mean and spread of the out-of-fold AUC.
     """
     from anogen.shell.realism import _balanced_channel_indices
 
     fr = space.features(u_real) if feat_real is None else np.asarray(feat_real)
-    fs = space.features(u_synth)
+    fs = space.features(u_synth) if feat_synth is None else np.asarray(feat_synth)
     rc, sc = np.asarray(real_ch, dtype=int), np.asarray(synth_ch, dtype=int)
     rg, sg = np.asarray(real_groups), np.asarray(synth_groups)
     aucs, bals = [], []

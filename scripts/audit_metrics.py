@@ -153,7 +153,9 @@ def main() -> None:
     # Oracle: real anomaly windows of the *other* folds as the gallery (the
     # honest ceiling for "reproduces known faults").
     gals["oracle (real anomalies, other folds)"] = {
-        "fold": {k: (x_a[fold_a != k], ch_a[fold_a != k]) for k in sorted({int(f) for f in fold_a if int(f) >= 0})}
+        "fold": {k: (x_a[fold_a != k], ch_a[fold_a != k]) for k in sorted({int(f) for f in fold_a if int(f) >= 0})},
+        # crops of one event are dependent: group them for the C2ST split
+        "groups": {k: ev[fold_a != k] for k in sorted({int(f) for f in fold_a if int(f) >= 0})},
     }
     rows = {}
     for name, spec in gals.items():
@@ -184,15 +186,16 @@ def main() -> None:
             if rocket_space is not None:
                 rm_ = fold_a == k
                 u_r = channel_span_normalize(x_a[rm_], ch_a[rm_], scaler)
-                u_g = channel_span_normalize(x, ch, scaler)
+                f_g = rocket_space.features(channel_span_normalize(x, ch, scaler))
+                g_groups = spec.get("groups", {}).get(k, np.arange(len(x)))
                 try:
                     r["c2st_rocket_auc"] = rocket_c2st(
-                        rocket_space, u_r, u_g, ch_a[rm_], ch, ev[rm_], np.arange(len(x))
+                        rocket_space, u_r, None, ch_a[rm_], ch, ev[rm_], g_groups, feat_synth=f_g
                     )["auc"]
                 except ValueError:
-                    r["c2st_rocket_auc"] = float("nan")
+                    pass  # left out of the mean rather than turning it into NaN
                 u_q = channel_span_normalize(x_a[qm], ch_a[qm], scaler)
-                r["arp_rocket"] = _arp(min_distances(rocket_space.embed(u_q), rocket_space.embed(u_g)))
+                r["arp_rocket"] = _arp(min_distances(rocket_space.embed(u_q), rocket_space.embed_features(f_g)))
             r["phi_attribution"] = feature_attribution(q_emb, g_emb, PHI_NAMES)
             u = channel_span_normalize(x, ch, scaler)
             rm = fold_a == k

@@ -138,7 +138,8 @@ def run_diffdetect(cfg: dict[str, Any]) -> dict[str, Any]:
         fuse = str(spec.get("fuse", "mean"))
         from anogen.shell.scaler import load_minmax, unit_scale
 
-        u_scale = unit_scale(scaler, load_minmax(s0 / "minmax_scaler.npz"), ch_d)
+        mm_path = s0 / "minmax_scaler.npz"
+        u_scale = unit_scale(scaler, load_minmax(mm_path) if mm_path.is_file() else None, ch_d)
         kw = dict(t_eval=_map_t_eval(sched, v_t_eval, u_scale), n_draws=n_draws, bsz=bsz, skip=int(spec.get("skip_start", 0)), seed=seed)
         if pool != "mean":
             kw["pool"] = pool
@@ -300,10 +301,17 @@ def _map_t_eval(schedule: Any, t_eval: list[int], unit_scale: float = 1.0) -> li
     ab = schedule.alpha_bar.detach().cpu().numpy()
     if np.allclose(ab, lin) and abs(float(unit_scale) - 1.0) < 1e-9:
         return [int(t) for t in t_eval]
-    out = []
+    out: list[int] = []
+    s_hi = np.sqrt((1.0 - ab.min()) / ab.min())
     for t in t_eval:
         sigma = np.sqrt((1.0 - lin[int(t)]) / lin[int(t)]) * float(unit_scale)
-        out.append(int(np.argmin(np.abs(ab - 1.0 / (1.0 + sigma**2)))))
+        if sigma > s_hi:
+            import warnings
+
+            warnings.warn(f"t_eval {t}: σ={sigma:.3g} exceeds the schedule's σ_max {s_hi:.3g}; clamped", stacklevel=2)
+        m = int(np.argmin(np.abs(ab - 1.0 / (1.0 + sigma**2))))
+        if m not in out:  # clamped levels collapse onto one index: keep it once
+            out.append(m)
     return out
 
 

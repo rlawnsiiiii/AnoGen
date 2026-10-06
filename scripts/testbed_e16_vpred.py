@@ -5,7 +5,8 @@ under-produces amplitude from noise (variance 0.71–0.78 of the truth), while
 on the ν = 0.2 edit both schedules were fine. v-prediction (Salimans & Ho
 2022) is the usual remedy for wide, near-zero-terminal-SNR schedules. Same net
 size, steps and data; 32 bins of real context on each side; matched noise
-levels for the edit (as E10b).
+levels for the edit (as E10b). "Matched noise" starts from the marginal of
+q(x_T) (steer's noise_init_mean/std) instead of N(0, I).
 """
 import json, pickle, sys
 from pathlib import Path
@@ -44,8 +45,10 @@ for name, key, sched, param in (("ε-net, linear schedule", "bidir", lin, "eps")
     if not p.is_file():
         continue
     den = NetDenoiser(pickle.load(open(p, "rb"))["net"], sched, W + 2 * B, ch.mean, param=param)
+    m0, s0 = float(ref.mean()), float(ref.std())
     for label, kw in (("from noise, 20 steps", dict(start_from_noise=True, ddim_steps=20)),
                       ("from noise, 50 steps", dict(start_from_noise=True, ddim_steps=50)),
+                      ("from matched noise, 50 steps", dict(start_from_noise=True, ddim_steps=50, noise_init=(m0, s0))),
                       ("edit at the ν = 0.2 noise level, 50 steps", dict(nu=matched_nu(sched), ddim_steps=50))):
         x = guided_ddim(den, long, [], rng=np.random.default_rng(1), crop=B, crop_end=B, **kw)
         r = {**texture(x), **{k: gallery_report(x, lo, hi)[k] for k in ("peak_at_start", "peak_at_end")}}

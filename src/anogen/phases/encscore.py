@@ -16,6 +16,7 @@ import pandas as pd
 import torch
 
 from anogen.config import REPO_ROOT
+from anogen.phases._io import _abs, _jsonable
 from anogen.shell.coverage import edi_by_method, mean_pairwise_distance
 from anogen.shell.diffusion import DiffusionSchedule, denoiser_from_ckpt, torch_available
 from anogen.shell.encoders import ShellEncoder, embed_shell
@@ -344,20 +345,3 @@ def _load_encoder(
 def _brief(row: dict[str, Any]) -> dict[str, Any]:
     skip = {"folds", "energy"}
     return {k: v for k, v in row.items() if k not in skip}
-
-
-def _jsonable(obj: Any) -> Any:
-    if isinstance(obj, dict):
-        return {str(k): _jsonable(v) for k, v in obj.items()}
-    if isinstance(obj, list):
-        return [_jsonable(v) for v in obj]
-    if isinstance(obj, (np.floating, np.integer)):
-        return obj.item()
-    if isinstance(obj, np.ndarray):
-        return obj.tolist()
-    return obj
-
-
-def _abs(path: str | Path, root: Path) -> Path:
-    p = Path(path)
-    return p if p.is_absolute() else root / p

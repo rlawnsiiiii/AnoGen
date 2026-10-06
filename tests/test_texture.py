@@ -44,6 +44,6 @@ def test_schedule_bounds_dc_dominates_uncentred_data():
     cen = schedule_bounds(x - 0.5, centered=True)
     assert raw["dc_power"] > 50 * raw["spectrum_max"]  # W·0.25 = 64 vs harmonics ~1
     assert raw["sigma_max"] > 5 * cen["sigma_max"]
-    assert abs(cen["sigma_max"] - cen["sigma_max_without_dc"]) < 1e-9 or cen["sigma_max"] >= cen["sigma_max_without_dc"]
+    assert cen["dc_power"] < raw["dc_power"] / 10
     p = component_power(np.full((3, 64), 2.0))
     assert np.isclose(p["dc_power"], 64 * 4.0)

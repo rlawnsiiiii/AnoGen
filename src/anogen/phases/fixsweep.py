@@ -84,6 +84,7 @@ DEFAULT_VARIANTS: dict[str, dict[str, Any]] = {
     # steered twin this is "what steering adds" beyond regeneration (SDEdit).
     "nosteer_c1": {"no_steer": True},
     "nosteer_flip_x0": {"flip": "ramp", "guidance_space": "x0", "no_steer": True},
+    "nosteer_flip_x0_recur2": {"flip": "ramp", "guidance_space": "x0", "n_recur": 2, "no_steer": True},
     # Masked twin of flip_x0_contrast_masked: same masks (same seeds), no objective.
     "nosteer_flip_x0_masked": {
         "flip": "ramp",
@@ -100,7 +101,7 @@ DEFAULT_VARIANTS: dict[str, dict[str, Any]] = {
         "guidance_space": "x0",
         "final_grad_scale": 0.25,
         "n_recur": 2,
-        "twin": "nosteer_flip_x0",
+        "twin": "nosteer_flip_x0_recur2",
     },
     # Guidance weight ∝ σ_t (mean 1 over the chain): same budget, spent while the
     # denoiser can still harmonize it (testbed E17: prototype distance
@@ -111,7 +112,7 @@ DEFAULT_VARIANTS: dict[str, dict[str, Any]] = {
         "final_grad_scale": 0.25,
         "n_recur": 2,
         "guidance_decay": 1.0,
-        "twin": "nosteer_flip_x0",
+        "twin": "nosteer_flip_x0_recur2",
     },
     # Contrast kinds generated as masked (RePaint) edits: exact position and a
     # bin-level label; the rest of the window stays donor (testbed E14).
@@ -153,7 +154,7 @@ _PHASE_KEYS = {
 
 
 def run_fixsweep(cfg: dict[str, Any]) -> dict[str, Any]:
-    from anogen.phases.encscore import _abs, _jsonable
+    from anogen.phases._io import _abs, _jsonable
 
     root = Path(cfg.get("_repo_root", REPO_ROOT))
     fcfg = dict((cfg.get("shell") or {}).get("fixsweep") or {})
@@ -191,9 +192,9 @@ def run_fixsweep(cfg: dict[str, Any]) -> dict[str, Any]:
 
     from anogen.phases.encscore import _load_encoder
     from anogen.phases.kindmix import (
+        _PARENT50,
         HYBRID_NEEDLES_PROTO_KINDS,
         HYBRID_PROTO_KINDS,
-        _PARENT50,
         channel_stratified_alloc,
         slice_lam_anom,
     )
@@ -251,9 +252,10 @@ def run_fixsweep(cfg: dict[str, Any]) -> dict[str, Any]:
     # Realism diagnostics are always in S0's envelope units (channel min/max of
     # the train pool), whatever scaler a denoiser checkpoint carries (s1v2 may
     # use another range or a z-score). ROCKET C2ST/ARP space fit on the donors.
-    span_scaler = load_minmax(s0 / "minmax_scaler.npz")
+    span_path = s0 / "minmax_scaler.npz"
+    span_scaler = load_minmax(span_path) if span_path.is_file() else None
     rocket_space = None
-    if int(fcfg.get("rocket_kernels", 300)) > 0:
+    if int(fcfg.get("rocket_kernels", 300)) > 0 and span_scaler is not None:
         from anogen.shell.realism import channel_span_normalize
         from anogen.shell.rocket import RocketSpace
 
@@ -321,6 +323,19 @@ def run_fixsweep(cfg: dict[str, Any]) -> dict[str, Any]:
 
         u_scale = _unit_scale(scaler, span_scaler, cond_ch)
         common["nu"] = edit_nu(schedule, float(common["nu"]), u_scale)
+        if abs(u_scale - 1.0) > 1e-9:
+            # A unit-norm step of λ moves x̂₀ by λ in the denoiser's units; keep the
+            # physical step of the frozen protocol (contrast targets are already
+            # measured in the denoiser's units and need no change).
+            for key in ("lam", "lam_anom", "lam_rare", "lam_cls", "lam_repel", "c_max"):
+                if key in common and common[key] is not None:
+                    common[key] = float(common[key]) * u_scale
+        resolved = {"nu": float(common["nu"]), "unit_scale": float(u_scale)}
+        cache_key = json.dumps(
+            {"spec": spec, "resolved": resolved, "den": str(spec.get("denoiser") or "frozen S1")},
+            sort_keys=True,
+            default=str,
+        )
         if bool(spec.get("start_from_noise")):
             common["start_from_noise"] = True
             if bool(spec.get("burnin")):
@@ -344,8 +359,8 @@ def run_fixsweep(cfg: dict[str, Any]) -> dict[str, Any]:
                     leaked[kind] = bool(lk)
             active = [k for k in KIND_ORDER if k in kind_z]
             alloc = channel_stratified_alloc(cond_ch, active, seed=fseed)
-            if cache.is_file() and not force:
-                blob = np.load(cache, allow_pickle=True)
+            blob = np.load(cache, allow_pickle=True) if (cache.is_file() and not force) else None
+            if blob is not None and "key" in blob.files and str(blob["key"]) == cache_key:
                 x, h = np.asarray(blob["x"]), np.asarray(blob["h"])
                 masks = np.asarray(blob["mask"]) if "mask" in blob.files else None
             else:
@@ -386,6 +401,7 @@ def run_fixsweep(cfg: dict[str, Any]) -> dict[str, Any]:
                     channel_idx=cond_ch,
                     kind_alloc=alloc.astype(str),
                     spec=json.dumps(spec),
+                    key=np.asarray(cache_key),
                     **extra_npz,
                 )
             galleries[(vname, fold_id)] = (x, alloc.astype(str))
@@ -399,7 +415,7 @@ def run_fixsweep(cfg: dict[str, Any]) -> dict[str, Any]:
                 score_kw=score_kw,
                 event_a=event_a,
                 kind_lab=kind_lab,
-                scaler=span_scaler,
+                scaler=span_scaler if span_scaler is not None else scaler,
                 n_boot=n_boot,
                 seed=fseed,
                 h=h,
@@ -415,6 +431,7 @@ def run_fixsweep(cfg: dict[str, Any]) -> dict[str, Any]:
             rows.append(row)
         results[vname] = {
             "spec": spec,
+            "resolved": resolved,
             "encoder": enc_name,
             "recipe": recipe,
             "folds": rows,
@@ -672,15 +689,17 @@ def _score_fold(
         from anogen.shell.coverage import min_distances
         from anogen.shell.rocket import rocket_c2st
 
-        u_gal = channel_span_normalize(x, cond_ch, scaler)
+        f_gal = rocket.features(channel_span_normalize(x, cond_ch, scaler))
         try:
-            rc = rocket_c2st(rocket, u_real, u_gal, ch_a[real_m], cond_ch, event_a[real_m], np.arange(len(x)))
+            rc = rocket_c2st(
+                rocket, u_real, None, ch_a[real_m], cond_ch, event_a[real_m], np.arange(len(x)), feat_synth=f_gal
+            )
             row["c2st_rocket_auc"] = rc["auc"]
             row["c2st_rocket"] = rc
         except ValueError as exc:
             row["c2st_rocket_error"] = str(exc)
         u_q = channel_span_normalize(x_a[qm], ch_a[qm], scaler)
-        row["arp_rocket"] = _arp(min_distances(rocket.embed(u_q), rocket.embed(u_gal)))
+        row["arp_rocket"] = _arp(min_distances(rocket.embed(u_q), rocket.embed_features(f_gal)))
 
     def diag(xs: np.ndarray, chs: np.ndarray, real_u: np.ndarray) -> dict[str, float]:
         u = channel_span_normalize(xs, chs, scaler)
@@ -896,6 +915,15 @@ def edit_nu(schedule: Any, nu: float, unit_scale: float = 1.0) -> float:
         return float(nu)
     ab_lin = float(lin[int(round(float(nu) * (n - 1)))])
     sigma = np.sqrt((1.0 - ab_lin) / ab_lin) * float(unit_scale)
+    ab = schedule.alpha_bar.detach().cpu().numpy()
+    s_lo, s_hi = np.sqrt((1.0 - ab.max()) / ab.max()), np.sqrt((1.0 - ab.min()) / ab.min())
+    if not s_lo <= sigma <= s_hi:
+        import warnings
+
+        warnings.warn(
+            f"edit noise level σ={sigma:.3g} is outside the schedule's [{s_lo:.3g}, {s_hi:.3g}]; clamped",
+            stacklevel=2,
+        )
     return nu_for_noise_level(schedule.alpha_bar, 1.0 / (1.0 + sigma**2))
 
 

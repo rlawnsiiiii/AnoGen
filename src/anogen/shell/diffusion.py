@@ -496,7 +496,7 @@ def train_denoiser(
             opt.step()
             if ema_model is not None:
                 with torch.no_grad():
-                    d = float(ema_decay)
+                    d = min(float(ema_decay), (1.0 + step) / (10.0 + step))  # warm-up
                     for pe, pm in zip(ema_model.parameters(), model.parameters(), strict=True):
                         pe.mul_(d).add_(pm.detach(), alpha=1.0 - d)
                     for be, bm in zip(ema_model.buffers(), model.buffers(), strict=True):
@@ -518,6 +518,8 @@ def train_denoiser(
 
     model.eval()
     if ema_model is not None:
+        for p_ in ema_model.parameters():
+            p_.requires_grad_(True)
         model = ema_model
     val_mse = hist_val[-1] if hist_val else _val_mse(eps_view(model), schedule, val_loader, device_t, n_times)
     loss_by_t = _val_mse_by_t(eps_view(model), schedule, val_loader, device_t, n_times, n_bins=8)

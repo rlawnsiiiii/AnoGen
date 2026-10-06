@@ -209,7 +209,7 @@ def run_s1(cfg: dict[str, Any]) -> dict[str, Any]:
 def _write_s1_curves(out: Path, loss_hist: dict[str, np.ndarray], *, parent: np.ndarray, samples: np.ndarray) -> None:
     series = {}
     if "loss_step" in loss_hist:
-        series["train EMA ε-MSE"] = (loss_hist["loss_step"], loss_hist["loss_value"])
+        series["train loss (EMA; ε- or v-MSE)"] = (loss_hist["loss_step"], loss_hist["loss_value"])
     if "val_step" in loss_hist:
         series["val ε-MSE"] = (loss_hist["val_step"], loss_hist["val_value"])
     if series:

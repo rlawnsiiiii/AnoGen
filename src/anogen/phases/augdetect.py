@@ -16,7 +16,7 @@ import numpy as np
 import pandas as pd
 
 from anogen.config import REPO_ROOT
-from anogen.phases.encscore import _abs, _jsonable
+from anogen.phases._io import _abs, _jsonable
 from anogen.shell.detector import eval_detector, fit_detector, needs_torch, paired_event_bootstrap
 from anogen.shell.events import types_from_cfg
 from anogen.shell.morphology import kinds_for_windows
@@ -58,6 +58,9 @@ def run_augdetect(cfg: dict[str, Any]) -> dict[str, Any]:
     enc_score = _abs(cfg.get("enc_score_dir", root / "results/shell_enc_score"), root)
     genbase = _abs(cfg.get("genbase_dir", root / "results/shell_genbase"), root)
     out = _abs(cfg.get("augdetect_dir", root / "results/shell_augdetect"), root)
+    fixsweep_dir = _abs(
+        ((cfg.get("shell") or {}).get("fixsweep") or {}).get("out", root / "results/shell_fixsweep"), root
+    )
     plots = out / "plots"
     docs_plots = root / "docs" / "augdetect"
     out.mkdir(parents=True, exist_ok=True)
@@ -204,6 +207,7 @@ def run_augdetect(cfg: dict[str, Any]) -> dict[str, Any]:
                         shift_aug=shift_aug,
                         flip_test=flip_test,
                         diff_scores=diff_scores,
+                        fixsweep_dir=fixsweep_dir,
                     )
                 except FileNotFoundError as exc:
                     row = {
@@ -217,12 +221,23 @@ def run_augdetect(cfg: dict[str, Any]) -> dict[str, Any]:
 
     _assert_no_nominal_leak(rows)
     summary = _aggregate(rows, arms=arms, seeds=seeds, folds=folds)
+    # Paired A − B contrasts beyond "vs real_only": configured pairs plus every
+    # fixsweep arm against its no-steer twin when both arms ran (what steering
+    # adds to a detector, beyond regenerating the donor).
+    variants = dict(((cfg.get("shell") or {}).get("fixsweep") or {}).get("variants") or _fixsweep_variants())
+    pair_list = _auto_twin_pairs(arms, variants)
+    for p in acfg.get("compare") or []:
+        if len(p) != 2:
+            raise ValueError(f"augdetect.compare entries are [arm_a, arm_b], got {p}")
+        if (str(p[0]), str(p[1])) not in pair_list:
+            pair_list.append((str(p[0]), str(p[1])))
+    pairs = _compare_pairs(rows, pair_list, n_boot=max(n_boot, 2000), seed=seed0)
     csv_path = out / "metrics.csv"
     _write_csv(csv_path, rows)
     written = _plot_summary(plots, summary)
     for png in written:
         shutil.copy2(plots / png, docs_plots / png)
-    index = _index_text(summary, written)
+    index = _index_text(summary, written, pairs)
     (docs_plots / "INDEX.txt").write_text(index)
     (out / "INDEX.txt").write_text(index)
 
@@ -236,6 +251,7 @@ def run_augdetect(cfg: dict[str, Any]) -> dict[str, Any]:
         "arms": list(arms),
         "target_far": far,
         "summary": summary,
+        "pairs": pairs,
         "n_rows": len(rows),
         "plots": written,
         "note": (
@@ -252,7 +268,13 @@ def run_augdetect(cfg: dict[str, Any]) -> dict[str, Any]:
 
 
 def _arm_leaks_fold0(arm: str) -> bool:
-    return arm in {"genfsdiff_c1", "c1_plus_real", "synth_only"}
+    # fixsweep galleries steer level shifts toward fold-0's only level-shift
+    # event when that fold is held out (kind_ref_indices falls back in-fold)
+    return arm in {"genfsdiff_c1", "c1_plus_real", "synth_only"} or arm.startswith("fixsweep:")
+
+
+def _is_plus_real(arm: str) -> bool:
+    return arm == "real_only" or arm.endswith(("_plus_real", "+real"))
 
 
 def _run_one(
@@ -288,6 +310,7 @@ def _run_one(
     shift_aug: int = 0,
     flip_test: bool = False,
     diff_scores: dict[str, np.ndarray] | None = None,
+    fixsweep_dir: Path | None = None,
 ) -> dict[str, Any]:
     rng = np.random.default_rng(seed + 1000 * fold_id)
     train_a = fold_a != fold_id
@@ -311,7 +334,7 @@ def _run_one(
     if not len(x_nom_tr) or not len(x_nom_te):
         raise RuntimeError("nominal split is empty")
 
-    plus_real = arm.endswith("_plus_real") or arm == "real_only"
+    plus_real = _is_plus_real(arm)
     use_real = plus_real
     x_pos_real = x_a[train_a] if use_real else np.zeros((0, x_a.shape[1]), dtype=x_a.dtype)
     ch_pos_real = ch_a[train_a] if use_real else np.zeros(0, dtype=ch_a.dtype)
@@ -326,6 +349,7 @@ def _run_one(
         enc_score=enc_score,
         cond_ch=cond_ch,
         exclude_donor_fold=fold_id if donor_disjoint else None,
+        fixsweep_dir=fixsweep_dir,
     )
     if arm == "real_only":
         x_pos, ch_pos = x_pos_real, ch_pos_real
@@ -383,9 +407,8 @@ def _run_one(
     kind_hits = ev.pop("event_hits")
     fused: dict[str, Any] = {}
     if diff_scores is not None:
-        from anogen.shell.detector import eval_scores, predict_logits, rank_fuse
-
         from anogen.phases.diffdetect import _channel_stats
+        from anogen.shell.detector import eval_scores, predict_logits, rank_fuse
 
         # Negatives for the fused evaluation are diffdetect's fresh windows (held
         # out from S1 and never seen by the CNN): index % 3 == k is the test part,
@@ -520,7 +543,16 @@ def _synth_for_arm(
     enc_score: Path,
     cond_ch: np.ndarray,
     exclude_donor_fold: int | None = None,
+    fixsweep_dir: Path | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
+    """Synthetic positives for one arm and test fold.
+
+    ``fixsweep:<variant>`` (alone) or ``fixsweep:<variant>+real`` (added to the
+    real training anomalies) reads ``<fixsweep_dir>/<variant>_fold<k>.npz``,
+    e.g. the recommended recipe and its no-steer twin, so the detection gain
+    of steering can be separated from the gain of any regenerated window.
+    Any other arm takes ``+real`` the same way (``genias+real``, ``posthoc+real``).
+    """
     if n_synth <= 0:
         return np.zeros((0, 1), dtype=np.float32), np.zeros(0, dtype=np.int64)
 
@@ -536,6 +568,19 @@ def _synth_for_arm(
         "c1_plus_real": "genfsdiff_c1",
         "c3_plus_real": "genfsdiff_c3",
     }.get(arm, arm)
+    # "<arm>+real" = the same synthetic positives added to the real training
+    # anomalies (``_is_plus_real``), e.g. genias+real against a steered recipe+real
+    key = key.removesuffix("+real")
+    if key.startswith("fixsweep:"):
+        name = key[len("fixsweep:") :]
+        if fixsweep_dir is None:
+            raise FileNotFoundError(f"{arm}: no fixsweep directory configured")
+        path = Path(fixsweep_dir) / f"{name}_fold{fold_id}.npz"
+        if not path.is_file():
+            raise FileNotFoundError(path)
+        blob = np.load(path, allow_pickle=True)
+        ch = np.asarray(blob["channel_idx"]) if "channel_idx" in blob.files else cond_ch
+        return _subsample(*_disjoint(np.asarray(blob["x"]), ch), n_synth, rng)
     if key in galleries:
         x, ch = galleries[key]
         return _subsample(*_disjoint(x, ch), n_synth, rng)
@@ -642,11 +687,81 @@ def _aggregate(
             out[arm]["ap_fused_mean"] = float(np.nanmean([r.get("ap_fused", float("nan")) for r in pool]))
             out[arm]["fused_vs_cnn"] = paired_event_bootstrap(fused_by_seed, cnn_fresh_by_seed)
         out[arm]["_hits_by_seed"] = by_seed
+        out[arm]["_hits_by_seed_noleak"] = by_seed_noleak
     ref = out.get("real_only", {}).get("_hits_by_seed")
     for arm in list(out):
         hits = out[arm].pop("_hits_by_seed")
+        hits_nl = out[arm].pop("_hits_by_seed_noleak")
         if ref is not None and arm != "real_only":
             out[arm]["vs_real_only"] = paired_event_bootstrap(hits, ref)
+            if out[arm]["leaked_runs"]:
+                # events of leaked folds drop out (paired on shared events)
+                out[arm]["vs_real_only_noleak"] = paired_event_bootstrap(hits_nl, ref) if hits_nl else _nan_pair()
+    return out
+
+
+def _nan_pair() -> dict[str, float]:
+    nan = float("nan")
+    return {"diff": nan, "lo": nan, "hi": nan, "p_le_zero": nan, "n_events": 0}
+
+
+def _fixsweep_variants() -> dict[str, dict[str, Any]]:
+    from anogen.phases.fixsweep import DEFAULT_VARIANTS
+
+    return DEFAULT_VARIANTS
+
+
+def _auto_twin_pairs(arms: tuple[str, ...], variants: dict[str, dict[str, Any]]) -> list[tuple[str, str]]:
+    """(steered, no-steer twin) arm pairs, matched on the ``+real`` suffix."""
+    present = set(arms)
+    pairs: list[tuple[str, str]] = []
+    for arm in arms:
+        if not arm.startswith("fixsweep:"):
+            continue
+        name = arm[len("fixsweep:") :]
+        suffix = "+real" if name.endswith("+real") else ""
+        twin = (variants.get(name.removesuffix("+real")) or {}).get("twin")
+        partner = f"fixsweep:{twin}{suffix}" if twin else None
+        if partner in present and (arm, partner) not in pairs:
+            pairs.append((arm, partner))
+    return pairs
+
+
+def _compare_pairs(
+    rows: list[dict[str, Any]],
+    pairs: list[tuple[str, str]],
+    *,
+    n_boot: int = 2000,
+    seed: int = 0,
+) -> dict[str, Any]:
+    """Event recall A − B for each pair, paired by seed and event.
+
+    ``all`` uses every fold; ``noleak`` drops the folds flagged as leaked in
+    either arm (pairing keeps only shared events); ``fused`` compares the
+    CNN + diffusion-score fusion when both arms ran with ``fuse_diffscore``.
+    """
+    ok = [r for r in rows if r.get("ok")]
+
+    def hits(arm: str, *, noleak: bool = False, key: str = "event_hits") -> dict[int, dict[str, bool]]:
+        by_seed: dict[int, dict[str, bool]] = {}
+        for r in ok:
+            if r["arm"] != arm or (noleak and r.get("leaked")) or key not in r:
+                continue
+            by_seed.setdefault(int(r["seed"]), {}).update(r.get(key) or {})
+        return by_seed
+
+    out: dict[str, Any] = {}
+    for a, b in pairs:
+        ha, hb = hits(a), hits(b)
+        if not ha or not hb:
+            continue
+        res: dict[str, Any] = {"a": a, "b": b, "all": paired_event_bootstrap(ha, hb, n_boot=n_boot, seed=seed)}
+        la, lb = hits(a, noleak=True), hits(b, noleak=True)
+        res["noleak"] = paired_event_bootstrap(la, lb, n_boot=n_boot, seed=seed) if la and lb else _nan_pair()
+        fa, fb = hits(a, key="event_hits_fused"), hits(b, key="event_hits_fused")
+        if fa and fb:
+            res["fused"] = paired_event_bootstrap(fa, fb, n_boot=n_boot, seed=seed)
+        out[f"{a} - {b}"] = res
     return out
 
 
@@ -751,7 +866,7 @@ def _plot_summary(out: Path, summary: dict[str, Any]) -> list[str]:
     return ["event_recall.png", "rare_far.png"]
 
 
-def _index_text(summary: dict[str, Any], written: list[str]) -> str:
+def _index_text(summary: dict[str, Any], written: list[str], pairs: dict[str, Any] | None = None) -> str:
     lines = [
         "augdetect: event recall @ 1% nominal FAR. Dev only, sealed test closed.",
         "C1 fold 0 is the level-shift proto leak; noleak median drops that fold.",
@@ -763,6 +878,16 @@ def _index_text(summary: dict[str, Any], written: list[str]) -> str:
             f"noleak={m.get('event_recall_noleak_median'):.3f} "
             f"AP={m.get('ap_mean'):.3f} rareFAR={m.get('rare_far_mean'):.3f}"
         )
+    if pairs:
+        lines += ["", "paired event recall A - B (bootstrap over events, 95% CI, P(no gain)):"]
+        for name, res in pairs.items():
+            for part in ("all", "noleak", "fused"):
+                r = res.get(part)
+                if r and r.get("n_events"):
+                    lines.append(
+                        f"  {name} [{part}]: {r['diff']:+.3f} [{r['lo']:+.3f}, {r['hi']:+.3f}] "
+                        f"p={r['p_le_zero']:.3f} events={r['n_events']}"
+                    )
     lines.append("")
     lines.extend(f"  {name}" for name in written)
     lines.append("")
