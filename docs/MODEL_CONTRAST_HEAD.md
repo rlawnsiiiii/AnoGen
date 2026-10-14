@@ -1,10 +1,28 @@
-# `flip_x0_contrast_head_kindpolish`: what the model is, and how it differs from C1
+# `flip_x0_contrast_head_sharp`: what the model is, and how it differs from C1
 
-The recipe recommended in [ESA_RUN_2026-10-06.md §9.4](ESA_RUN_2026-10-06.md).
+The recipe recommended in [ESA_RUN_2026-10-06.md §10.3](ESA_RUN_2026-10-06.md).
+It supersedes `flip_x0_contrast_head_kindpolish`, which is the same recipe
+without the two switches of §10: `contrast_mirror`, which randomises which
+end of the window the level shift sits on, and `contrast_geom`, which
+narrows the spike's centre from 3 bins to the 1 bin the real excursions
+actually occupy. Everything below applies to both unless noted.
 It is not a new network: the denoiser, the encoder, the schedule and the
 donors are all C1's. It is a different way of *steering* the same sampler.
 This document is the spec-level description; §9 of the run document has the
 evidence for why each piece is there.
+
+## The three names in this file
+
+| name | what it is |
+|---|---|
+| `c1_repro` | the earlier baseline recipe, reproduced here for comparison |
+| `flip_x0_contrast_head_kindpolish` | the recipe this document describes in full, from "What both models share" to "Reproducing" |
+| `flip_x0_contrast_head_sharp` | `..._kindpolish` plus the two switches in the last section |
+| `flip_x0_contrast_head_sharp_nomask` | `..._sharp` with the RePaint mask dropped; **the current recommendation** (ESA_RUN §11.5) |
+
+`..._sharp` is not a different model: it is the same chain with
+`contrast_mirror: 0.5` and `contrast_geom: {spike_half: 0}` set. Everything
+between here and "The two §10 switches" describes both.
 
 ## What both models share
 
@@ -230,26 +248,138 @@ the amplitude the polish removed comes back. The guided chain leaves the right
 mean on the lifted stretch plus broadband residue from arguing with a score
 trained only on nominal data; the free chain re-renders that residue as
 nominal texture. It is per-kind because running it on the spike halves a
-3-bin excursion (0.830 → 0.303).
+3-bin excursion (0.830 → 0.303); that measurement predates `spike_half: 0`,
+but the reason it is per-kind is unchanged.
 
 ## Measured differences
 
-| | this model | `c1_repro` |
-|---|---|---|
-| ARP | 0.496 [0.256, 0.764] | 0.567 [0.373, 0.764] |
-| ΔARP vs no-steer twin, frozen φ | +0.174 [+0.016, +0.332] | +0.136 [−0.018, +0.292] |
-| ROCKET C2ST AUC (0.5 = indistinguishable) | 0.876 | 0.966 |
-| Div | 8.66 | 7.30 |
-| draws that are a noise burst, not an anomaly | **0.0%** | 23.2% |
-| Point/Global spike height (real 0.830) | 1.040 | 0.446 |
-| baseline texture vs real | 1.17× | 2.07× |
-| level-shift roughness vs real | 1.5× | 1.7× |
-| spike position p10–p90 | 0.18–0.83 | 0.04–0.50 |
-| bin-level anomaly label | yes (the mask) | no |
+Numbers are for `flip_x0_contrast_head_sharp`, 3 event-OOF folds, with
+`..._kindpolish` alongside so the cost of the two §10 switches is visible.
 
-C1 is ahead on ARP by 0.071, inside a CI half-width of 0.25, and behind on
-everything that measures whether the window looks like the thing it was asked
-for.
+### The frozen S4 protocol
+
+Unchanged since S4; CIs are the two-way event-cluster bootstrap.
+
+| | `..._head_sharp` | `..._head_kindpolish` | `c1_repro` | no-steer twin |
+|---|---|---|---|---|
+| ARP (anomaly) | 0.499 [0.258, 0.766] | 0.496 [0.256, 0.764] | **0.567** [0.373, 0.764] | 0.322 [0.146, 0.748] |
+| ΔARP vs twin, frozen φ | **+0.177** [+0.018, +0.330] | +0.174 [+0.016, +0.332] | +0.136 [−0.018, +0.292] | — |
+| ΔARP vs twin, standardized φ | +0.077 [−0.049, +0.195] | +0.073 [−0.050, +0.193] | — | — |
+| Coverage@τ | **0.033** [0.002, 0.044] | 0.020 | 0.015 | 0.213 |
+| ARP (rare) | 0.791 | 0.791 | 0.772 | 0.852 |
+| ARP (ROCKET φ) | 0.024 | 0.021 | 0.031 | 0.015 |
+| ROCKET C2ST AUC (0.5 = indistinguishable) | 0.881 | **0.876** | 0.966 | 0.763 |
+| C2ST median / reject rate | 0.634 / 0.867 | 0.632 / 0.867 | 0.662 / 0.867 | 0.523 / 0.133 |
+| Div | **9.68** | 8.66 | 7.30 | 1.69 |
+| gap / occupancy | +0.008 / 0.662 | −0.004 / 0.668 | −0.008 / 0.432 | +0.030 / 0.038 |
+| mean min distance (anomaly) | 1.044 | 1.053 | 0.860 | 2.426 |
+
+### Morphology diagnostics
+
+Project-specific, **not** part of the protocol — they answer "did the window
+get the anomaly it was asked for", which ARP and C2ST do not. Reproduce with
+`scripts/measure_morphology.py`.
+
+| | real | `..._head_sharp` | `..._head_kindpolish` | `c1_repro` | `final025_recur2_decay1` |
+|---|---|---|---|---|---|
+| spike height | 0.831 | **0.988** | 1.040 | 0.447 | 0.496 |
+| spike width at half max (bins) | 1 | **1** | 3 | 1 | 1 |
+| share exactly 1 bin | 100% | 53% | 27% | 53% | **85%** |
+| baseline texture vs real | 1.00× | **0.97×** | 0.97× | 2.00× | 1.08× |
+| draws that are a noise burst | 0.0% | **0.0%** | 0.0% | 22.8% | 21.8% |
+| spike position p10–p90 | 0.50–0.50 | 0.18–0.82 | 0.18–0.83 | 0.04–0.50 | 0.50–0.50 |
+| level-shift roughness vs real | 1.00× | 1.53× | 1.55× | 1.70× | 1.58× |
+| level shift at the head | 100%¹ | **50.1%** | 100% | 100% | 100% |
+| level-shift amplitude | 0.328 | 0.569 | 0.568 | 0.297 | 0.303 |
+| envelope exit fraction | 0.039 | 0.555 | 0.557 | 0.563 | 0.532 |
+| bin-level anomaly label | — | yes (the mask) | yes | no | no |
+
+¹ six windows from a single event, so this is that event, not a population.
+
+### Detector utility (`augdetect`)
+
+Event recall at 1% nominal FAR, event-OOF, 5 seeds, dev split only; the sealed
+test stays closed. "noleak" drops C1's fold-0 level-shift prototype leak.
+Paired differences bootstrap over events.
+
+| arm | event recall | noleak | AP | rare FAR |
+|---|---|---|---|---|
+| `real_only` | 0.591 | 0.591 | 0.472 | 0.026 |
+| `c1_plus_real` | 0.636 | 0.714 | 0.479 | 0.051 |
+| `flip_x0_contrast_only+real` | 0.636 | 0.714 | **0.483** | 0.059 |
+| `flip_x0_final025_recur2_decay1+real` | **0.727** | 0.714 | 0.472 | 0.088 |
+| **`flip_x0_contrast_head_sharp+real`** | 0.545 | 0.643 | 0.470 | 0.036 |
+| `nosteer_flip_x0_masked+real` (its twin) | 0.545 | 0.571 | 0.468 | 0.024 |
+
+| paired difference | all events | noleak | fused with the diffusion score |
+|---|---|---|---|
+| vs its no-steer twin | +0.036 [−0.100, +0.173] p=0.32 | +0.071 [−0.014, +0.200] p=0.13 | +0.036 [+0.000, +0.082] p=0.04 |
+| vs `real_only` | +0.018 [−0.100, +0.136] p=0.41 | +0.043 [−0.057, +0.186] p=0.32 | +0.036 [−0.009, +0.100] p=0.06 |
+| vs `c1_plus_real` | **−0.064 [−0.136, −0.009]** | −0.071 [−0.171, +0.000] | **−0.064 [−0.127, −0.018]** |
+| vs `flip_x0_contrast_only+real` | −0.073 [−0.164, +0.009] | −0.043 [−0.157, +0.057] | **−0.145 [−0.300, −0.027]** |
+
+**This recipe does not improve detection** — but that was measured at a
+single operating point where every arm already has all ~450 real training
+anomalies. ESA_RUN §11 adds the curve over the positive budget k and finds
+the gain is real at k ≤ 64; at k = 32 `..._head_sharp` is +0.109 [+0.009,
++0.227] and `..._sharp_nomask` is +0.200 [+0.072, +0.336]. Read this section
+as the fixed-budget result, not the whole story.
+
+At the frozen operating point: Against `real_only` the gain is
++0.018 with a CI straddling zero, and against C1 it is *significantly worse*,
+−0.064 [−0.136, −0.009]. Only the comparison against its own no-steer twin is
+positive, and only in the fused view. **No detection claim may be attached to
+this recipe.**
+
+The detection winner is `flip_x0_final025_recur2_decay1` at 0.727 — though
+even that is only marginal against real data alone: +0.145 [−0.027, +0.327],
+p = 0.053, and significant only when fused with the diffusion score. It is
+also the recipe with 21.8% noise-burst draws and a fully collapsed spike
+position, so on this data the two objectives disagree.
+
+#### Why the two leaders differ: the edit-footprint hypothesis
+
+The steering's edit can be read off exactly, because every variant has a
+no-steer twin run with the same chain, seeds and masks: `x − x_twin` *is* the
+edit. Share of bins moved by more than 0.05 in channel-span units:
+
+| | whole gallery | Point/Global | level shift |
+|---|---|---|---|
+| `flip_x0_contrast_head_sharp` | 20.6% | **0.9%** | 14.0% |
+| `flip_x0_final025_recur2_decay1` | 49.3% | **69.2%** | 68.9% |
+
+A generated Point/Global from the recommended recipe differs from a plain
+nominal donor in about **five bins out of 512**. That is the whole point of
+the masked contrast design — it is why the morphology is right and why the
+window comes with a bin-level label — but to a window-level detector such a
+window is nearly a nominal one.
+
+**Hypothesis: detector utility tracks how much of the window the steering
+changes, not how faithfully the result matches the real morphology.** The
+supporting observation is that `flip_x0_contrast_head_sharp+real` scores
+0.545 event recall, *exactly* its no-steer twin's 0.545 — and the twin
+contains no anomaly at all. `flip_x0_final025_recur2_decay1`, which rewrites
+two thirds of every window, beats its own twin by +0.191 [−0.018, +0.400].
+
+This is a hypothesis, not a result. Four things would test it, and the first
+two can be run on the existing stack:
+
+1. Widen the contrast support at fixed morphology (`step_span`, a longer
+   masked segment, functionals for the two subsequence kinds). If the
+   hypothesis holds, detection rises with footprint while the morphology
+   diagnostics stay put.
+2. Drop `contrast_only`, so the prototype term deforms the rest of the window
+   as well. Detection should rise and C2ST should get worse.
+3. Train on the union of the two galleries; if the mechanisms are
+   complementary rather than competing, the union beats both.
+4. Score **bin-level** localization rather than event recall. The contrast
+   recipes are the only ones that emit a bin-level label, and if the
+   hypothesis is right they should *win* that endpoint while losing this one.
+   This is the measurement most likely to change the recommendation, and it
+   is not implemented.
+
+Numbers from `results/shell_augdetect/INDEX.txt`; the pre-§10 run is kept at
+`results/shell_augdetect_pre_head/`.
 
 ## The level shift's position is pinned on purpose, and it is free when unpinned
 
@@ -262,6 +392,7 @@ It is not. Measured split positions:
 |---|---|---|---|
 | real level shift | — | 0.072–0.072 | 0.072 |
 | `flip_x0_contrast_head_kindpolish` | 0.0625–0.18 | 0.063–0.145 | 0.065 |
+| `flip_x0_contrast_head_sharp` | 0.0625–0.18, half mirrored | 0.063–0.145 from *its own* end | 0.065 |
 | **`flip_x0_contrast_head_wide`** | **0.0625–0.80** | **0.063–0.759** | **0.406** |
 | `flip_x0_contrast_masked_room` (tail step) | 0.10–0.90 | 0.145–0.932 | 0.492 |
 | `c1_repro` | **none** | 0.063–0.068 | 0.065 |
@@ -280,9 +411,10 @@ outside the score's conditional support:
 
 | | level-shift roughness vs real | split position p05–p95 | spike |
 |---|---|---|---|
-| `flip_x0_contrast_head_kindpolish` | **1.5×** | 0.063–0.145 | 1.040 |
+| `flip_x0_contrast_head_sharp` | **1.53×** | 0.063–0.145, either end | 0.988 |
+| `flip_x0_contrast_head_kindpolish` | 1.55× | 0.063–0.145 | 1.040 |
 | `flip_x0_contrast_head_wide` | 2.0× | 0.063–0.759 | 1.040 |
-| `c1_repro` | 1.7× | 0.063–0.068 | 0.446 |
+| `c1_repro` | 1.70× | 0.063–0.068 | 0.447 |
 
 Use the pinned recipe to match the real distribution for ARP / C2ST, and
 `flip_x0_contrast_head_wide` for augmentation sets, where a detector must not
@@ -293,10 +425,52 @@ identical either way, since `contrast_pos` only touches the level shift.
 
 ```bash
 anogen -c configs/shell_mission1.yaml fixsweep        # add `only:` to run a subset
+
+# one recipe, all four kinds, real above generated
+python scripts/plot_model_card.py -c configs/shell_mission1.yaml \
+    --variant flip_x0_contrast_head_sharp
+
+# one recipe, one kind, six panels wide so it can be judged by eye
+python scripts/plot_model_card.py -c configs/shell_mission1.yaml \
+    --variant flip_x0_contrast_head_sharp --only-kind "real level shift"
+
+# several recipes compared within one kind
 python scripts/plot_kind_grid.py -c configs/shell_mission1.yaml \
     --kind "real level shift" --out docs/kind_grid_best \
-    --variants flip_x0_contrast_head_kindpolish c1_repro nosteer_flip_x0_masked
+    --variants flip_x0_contrast_head_sharp c1_repro nosteer_flip_x0_masked
+
+# the morphology diagnostics table above
+python scripts/measure_morphology.py -c configs/shell_mission1.yaml \
+    --variants flip_x0_contrast_head_sharp c1_repro
+
+anogen -c configs/shell_mission1.yaml augdetect       # the detector-utility table
 ```
+
+`plot_model_card.py` prints the whole-slice head/tail share in the level-shift
+title, because a sample of a dozen draws from a 50/50 slice reads as biased
+about a twentieth of the time.
 
 Galleries land in `results/shell_fixsweep/<variant>_fold<f>.npz` with `x`,
 `channel_idx`, `kind_alloc` and, for masked variants, the bin-level `mask`.
+
+## The two §10 switches
+
+`contrast_mirror: {kind: frac}` time-reverses the contrast and its mask for a
+random `frac` of the windows. A reversed `step_head` at split *p* is a `step`
+at *W − p* with the same amplitude sign, so the shifted side moves to the tail
+without touching the amplitudes or the headroom fit. At `frac = 0.5` the
+splits land 50.1% head / 49.9% tail and every other measured quantity is
+unchanged to three decimals.
+
+`contrast_geom: {kind: {...}}` passes the contrast's shape parameters
+(`spike_half`, `flank_gap`, `flank_len`, `step_span`) to `measure_contrast`,
+`contrast_weights` and `contrast_mask` *together*, which is the point: the
+reference amplitudes and the planted contrast have to be read in the same
+units. `spike_half: 0` gives the spike a 1-bin centre. Both default to the
+frozen geometry, so `test_defaults_reproduce_legacy` is unaffected.
+
+Why 1 bin: all 18 real Point/Global excursions are exactly 1 bin wide at half
+maximum, and three independently learned templates (matched filter, whitened
+matched filter, logistic regression) all concentrate on one bin — see
+[template_candidates_v2.png](template_candidates_v2.png) and ESA_RUN §10.2.
+A 3-bin centre reads the real amplitude as 0.274 instead of 0.808.

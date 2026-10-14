@@ -2,6 +2,8 @@ import numpy as np
 import pytest
 
 from anogen.shell.contrast import (
+    contrast_mask,
+    mirror_rows,
     contrast_weights,
     fit_to_headroom,
     measure_contrast,
@@ -69,7 +71,6 @@ def test_bad_kind():
 
 
 def test_contrast_mask_shapes_and_extent():
-    from anogen.shell.contrast import contrast_mask
 
     m = contrast_mask("step", np.array([100, 300]), 512, dilate=8)
     assert m.shape == (2, 512) and m.dtype == bool
@@ -92,7 +93,6 @@ def test_step_head_is_the_mirror_of_step():
 
 
 def test_step_head_mask_covers_the_head_and_locks_the_tail():
-    from anogen.shell.contrast import contrast_mask
 
     m = contrast_mask("step_head", np.array([40]), 512, dilate=8)[0]
     assert m[:40].all() and m[48] and not m[49] and not m[-1]
@@ -100,7 +100,6 @@ def test_step_head_mask_covers_the_head_and_locks_the_tail():
 
 def test_step_head_projection_lands_the_real_morphology():
     """One masked projection must lift the head and leave the tail on the donor."""
-    from anogen.shell.contrast import contrast_mask
 
     pos, width = 40, 512
     w = contrast_weights("step_head", np.array([pos]), width)[0]
@@ -114,7 +113,6 @@ def test_step_head_projection_lands_the_real_morphology():
 
 
 def test_pos_range_narrows_the_sampled_position():
-    from anogen.shell.contrast import sample_targets
 
     rng = np.random.default_rng(0)
     pos, _, _ = sample_targets("step_head", 200, 512, np.array([0.8]), rng=rng, pos_range=(0.0625, 0.18))
@@ -142,3 +140,46 @@ def test_assign_donors_by_room_rejects_mismatched_shapes():
 
     with pytest.raises(ValueError):
         assign_donors_by_room(np.array(["a", "b"]), np.array([0.1]), np.array([0, 0]), {})
+
+
+def test_mirror_rows_turns_a_head_step_into_a_tail_step():
+    pos = np.array([40, 40, 40, 40])
+    w = contrast_weights("step_head", pos, 256)
+    m = contrast_mask("step_head", pos, 256, dilate=8)
+    rng = np.random.default_rng(0)
+    w2, m2, rows = mirror_rows(w, m, 1.0, rng=rng)
+    assert rows.all()
+    # a reversed step_head at p is a step at W - p, same amplitude sign
+    assert np.allclose(w2, contrast_weights("step", 256 - pos, 256))
+    # the mask follows, so the locked side is the one that is no longer shifted
+    assert np.array_equal(m2, m[:, ::-1])
+    # and the amplitude a flat-plus-step donor reads is unchanged
+    x = np.zeros((1, 256))
+    x[0, :40] = 0.3
+    assert abs(float((x @ w[0])[0]) - float((x[:, ::-1] @ w2[0])[0])) < 1e-12
+
+
+def test_mirror_rows_leaves_the_unselected_rows_alone():
+    w = contrast_weights("step_head", np.arange(20, 120, 10), 256)
+    w2, m2, rows = mirror_rows(w, None, 0.5, rng=np.random.default_rng(1))
+    assert 0 < rows.sum() < len(w)
+    assert m2 is None
+    assert np.array_equal(w2[~rows], w[~rows])
+    assert np.array_equal(w2[rows], w[rows][:, ::-1])
+
+
+def test_spike_half_zero_reads_the_undiluted_excursion():
+    x = np.zeros((1, 256))
+    x[0, 128] = 1.0
+    # a 3-bin centre averages a 1-bin excursion down threefold, a 1-bin one does not
+    assert abs(measure_contrast("spike", x, spike_half=1)[0][0] - 1 / 3) < 1e-9
+    assert abs(measure_contrast("spike", x, spike_half=0)[0][0] - 1.0) < 1e-9
+    w = contrast_weights("spike", np.array([128]), 256, spike_half=0)
+    assert (w[0] > 0).sum() == 1 and w[0, 128] == 1.0
+
+
+def test_spike_half_zero_narrows_the_mask_with_the_weights():
+    m1 = contrast_mask("spike", np.array([128]), 256, dilate=0, spike_half=1)
+    m0 = contrast_mask("spike", np.array([128]), 256, dilate=0, spike_half=0)
+    assert int(m0.sum()) < int(m1.sum())
+    assert m0[0, 128] and not m0[0, 128 - int(m1.sum()) // 2 - 1]

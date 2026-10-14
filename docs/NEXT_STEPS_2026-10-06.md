@@ -218,9 +218,10 @@ evaluated on held-out events only), not more steering terms.
 
 Steps 1–6 ran on 06.10.2026; step 7 was not run (`schedule_check` output and
 the reason are in §7 there). Numbers, verdicts against the decision rule and
-the five follow-ups: [ESA_RUN_2026-10-06.md](ESA_RUN_2026-10-06.md). §9 of that
-document carries the follow-up work through to a recommended recipe,
-`flip_x0_contrast_head_kindpolish`.
+the five follow-ups: [ESA_RUN_2026-10-06.md](ESA_RUN_2026-10-06.md). §9–§10 of
+that document carry the follow-up work through to a recommended recipe,
+`flip_x0_contrast_head_sharp`, specified in
+[MODEL_CONTRAST_HEAD.md](MODEL_CONTRAST_HEAD.md).
 
 ## What to send back
 

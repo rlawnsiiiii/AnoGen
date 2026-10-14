@@ -193,6 +193,31 @@ def run_augdetect(cfg: dict[str, Any]) -> dict[str, Any]:
         galleries["taxonomy"] = (np.asarray(np.load(tax_p)["x"]), cond_ch)
 
     folds = sorted({int(f) for f in fold_a.tolist() if int(f) >= 0})
+    # every _run_one argument that does not vary over arm / fold / seed
+    one_kw: dict[str, Any] = dict(
+        x_a=x_a, x_r=x_r, fold_a=fold_a, fold_r=fold_r, ch_a=ch_a, ch_r=ch_r,
+        event_a=event_a, kind_a=kind_a, x_cond=x_cond, cond_ch=cond_ch,
+        galleries=galleries, hybrid=hybrid, enc_score=enc_score, scaler=scaler,
+        n_synth=n_synth, n_nom_test=n_nom_test, steps=steps, hidden=hidden,
+        batch_size=batch_size, lr=lr, far=far, n_boot=n_boot, device=device or None,
+        donor_disjoint=donor_disjoint, shift_aug=shift_aug, flip_test=flip_test,
+        diff_scores=diff_scores, fixsweep_dir=fixsweep_dir,
+        geniasfair_dir=geniasfair_dir, real_frac=real_frac,
+        synth_filter=synth_filter, novelty_cache=novelty_cache,
+    )
+
+    # Opt-in budget sweep: k real positives plus k generated ones, k rising.
+    # The frozen arms give every "+real" arm *all* ~450 real training windows
+    # plus 256 generated, which is not the few-shot regime the generator is
+    # for; this measures the curve. Absent from the config, nothing changes.
+    sweep_cfg = dict(acfg.get("sweep") or {})
+    if sweep_cfg:
+        sweep = _run_sweep(
+            sweep_cfg, arms=arms, folds=folds, seeds=seeds, one_kw=one_kw, out=out, seed0=seed0
+        )
+        if sweep_cfg.get("only"):
+            return sweep
+
     rows: list[dict[str, Any]] = []
     for arm in arms:
         for fold_id in folds:
@@ -200,44 +225,7 @@ def run_augdetect(cfg: dict[str, Any]) -> dict[str, Any]:
             for seed in seeds:
                 print(f"augdetect {arm} fold={fold_id} seed={seed}", flush=True)
                 try:
-                    row = _run_one(
-                        arm=arm,
-                        fold_id=fold_id,
-                        seed=seed,
-                        x_a=x_a,
-                        x_r=x_r,
-                        fold_a=fold_a,
-                        fold_r=fold_r,
-                        ch_a=ch_a,
-                        ch_r=ch_r,
-                        event_a=event_a,
-                        kind_a=kind_a,
-                        x_cond=x_cond,
-                        cond_ch=cond_ch,
-                        galleries=galleries,
-                        hybrid=hybrid,
-                        enc_score=enc_score,
-                        scaler=scaler,
-                        n_synth=n_synth,
-                        n_nom_test=n_nom_test,
-                        steps=steps,
-                        hidden=hidden,
-                        batch_size=batch_size,
-                        lr=lr,
-                        far=far,
-                        n_boot=n_boot,
-                        device=device or None,
-                        leaked=leaked,
-                        donor_disjoint=donor_disjoint,
-                        shift_aug=shift_aug,
-                        flip_test=flip_test,
-                        diff_scores=diff_scores,
-                        fixsweep_dir=fixsweep_dir,
-                        geniasfair_dir=geniasfair_dir,
-                        real_frac=real_frac,
-                        synth_filter=synth_filter,
-                        novelty_cache=novelty_cache,
-                    )
+                    row = _run_one(arm=arm, fold_id=fold_id, seed=seed, leaked=leaked, **one_kw)
                 except FileNotFoundError as exc:
                     row = {
                         "arm": arm,
@@ -286,6 +274,155 @@ def run_augdetect(cfg: dict[str, Any]) -> dict[str, Any]:
     }
     (out / "summary.json").write_text(json.dumps(_jsonable(report), indent=2) + "\n")
     return report
+
+
+def _run_sweep(
+    cfg: dict[str, Any],
+    *,
+    arms: tuple[str, ...],
+    folds: list[int],
+    seeds: list[int],
+    one_kw: dict[str, Any],
+    out: Path,
+    seed0: int,
+) -> dict[str, Any]:
+    """Event recall as a function of the positive budget k.
+
+    For each k the detector trains on k real anomalies; a "+real" arm adds
+    ``synth_per_k`` generated ones on top (``"match"`` = k, the paired design,
+    so every arm sees the same real windows and differs only in what is added).
+    ``real_only`` is the reference curve. The real subsample is drawn from the
+    fold's training positives with the arm's own rng, which is seeded by
+    (seed, fold) alone, so all arms at one (k, fold, seed) see the *same* k
+    real windows and the comparison is paired.
+    """
+    ks = [int(k) for k in (cfg.get("k") or [1, 2, 4, 8, 16, 32, 64, 128, 256])]
+    sw_arms = tuple(cfg.get("arms") or arms)
+    sw_seeds = [int(x) for x in (cfg.get("seeds") or seeds)]
+    per_k = cfg.get("synth_per_k", "match")
+    rows: list[dict[str, Any]] = []
+    for k in ks:
+        n_syn = int(k) if per_k == "match" else int(per_k)
+        for arm in sw_arms:
+            for fold_id in folds:
+                leaked = _arm_leaks_fold0(arm) and fold_id == 0
+                for seed in sw_seeds:
+                    print(f"augdetect-sweep k={k} {arm} fold={fold_id} seed={seed}", flush=True)
+                    kw = dict(one_kw)
+                    kw["n_synth"] = n_syn
+                    try:
+                        row = _run_one(
+                            arm=arm, fold_id=fold_id, seed=seed, leaked=leaked,
+                            real_cap=k, **kw,
+                        )
+                    except FileNotFoundError as exc:
+                        row = {"arm": arm, "fold": fold_id, "seed": seed, "ok": False,
+                               "reason": str(exc)}
+                    row["k"] = int(k)
+                    rows.append(row)
+
+    curves: dict[str, Any] = {}
+    for arm in sw_arms:
+        pts = []
+        for k in ks:
+            pool = [r for r in rows if r.get("ok") and r["arm"] == arm and r["k"] == k]
+            if not pool:
+                continue
+            by_seed: dict[int, dict[str, bool]] = {}
+            nl: dict[int, dict[str, bool]] = {}
+            for r in pool:
+                by_seed.setdefault(int(r["seed"]), {}).update(r.get("event_hits") or {})
+                if not r.get("leaked"):
+                    nl.setdefault(int(r["seed"]), {}).update(r.get("event_hits") or {})
+            rec = [event_recall_safe(h) for h in by_seed.values()]
+            pts.append({
+                "k": int(k),
+                "event_recall_median": float(np.nanmedian(rec)),
+                "event_recall_min": float(np.nanmin(rec)),
+                "event_recall_max": float(np.nanmax(rec)),
+                "event_recall_noleak_median": (
+                    float(np.nanmedian([event_recall_safe(h) for h in nl.values()]))
+                    if nl else float("nan")
+                ),
+                "ap_mean": float(np.nanmean([r["ap"] for r in pool])),
+                "n_pos_real": int(np.median([r["n_pos_real"] for r in pool])),
+                "n_pos_synth": int(np.median([r["n_pos_synth"] for r in pool])),
+            })
+        if pts:
+            curves[arm] = pts
+
+    # paired vs real_only at each k, bootstrapped over events
+    deltas: dict[str, Any] = {}
+    for arm in sw_arms:
+        if arm == "real_only" or "real_only" not in curves:
+            continue
+        per_k_delta = []
+        for k in ks:
+            def hits(a: str) -> dict[int, dict[str, bool]]:
+                by: dict[int, dict[str, bool]] = {}
+                for r in rows:
+                    if r.get("ok") and r["arm"] == a and r["k"] == k:
+                        by.setdefault(int(r["seed"]), {}).update(r.get("event_hits") or {})
+                return by
+            ha, hb = hits(arm), hits("real_only")
+            if ha and hb:
+                d = paired_event_bootstrap(ha, hb, n_boot=2000, seed=seed0)
+                per_k_delta.append({"k": int(k), **d})
+        deltas[arm] = per_k_delta
+
+    report = {
+        "ok": True, "skipped": False, "mode": "sweep",
+        "k": ks, "arms": list(sw_arms), "seeds": sw_seeds, "synth_per_k": per_k,
+        "curves": curves, "vs_real_only": deltas,
+        "note": ("k real training positives plus k generated ones (synth_per_k=match). "
+                 "Same k real windows across arms at a given (k, fold, seed)."),
+    }
+    (out / "sweep.json").write_text(json.dumps(_jsonable(report), indent=2) + "\n")
+    _write_csv(out / "sweep.csv", rows)
+    _plot_sweep(out, curves, deltas)
+    return report
+
+
+def _plot_sweep(out: Path, curves: dict[str, Any], deltas: dict[str, Any]) -> None:
+    try:
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+    except ImportError:
+        return
+    if not curves:
+        return
+    fig, ax = plt.subplots(1, 2, figsize=(12.5, 4.6))
+    for i, (arm, pts) in enumerate(sorted(curves.items())):
+        ks = [p["k"] for p in pts]
+        m = [p["event_recall_median"] for p in pts]
+        style = dict(color="0.25", lw=2.4, ls="--") if arm == "real_only" else {}
+        ax[0].plot(ks, m, marker="o", ms=4, label=arm, **style)
+        ax[0].fill_between(ks, [p["event_recall_min"] for p in pts],
+                           [p["event_recall_max"] for p in pts], alpha=0.10)
+    ax[0].set_xscale("log", base=2)
+    ax[0].set_xlabel("k = real training anomalies (and k generated for the +real arms)")
+    ax[0].set_ylabel("event recall @ 1% FAR")
+    ax[0].set_title("Budget sweep (median over seeds, band = min–max)")
+    ax[0].grid(alpha=0.3)
+    ax[0].legend(fontsize=7)
+    for arm, pts in sorted(deltas.items()):
+        if not pts:
+            continue
+        ks = [p["k"] for p in pts]
+        ax[1].plot(ks, [p["diff"] for p in pts], marker="o", ms=4, label=arm)
+        ax[1].fill_between(ks, [p["lo"] for p in pts], [p["hi"] for p in pts], alpha=0.12)
+    ax[1].axhline(0.0, color="0.25", lw=1.5, ls="--")
+    ax[1].set_xscale("log", base=2)
+    ax[1].set_xlabel("k")
+    ax[1].set_ylabel("event recall − real_only")
+    ax[1].set_title("Paired gain over real data alone (95% CI over events)")
+    ax[1].grid(alpha=0.3)
+    ax[1].legend(fontsize=7)
+    fig.tight_layout()
+    fig.savefig(out / "sweep.png", dpi=140)
+    plt.close(fig)
 
 
 def _filter_synth(
@@ -371,6 +508,7 @@ def _run_one(
     real_frac: float | None = None,
     synth_filter: Any = None,
     novelty_cache: dict[tuple, Any] | None = None,
+    real_cap: int | None = None,
 ) -> dict[str, Any]:
     rng = np.random.default_rng(seed + 1000 * fold_id)
     train_a = fold_a != fold_id
@@ -398,6 +536,12 @@ def _run_one(
     use_real = plus_real
     x_pos_real = x_a[train_a] if use_real else np.zeros((0, x_a.shape[1]), dtype=x_a.dtype)
     ch_pos_real = ch_a[train_a] if use_real else np.zeros(0, dtype=ch_a.dtype)
+    # real_cap: keep only k of the real training positives, so the curve over k
+    # measures the few-shot regime the generator exists for. None = all of them,
+    # the frozen behaviour. Sampled without replacement, uniformly over windows.
+    if real_cap is not None and len(x_pos_real) > int(real_cap):
+        pick = rng.choice(len(x_pos_real), size=int(real_cap), replace=False)
+        x_pos_real, ch_pos_real = x_pos_real[pick], ch_pos_real[pick]
 
     x_syn, ch_syn, donor_syn = _synth_for_arm(
         arm,
@@ -605,6 +749,8 @@ def _run_one(
         "leaked": bool(leaked),
         "n_pos": int(len(x_pos)),
         "n_pos_real": int(len(x_pos_real)),
+        "real_cap": -1 if real_cap is None else int(real_cap),
+        "n_synth_requested": int(n_synth),
         "n_pos_synth": int(len(x_syn) if arm != "real_only" else 0),
         "n_synth_generated": n_synth_generated if arm != "real_only" else 0,
         "synth_pass_rate": synth_pass,

@@ -236,6 +236,114 @@ DEFAULT_VARIANTS: dict[str, dict[str, Any]] = {
         "guidance_decay": 1.0,
         "twin": "nosteer_flip_x0_masked",
     },
+    "flip_x0_contrast_head_mirror": {
+        "flip": "ramp",
+        "guidance_space": "x0",
+        "final_grad_scale": 0.25,
+        "contrast": {"real level shift": "step_head", "real ESA Point / Global": "spike"},
+        "contrast_pos": {"real level shift": (0.0625, 0.18)},
+        "contrast_polish": {"real level shift": 0.35},
+        "contrast_mirror": {"real level shift": 0.5},
+        "contrast_only": True,
+        "contrast_headroom": True,
+        "mask": True,
+        "mask_dilate": 8,
+        "n_recur": 2,
+        "guidance_decay": 1.0,
+        "twin": "nosteer_flip_x0_masked",
+    },
+    "flip_x0_contrast_head_sharp": {
+        "flip": "ramp",
+        "guidance_space": "x0",
+        "final_grad_scale": 0.25,
+        "contrast": {"real level shift": "step_head", "real ESA Point / Global": "spike"},
+        "contrast_pos": {"real level shift": (0.0625, 0.18)},
+        "contrast_polish": {"real level shift": 0.35},
+        "contrast_mirror": {"real level shift": 0.5},
+        # every real Point/Global excursion is 1 bin wide at half maximum; a 3-bin
+        # centre averages it down and plants a 3-bin one (ESA_RUN_2026-10-06 §10)
+        "contrast_geom": {"real ESA Point / Global": {"spike_half": 0}},
+        "contrast_only": True,
+        "contrast_headroom": True,
+        "mask": True,
+        "mask_dilate": 8,
+        "n_recur": 2,
+        "guidance_decay": 1.0,
+        "twin": "nosteer_flip_x0_masked",
+    },
+    # Edit-footprint arm (MODEL_CONTRAST_HEAD, "the edit-footprint hypothesis").
+    # flip_x0_contrast_head_sharp changes ~1% of a Point/Global window, which is
+    # the design working, but leaves a window a detector reads as nominal. These
+    # three raise the footprint while leaving the contrast morphology alone, so
+    # detection and realism can be traded off against each other on purpose.
+    # proto: keep the prototype term, so the whole window is also pulled toward
+    # a real reference, not only the functional.
+    "flip_x0_contrast_head_sharp_proto": {
+        "flip": "ramp",
+        "guidance_space": "x0",
+        "final_grad_scale": 0.25,
+        "contrast": {"real level shift": "step_head", "real ESA Point / Global": "spike"},
+        "contrast_pos": {"real level shift": (0.0625, 0.18)},
+        "contrast_polish": {"real level shift": 0.35},
+        "contrast_mirror": {"real level shift": 0.5},
+        "contrast_geom": {"real ESA Point / Global": {"spike_half": 0}},
+        "contrast_headroom": True,
+        "mask": True,
+        "mask_dilate": 8,
+        "n_recur": 2,
+        "guidance_decay": 1.0,
+        "twin": "nosteer_flip_x0_masked",
+    },
+    # dilate64: the same objectives, but the RePaint mask lets eight times more
+    # of the window move around the planted contrast.
+    "flip_x0_contrast_head_sharp_dilate64": {
+        "flip": "ramp",
+        "guidance_space": "x0",
+        "final_grad_scale": 0.25,
+        "contrast": {"real level shift": "step_head", "real ESA Point / Global": "spike"},
+        "contrast_pos": {"real level shift": (0.0625, 0.18)},
+        "contrast_polish": {"real level shift": 0.35},
+        "contrast_mirror": {"real level shift": 0.5},
+        "contrast_geom": {"real ESA Point / Global": {"spike_half": 0}},
+        "contrast_only": True,
+        "contrast_headroom": True,
+        "mask": True,
+        "mask_dilate": 64,
+        "n_recur": 2,
+        "guidance_decay": 1.0,
+        "twin": "nosteer_flip_x0_masked",
+    },
+    # nomask: no RePaint at all, so the chain may rewrite the whole window; the
+    # bin-level label is lost, which is the price being measured.
+    "flip_x0_contrast_head_sharp_nomask": {
+        "flip": "ramp",
+        "guidance_space": "x0",
+        "final_grad_scale": 0.25,
+        "contrast": {"real level shift": "step_head", "real ESA Point / Global": "spike"},
+        "contrast_pos": {"real level shift": (0.0625, 0.18)},
+        "contrast_polish": {"real level shift": 0.35},
+        "contrast_mirror": {"real level shift": 0.5},
+        "contrast_geom": {"real ESA Point / Global": {"spike_half": 0}},
+        "contrast_only": True,
+        "contrast_headroom": True,
+        "n_recur": 2,
+        "guidance_decay": 1.0,
+        "twin": "nosteer_flip_x0_recur2",
+    },
+    "flip_x0_contrast_head_sharp_nomask_proto": {
+        "flip": "ramp",
+        "guidance_space": "x0",
+        "final_grad_scale": 0.25,
+        "contrast": {"real level shift": "step_head", "real ESA Point / Global": "spike"},
+        "contrast_pos": {"real level shift": (0.0625, 0.18)},
+        "contrast_polish": {"real level shift": 0.35},
+        "contrast_mirror": {"real level shift": 0.5},
+        "contrast_geom": {"real ESA Point / Global": {"spike_half": 0}},
+        "contrast_headroom": True,
+        "n_recur": 2,
+        "guidance_decay": 1.0,
+        "twin": "nosteer_flip_x0_recur2",
+    },
     "flip_x0_contrast_head_wide": {
         "flip": "ramp",
         "guidance_space": "x0",
@@ -441,6 +549,8 @@ _PHASE_KEYS = {
     "contrast_donor_room",
     "contrast_pos",
     "contrast_polish",
+    "contrast_mirror",
+    "contrast_geom",
 }
 
 
@@ -920,12 +1030,23 @@ def _generate_slices(
                 plan["amplitudes"],
                 rng=np.random.default_rng(seed + 53 * (1 + kind_order.index(kind))),
                 pos_range=None if plan.get("pos_range") is None else tuple(plan["pos_range"]),
+                **plan.get("geom", {}),
             )
             # separate streams, so positions and masks match the no-steer twin's
             if plan.get("jitter") is not None:
                 lo_j, hi_j = plan["jitter"]
                 delta = delta * np.random.default_rng(seed + 71 * (1 + kind_order.index(kind))).uniform(
                     lo_j, hi_j, len(idx)
+                )
+            mirrored = None
+            if plan.get("mirror"):
+                from anogen.shell.contrast import mirror_rows
+
+                wts, _, mirrored = mirror_rows(
+                    wts,
+                    None,
+                    float(plan["mirror"]),
+                    rng=np.random.default_rng(seed + 97 * (1 + kind_order.index(kind))),
                 )
             if plan.get("headroom"):
                 if span_scaler is None:
@@ -947,7 +1068,14 @@ def _generate_slices(
                 if plan.get("polish") is not None:
                     kw.update(polish_nu=float(plan["polish"]), polish_reproject=True)
             if mask_out is not None:
-                m = contrast_mask(plan["kind"], c_pos, x0.shape[1], dilate=int(mask_dilate))
+                mask_geom = {
+                    k: v for k, v in plan.get("geom", {}).items() if k in ("spike_half", "flank_gap")
+                }
+                m = contrast_mask(
+                    plan["kind"], c_pos, x0.shape[1], dilate=int(mask_dilate), **mask_geom
+                )
+                if mirrored is not None:  # the mask follows the contrast it belongs to
+                    m[mirrored] = m[mirrored][:, ::-1]
                 kw["anomaly_mask"] = m
                 mask_out[idx] = m
             if plan["only"] and not no_steer:
@@ -1220,7 +1348,10 @@ def _contrast_plan(
         if len(idx) == 0:
             continue
         xs = scaler.transform(x_a[idx], ch_a[idx]) if scaler is not None else x_a[idx]
-        amps, _ = measure_contrast(str(ckind), xs)
+        geom = dict((spec.get("contrast_geom") or {}).get(kind) or {})
+        # the reference amplitudes must be read with the same geometry they will be
+        # planted with, or delta is in different units than d
+        amps, _ = measure_contrast(str(ckind), xs, **geom)
         jitter = spec.get("contrast_amp_jitter")
         plan[kind] = {
             "kind": str(ckind),
@@ -1235,6 +1366,12 @@ def _contrast_plan(
             "jitter": None if jitter is None else (float(jitter[0]), float(jitter[1])),
             # headroom: flip the sampled sign into the side the donor can hold
             "headroom": bool(spec.get("contrast_headroom", False)),
+            # geom: the contrast's shape parameters (spike_half, flank_gap,
+            # flank_len, step_span), which also fix the units of the amplitudes
+            "geom": geom,
+            # mirror: the share of windows whose contrast is reversed in time, so
+            # the shifted side is not always the same end of the window
+            "mirror": float((spec.get("contrast_mirror") or {}).get(kind, 0.0)) or None,
             # pos: narrow where the position falls, per kind, as width fractions
             "pos_range": (spec.get("contrast_pos") or {}).get(kind),
             # polish: SDEdit pass for this kind only, so a kind that needs its

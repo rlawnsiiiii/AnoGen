@@ -83,8 +83,7 @@ def main() -> None:
             print(f"skip {v}: no {args.kind}")
             continue
         g = np.concatenate(got)
-        rows.append((v.replace("flip_x0_contrast_masked_room", "room").replace("flip_x0_", ""),
-                     g[rng.choice(len(g), min(args.n, len(g)), replace=False)]))
+        rows.append((v, g[rng.choice(len(g), min(args.n, len(g)), replace=False)]))
 
     n = args.n
     fig, ax = plt.subplots(len(rows), n, figsize=(1.55 * n, 1.25 * len(rows)), squeeze=False)

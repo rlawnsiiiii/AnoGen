@@ -139,6 +139,31 @@ def sample_targets(
     return pos, delta, contrast_weights(kind, pos, width, **kw)
 
 
+def mirror_rows(
+    weights: np.ndarray,
+    mask: np.ndarray | None,
+    frac: float,
+    *,
+    rng: np.random.Generator,
+) -> tuple[np.ndarray, np.ndarray | None, np.ndarray]:
+    """Time-reverse a random ``frac`` of the contrasts, so the shifted side varies.
+
+    Reversing w turns ``step_head`` at split p into its mirror: the shifted side
+    becomes the *tail*, at split W − p, with the amplitude sign unchanged. Both
+    halves therefore lift a short end of the window, which is the regime that
+    keeps the texture (ESA_RUN_2026-10-06 §9.3) -- it is only the long side that
+    the nominal score refuses to hold. Without this every level shift puts its
+    step on the same side, which an augmented detector would learn.
+    """
+    w = np.array(weights, dtype=np.float64)
+    rows = rng.random(len(w)) < float(frac)
+    w[rows] = w[rows][:, ::-1]
+    m = None if mask is None else np.array(mask)
+    if m is not None:
+        m[rows] = m[rows][:, ::-1]
+    return w, m, rows
+
+
 def assign_donors_by_room(
     alloc: np.ndarray,
     level: np.ndarray,
