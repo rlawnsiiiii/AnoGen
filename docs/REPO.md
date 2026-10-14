@@ -63,7 +63,7 @@ src/anogen/
   testbed/               torch-free exact Gaussian denoisers + numpy guided_ddim mirror (TESTBED.md)
     xfer_panel.py        slice G1 panel or mean-bin pickles (sealed crop)
     folds.py             event OOF + keep_fold_mask (named channels)
-docs/                    REVIEW_2026-10-03, POSITION_BIAS, TESTBED, PAPER_CANDIDATES, RESULTS, STEERING_MATH, ESA_LABELS, S5, XFER, DISCRETE_CHANNELS, COMBINED_VS_REFS, H_ANOM, LEVEL_SHIFT, KIND_PROTO, KIND_MIX, HYBRID, KIND_MIX_HTUNE, FINDINGS, QUIET_TUNE, GEN_BASELINES, EDITOR, TIME_LEASH, HASHFIX, REALISM, COMPARISON, CHANMIX, NEXT_STEPS_2026-09-30, NEXT_STEPS_2026-10-06, ESA_RUN_2026-10-06, AUGDETECT, this file
+docs/                    REVIEW_2026-10-03, POSITION_BIAS, TESTBED, PAPER_CANDIDATES, RESULTS, STEERING_MATH, ESA_LABELS, S5, XFER, DISCRETE_CHANNELS, COMBINED_VS_REFS, H_ANOM, LEVEL_SHIFT, KIND_PROTO, KIND_MIX, HYBRID, KIND_MIX_HTUNE, FINDINGS, QUIET_TUNE, GEN_BASELINES, EDITOR, TIME_LEASH, HASHFIX, REALISM, COMPARISON, CHANMIX, NEXT_STEPS_2026-09-30, NEXT_STEPS_2026-10-06, ESA_RUN_2026-10-06, MODEL_CONTRAST_HEAD, AUGDETECT, this file
 configs/shell_mission1.yaml
 configs/xfer*.yaml       Mission 2 + M1 extra (not 41–46)
 results/                 gitignored artifacts
@@ -150,6 +150,7 @@ Div is always `coverage.mean_pairwise_distance` on fold-0 / single 1536 gallery 
 | Generations per targeted kind | `scripts/plot_c1_by_kind.py` | `docs/c1_by_kind/`, `docs/chanmix_by_kind/`, `docs/contrast_only_by_kind/`, `docs/contrast_masked_by_kind/` |
 | Fix-sweep variants vs real, by kind | `scripts/plot_fixsweep_eyes.py` | `docs/fixsweep_eyes/` (ESA_RUN_2026-10-06 §4b), `docs/fixsweep_eyes_best/` (§9.4) |
 | Many draws of one kind per variant | `scripts/plot_kind_grid.py` | `docs/kind_grid_best/` (ESA_RUN_2026-10-06 §9) |
+| What the contrast objective is (w, d, the edit) | `scripts/plot_contrast_explainer.py` | `docs/contrast_explainer.png` (MODEL_CONTRAST_HEAD) |
 | Fix-sweep positions and metric ratios | `scripts/plot_fixsweep.py` | `docs/fixsweep/` |
 | Downstream detector | `phases/augdetect.py` | `docs/augdetect/` |
 | λ_shell=0 / no-steer | `phases/ablate_lambda.py` | `docs/ablate_lambda/` (copy; also `results/shell_ablate_lambda/plots/`) |
