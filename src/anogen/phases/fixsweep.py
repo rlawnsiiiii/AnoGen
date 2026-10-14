@@ -130,6 +130,272 @@ DEFAULT_VARIANTS: dict[str, dict[str, Any]] = {
         "guidance_decay": 1.0,
         "twin": "nosteer_flip_x0_masked",
     },
+    # Headroom-aware targets (ESA_RUN_2026-10-06 §4a): the sampled sign is
+    # flipped into the side the donor can hold, so a correctly sized level shift
+    # is not forced through the envelope floor the donors sit on.
+    "flip_x0_contrast_masked_room": {
+        "flip": "ramp",
+        "guidance_space": "x0",
+        "final_grad_scale": 0.25,
+        "contrast": {"real level shift": "step", "real ESA Point / Global": "spike"},
+        "contrast_only": True,
+        "contrast_headroom": True,
+        "mask": True,
+        "mask_dilate": 8,
+        "n_recur": 2,
+        "guidance_decay": 1.0,
+        "twin": "nosteer_flip_x0_masked",
+    },
+    "flip_x0_contrast_only_room": {
+        "flip": "ramp",
+        "guidance_space": "x0",
+        "final_grad_scale": 0.25,
+        "contrast": {"real level shift": "step", "real ESA Point / Global": "spike"},
+        "contrast_only": True,
+        "contrast_headroom": True,
+    },
+    # ... and the same with an SDEdit polish, which is the one that fixes texture:
+    # the guided chain leaves the right mean on the segment and ~20x the real
+    # roughness inside it, a short unguided chain re-renders that as nominal
+    # texture while the (slow, large) step survives (ESA_RUN_2026-10-06 §4b).
+    "flip_x0_contrast_masked_room_polish": {
+        "flip": "ramp",
+        "guidance_space": "x0",
+        "final_grad_scale": 0.25,
+        "contrast": {"real level shift": "step", "real ESA Point / Global": "spike"},
+        "contrast_only": True,
+        "contrast_headroom": True,
+        "polish_nu": 0.1,
+        "mask": True,
+        "mask_dilate": 8,
+        "n_recur": 2,
+        "guidance_decay": 1.0,
+        "twin": "nosteer_flip_x0_masked",
+    },
+    "flip_x0_contrast_masked_room_polish2": {
+        "flip": "ramp",
+        "guidance_space": "x0",
+        "final_grad_scale": 0.25,
+        "contrast": {"real level shift": "step", "real ESA Point / Global": "spike"},
+        "contrast_only": True,
+        "contrast_headroom": True,
+        "polish_nu": 0.2,
+        "mask": True,
+        "mask_dilate": 8,
+        "n_recur": 2,
+        "guidance_decay": 1.0,
+        "twin": "nosteer_flip_x0_masked",
+    },
+    # The level shift as the real ones are actually built: "step_head" makes the
+    # head the shifted side, so the five positive reference amplitudes lift a short
+    # early stretch off a low donor -- 0.8 of upward room against the 0.9 it has,
+    # and the mask locks the tail to the donor. Real splits all sit at 0.072 W.
+    "flip_x0_contrast_head": {
+        "flip": "ramp",
+        "guidance_space": "x0",
+        "final_grad_scale": 0.25,
+        "contrast": {"real level shift": "step_head", "real ESA Point / Global": "spike"},
+        "contrast_pos": {"real level shift": (0.0625, 0.18)},
+        "contrast_only": True,
+        "mask": True,
+        "mask_dilate": 8,
+        "n_recur": 2,
+        "guidance_decay": 1.0,
+        "twin": "nosteer_flip_x0_masked",
+    },
+    "flip_x0_contrast_head_room": {
+        "flip": "ramp",
+        "guidance_space": "x0",
+        "final_grad_scale": 0.25,
+        "contrast": {"real level shift": "step_head", "real ESA Point / Global": "spike"},
+        "contrast_pos": {"real level shift": (0.0625, 0.18)},
+        "contrast_only": True,
+        "contrast_headroom": True,
+        "mask": True,
+        "mask_dilate": 8,
+        "n_recur": 2,
+        "guidance_decay": 1.0,
+        "twin": "nosteer_flip_x0_masked",
+    },
+    # The recommendation: the level shift gets the head construction and an SDEdit
+    # pass to re-render the lifted stretch, the spike gets neither (a polish halves
+    # a 3-bin excursion, and the spike never needed one -- it already sits inside
+    # the nominal envelope). See ESA_RUN_2026-10-06 §9.
+    "flip_x0_contrast_head_kindpolish": {
+        "flip": "ramp",
+        "guidance_space": "x0",
+        "final_grad_scale": 0.25,
+        "contrast": {"real level shift": "step_head", "real ESA Point / Global": "spike"},
+        "contrast_pos": {"real level shift": (0.0625, 0.18)},
+        "contrast_polish": {"real level shift": 0.35},
+        "contrast_only": True,
+        "contrast_headroom": True,
+        "mask": True,
+        "mask_dilate": 8,
+        "n_recur": 2,
+        "guidance_decay": 1.0,
+        "twin": "nosteer_flip_x0_masked",
+    },
+    "flip_x0_contrast_head_wide": {
+        "flip": "ramp",
+        "guidance_space": "x0",
+        "final_grad_scale": 0.25,
+        "contrast": {"real level shift": "step_head", "real ESA Point / Global": "spike"},
+        "contrast_pos": {"real level shift": (0.0625, 0.80)},
+        "contrast_polish": {"real level shift": 0.35},
+        "contrast_only": True,
+        "contrast_headroom": True,
+        "mask": True,
+        "mask_dilate": 8,
+        "n_recur": 2,
+        "guidance_decay": 1.0,
+        "twin": "nosteer_flip_x0_masked",
+    },
+    "flip_x0_contrast_head_polish": {
+        "flip": "ramp",
+        "guidance_space": "x0",
+        "final_grad_scale": 0.25,
+        "contrast": {"real level shift": "step_head", "real ESA Point / Global": "spike"},
+        "contrast_pos": {"real level shift": (0.0625, 0.18)},
+        "contrast_only": True,
+        "contrast_headroom": True,
+        "polish_nu": 0.2,
+        "polish_reproject": True,
+        "mask": True,
+        "mask_dilate": 8,
+        "n_recur": 2,
+        "guidance_decay": 1.0,
+        "twin": "nosteer_flip_x0_masked",
+    },
+    "flip_x0_contrast_head_polish3": {
+        "flip": "ramp",
+        "guidance_space": "x0",
+        "final_grad_scale": 0.25,
+        "contrast": {"real level shift": "step_head", "real ESA Point / Global": "spike"},
+        "contrast_pos": {"real level shift": (0.0625, 0.18)},
+        "contrast_only": True,
+        "contrast_headroom": True,
+        "polish_nu": 0.35,
+        "polish_reproject": True,
+        "mask": True,
+        "mask_dilate": 8,
+        "n_recur": 2,
+        "guidance_decay": 1.0,
+        "twin": "nosteer_flip_x0_masked",
+    },
+    # ... and the level shift planted the way the real ones are shaped: a short
+    # early stretch at the high level, then the donor. An early step position puts
+    # the negative amplitude almost entirely on the before-side, which a low donor
+    # has the upward room for, so no sign flip and no fight with the score.
+    "flip_x0_contrast_early": {
+        "flip": "ramp",
+        "guidance_space": "x0",
+        "final_grad_scale": 0.25,
+        "contrast": {"real level shift": "step", "real ESA Point / Global": "spike"},
+        "contrast_pos": {"real level shift": (0.04, 0.20)},
+        "contrast_only": True,
+        "mask": True,
+        "mask_dilate": 8,
+        "n_recur": 2,
+        "guidance_decay": 1.0,
+        "twin": "nosteer_flip_x0_masked",
+    },
+    # ... and, the one that matters for level shifts, a parent that starts where
+    # the real ones start. Without it the slice gets a donor at 0.1 of the channel
+    # span with 0.03 of downward room and the drop has to be flipped into a rise.
+    "flip_x0_contrast_parent": {
+        "flip": "ramp",
+        "guidance_space": "x0",
+        "final_grad_scale": 0.25,
+        "contrast": {"real level shift": "step", "real ESA Point / Global": "spike"},
+        "contrast_only": True,
+        "contrast_donor_room": True,
+        "contrast_headroom": True,
+        "mask": True,
+        "mask_dilate": 8,
+        "n_recur": 2,
+        "guidance_decay": 1.0,
+        "twin": "nosteer_flip_x0_masked",
+    },
+    "flip_x0_contrast_parent_polish": {
+        "flip": "ramp",
+        "guidance_space": "x0",
+        "final_grad_scale": 0.25,
+        "contrast": {"real level shift": "step", "real ESA Point / Global": "spike"},
+        "contrast_only": True,
+        "contrast_donor_room": True,
+        "contrast_headroom": True,
+        "polish_nu": 0.2,
+        "polish_reproject": True,
+        "mask": True,
+        "mask_dilate": 8,
+        "n_recur": 2,
+        "guidance_decay": 1.0,
+        "twin": "nosteer_flip_x0_masked",
+    },
+    "flip_x0_contrast_masked_room_polish2_fix": {
+        "flip": "ramp",
+        "guidance_space": "x0",
+        "final_grad_scale": 0.25,
+        "contrast": {"real level shift": "step", "real ESA Point / Global": "spike"},
+        "contrast_only": True,
+        "contrast_headroom": True,
+        "polish_nu": 0.2,
+        "polish_reproject": True,
+        "mask": True,
+        "mask_dilate": 8,
+        "n_recur": 2,
+        "guidance_decay": 1.0,
+        "twin": "nosteer_flip_x0_masked",
+    },
+    "flip_x0_contrast_masked_room_polish3_fix": {
+        "flip": "ramp",
+        "guidance_space": "x0",
+        "final_grad_scale": 0.25,
+        "contrast": {"real level shift": "step", "real ESA Point / Global": "spike"},
+        "contrast_only": True,
+        "contrast_headroom": True,
+        "polish_nu": 0.35,
+        "polish_reproject": True,
+        "mask": True,
+        "mask_dilate": 8,
+        "n_recur": 2,
+        "guidance_decay": 1.0,
+        "twin": "nosteer_flip_x0_masked",
+    },
+    # ... and the projection spent early instead of at every step. lam_contrast is
+    # set so the effective strength starts at 1 (the exact projection) and decays
+    # to nothing, so the step is planted while the window is still noisy.
+    "flip_x0_contrast_masked_room_decay1": {
+        "flip": "ramp",
+        "guidance_space": "x0",
+        "final_grad_scale": 0.25,
+        "contrast": {"real level shift": "step", "real ESA Point / Global": "spike"},
+        "contrast_only": True,
+        "contrast_headroom": True,
+        "lam_contrast": 0.5,
+        "contrast_decay": 1.0,
+        "mask": True,
+        "mask_dilate": 8,
+        "n_recur": 2,
+        "guidance_decay": 1.0,
+        "twin": "nosteer_flip_x0_masked",
+    },
+    "flip_x0_contrast_masked_room_decay2": {
+        "flip": "ramp",
+        "guidance_space": "x0",
+        "final_grad_scale": 0.25,
+        "contrast": {"real level shift": "step", "real ESA Point / Global": "spike"},
+        "contrast_only": True,
+        "contrast_headroom": True,
+        "lam_contrast": 0.33,
+        "contrast_decay": 2.0,
+        "mask": True,
+        "mask_dilate": 8,
+        "n_recur": 2,
+        "guidance_decay": 1.0,
+        "twin": "nosteer_flip_x0_masked",
+    },
     # Detection-oriented recipe (testbed E20): contrast targets relative to the
     # donor (the planted size is the sampled size), sizes jittered ×U(0.5, 1.5),
     # prototypes of the other kinds shifted by up to ±16 encoder steps. Same
@@ -171,6 +437,10 @@ _PHASE_KEYS = {
     "twin",
     "contrast_relative",
     "contrast_amp_jitter",
+    "contrast_headroom",
+    "contrast_donor_room",
+    "contrast_pos",
+    "contrast_polish",
 }
 
 
@@ -380,6 +650,7 @@ def run_fixsweep(cfg: dict[str, Any]) -> dict[str, Any]:
                     leaked[kind] = bool(lk)
             active = [k for k in KIND_ORDER if k in kind_z]
             alloc = channel_stratified_alloc(cond_ch, active, seed=fseed)
+            cplan = _contrast_plan(spec, kind_lab, fold_a, fold_id, x_a, ch_a, scaler, KIND_ORDER)
             blob = np.load(cache, allow_pickle=True) if (cache.is_file() and not force) else None
             if blob is not None and "key" in blob.files and str(blob["key"]) == cache_key:
                 x, h = np.asarray(blob["x"]), np.asarray(blob["h"])
@@ -388,6 +659,19 @@ def run_fixsweep(cfg: dict[str, Any]) -> dict[str, Any]:
                 # mask rows stay False for slices without a contrast target: those
                 # rows are whole-window edits (``mask_rows`` records which is which)
                 masks = np.zeros(x_cond.shape, dtype=bool) if bool(spec.get("mask")) else None
+                flips: dict[str, float] = {}
+                if bool(spec.get("contrast_donor_room")):
+                    from anogen.shell.contrast import assign_donors_by_room
+                    from anogen.shell.realism import channel_span_normalize
+
+                    if span_scaler is None:
+                        raise ValueError("contrast_donor_room needs the S0 minmax scaler")
+                    alloc = assign_donors_by_room(
+                        alloc,
+                        np.median(channel_span_normalize(x_cond, cond_ch, span_scaler), axis=1),
+                        cond_ch,
+                        {k: float(np.median(p["amplitudes"])) for k, p in (cplan or {}).items()},
+                    )
                 print(f"fixsweep {vname} fold={fold_id}", flush=True)
                 torch.manual_seed(fseed)
                 x, h = _generate_slices(
@@ -407,14 +691,16 @@ def run_fixsweep(cfg: dict[str, Any]) -> dict[str, Any]:
                     prefix=context[0] if (context is not None and bool(spec.get("burnin")) and not bool(spec.get("start_from_noise"))) else None,
                     suffix=context[1] if (context is not None and bool(spec.get("burnin")) and str(spec.get("context", "before")) == "both" and not bool(spec.get("start_from_noise"))) else None,
                     proto_shift_max=int(spec.get("proto_shift_max", 0) or 0),
-                    contrast=_contrast_plan(
-                        spec, kind_lab, fold_a, fold_id, x_a, ch_a, scaler, KIND_ORDER
-                    ),
+                    contrast=cplan,
                     mask_out=masks,
                     mask_dilate=int(spec.get("mask_dilate", 8)),
                     no_steer=bool(spec.get("no_steer", False)),
+                    span_scaler=span_scaler,
+                    flips_out=flips,
                 )
                 extra_npz = {"mask": masks, "mask_rows": masks.any(axis=1)} if masks is not None else {}
+                if flips:
+                    extra_npz["contrast_flipped"] = np.asarray(json.dumps(flips))
                 np.savez_compressed(
                     cache,
                     x=x,
@@ -579,6 +865,8 @@ def _generate_slices(
     mask_out: np.ndarray | None = None,
     mask_dilate: int = 8,
     no_steer: bool = False,
+    span_scaler: Any = None,
+    flips_out: dict[str, float] | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """``kindmix._stratified`` with per-donor arrays (prefix) sliced per kind.
 
@@ -631,6 +919,7 @@ def _generate_slices(
                 x0.shape[1],
                 plan["amplitudes"],
                 rng=np.random.default_rng(seed + 53 * (1 + kind_order.index(kind))),
+                pos_range=None if plan.get("pos_range") is None else tuple(plan["pos_range"]),
             )
             # separate streams, so positions and masks match the no-steer twin's
             if plan.get("jitter") is not None:
@@ -638,12 +927,25 @@ def _generate_slices(
                 delta = delta * np.random.default_rng(seed + 71 * (1 + kind_order.index(kind))).uniform(
                     lo_j, hi_j, len(idx)
                 )
+            if plan.get("headroom"):
+                if span_scaler is None:
+                    raise ValueError("contrast_headroom needs the S0 minmax scaler")
+                from anogen.shell.contrast import fit_to_headroom
+                from anogen.shell.realism import channel_span_normalize
+
+                delta, flipped = fit_to_headroom(
+                    delta, channel_span_normalize(x0[idx], ch[idx], span_scaler), wts
+                )
+                if flips_out is not None:
+                    flips_out[kind] = float(flipped.mean())
             if plan.get("relative"):
                 sc = kw.get("scaler")
                 xs = sc.transform(x0[idx], ch[idx]) if sc is not None else np.asarray(x0[idx], dtype=np.float64)
                 delta = delta + (np.asarray(xs, dtype=np.float64) * wts).sum(axis=1)
             if not no_steer:  # under no_steer the plan only fixes positions and masks
                 kw.update(contrast_weights=wts, contrast_target=delta, lam_contrast=plan["lam"])
+                if plan.get("polish") is not None:
+                    kw.update(polish_nu=float(plan["polish"]), polish_reproject=True)
             if mask_out is not None:
                 m = contrast_mask(plan["kind"], c_pos, x0.shape[1], dilate=int(mask_dilate))
                 kw["anomaly_mask"] = m
@@ -931,6 +1233,13 @@ def _contrast_plan(
             # whatever the donor does there (absolute targets plant δ − w·donor)
             "relative": bool(spec.get("contrast_relative", False)),
             "jitter": None if jitter is None else (float(jitter[0]), float(jitter[1])),
+            # headroom: flip the sampled sign into the side the donor can hold
+            "headroom": bool(spec.get("contrast_headroom", False)),
+            # pos: narrow where the position falls, per kind, as width fractions
+            "pos_range": (spec.get("contrast_pos") or {}).get(kind),
+            # polish: SDEdit pass for this kind only, so a kind that needs its
+            # texture re-rendered does not cost the kinds that do not
+            "polish": (spec.get("contrast_polish") or {}).get(kind),
         }
     return plan
 

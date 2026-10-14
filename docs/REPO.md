@@ -147,7 +147,10 @@ Div is always `coverage.mean_pairwise_distance` on fold-0 / single 1536 gallery 
 | Hash knobs (last Tweedie / 20 DDIM / clip ∇) | `phases/hashfix.py` | `docs/hashfix/` |
 | Raw-window realism audit | `phases/realism.py` | `docs/realism/` |
 | Envelope eyeballs (real vs c1 vs hashfix) | `scripts/plot_realism_eyes.py` | `docs/realism_eyes/` |
-| Generations per targeted kind | `scripts/plot_c1_by_kind.py` | `docs/c1_by_kind/`, `docs/chanmix_by_kind/` |
+| Generations per targeted kind | `scripts/plot_c1_by_kind.py` | `docs/c1_by_kind/`, `docs/chanmix_by_kind/`, `docs/contrast_only_by_kind/`, `docs/contrast_masked_by_kind/` |
+| Fix-sweep variants vs real, by kind | `scripts/plot_fixsweep_eyes.py` | `docs/fixsweep_eyes/` (ESA_RUN_2026-10-06 §4b), `docs/fixsweep_eyes_best/` (§9.4) |
+| Many draws of one kind per variant | `scripts/plot_kind_grid.py` | `docs/kind_grid_best/` (ESA_RUN_2026-10-06 §9) |
+| Fix-sweep positions and metric ratios | `scripts/plot_fixsweep.py` | `docs/fixsweep/` |
 | Downstream detector | `phases/augdetect.py` | `docs/augdetect/` |
 | λ_shell=0 / no-steer | `phases/ablate_lambda.py` | `docs/ablate_lambda/` (copy; also `results/shell_ablate_lambda/plots/`) |
 

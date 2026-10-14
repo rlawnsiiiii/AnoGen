@@ -77,3 +77,28 @@ above is indicative only. These blocks compare inside a single run.
 | genias | 0.3166 | 1.6048 | 0.1946 | 1.0856 |
 | posthoc | 0.3193 | 1.9511 | 0.2671 | 1.2061 |
 | time_both_hybrid_needles |  | 2.6024 |  |  |
+
+## Detection utility (`results/shell_augdetect`)
+
+Event recall at 1 % nominal FAR, median over seeds x folds, each arm being
+the real training anomalies plus that generator's windows (`real_only` is
+the no-augmentation control). `no-leak` drops fold 0, which holds the only
+level-shift event. `fused` adds the label-free diffusion score
+(`results/shell_diffdetect`). `novelty` is the share of generated windows
+outside the nominal set at q = 0.99, from the filtered run. Paired
+intervals and the claims they support: ESA_RUN_2026-10-06.md §6.
+
+| arm | event recall | no-leak | fused | flipped | AP | rare FAR | novelty |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| real_only | 0.591 | 0.591 | 0.545 | 0.549 | 0.472 | 0.026 |  |
+| genias+real | 0.545 | 0.545 | 0.545 | 0.549 | 0.469 | 0.027 | 0.028 |
+| posthoc+real | 0.591 | 0.591 | 0.545 | 0.558 | 0.472 | 0.029 | 0.507 |
+| unguided+real | 0.500 | 0.500 | 0.545 | 0.500 | 0.465 | 0.023 | 0.647 |
+| c1_plus_real | 0.636 | 0.714 | 0.636 | 0.642 | 0.479 | 0.051 | 0.813 |
+| fixsweep:flip_x0_contrast_masked+real | 0.636 | 0.714 | 0.591 | 0.633 | 0.475 | 0.028 | 0.903 |
+| fixsweep:flip_x0_contrast_masked_div+real | 0.636 | 0.714 | 0.591 | 0.633 | 0.474 | 0.030 | 0.903 |
+| fixsweep:nosteer_flip_x0_masked+real | 0.545 | 0.571 | 0.545 | 0.539 | 0.468 | 0.024 | 0.265 |
+| fixsweep:flip_x0_contrast_only+real | 0.636 | 0.714 | 0.727 | 0.667 | 0.483 | 0.059 | 0.883 |
+| fixsweep:flip_x0_final025_recur2_decay1+real | 0.727 | 0.714 | 0.682 | 0.682 | 0.472 | 0.088 | 0.903 |
+| fixsweep:nosteer_flip_x0_recur2+real | 0.500 | 0.500 | 0.545 | 0.519 | 0.467 | 0.024 | 0.481 |
+| geniasfair:genias_fair+real | 0.545 | 0.545 | 0.545 | 0.549 | 0.469 | 0.027 | 0.046 |

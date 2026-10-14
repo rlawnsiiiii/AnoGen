@@ -33,5 +33,9 @@ Label roles (Anomaly vs Rare Event vs nominal): [STEERING_MATH.md](STEERING_MATH
 | realism | Raw-window published fidelity measures + separately labeled diagnostics. Reads existing galleries only; keeps `feature_pack_v1`/S4 frozen. Isolated `results/shell_realism/`. Docs: [REALISM.md](REALISM.md) |
 | chanmix | `hybrid_needles` re-run with channel-stratified kind allocation, so each targeted kind sees all six channels instead of a contiguous block. Same model, unconfounded measurement. `scripts/run_chanmix.py`, isolated `results/shell_chanmix/`. Docs: [CHANMIX.md](CHANMIX.md) |
 | augdetect | Dev-only supervised augmentation of a 1-D CNN. Isolated `results/shell_augdetect/`. Docs: [AUGDETECT.md](AUGDETECT.md) |
+| fixsweep | 23 position-bias / guidance variants of C1 with paired CIs against `c1_repro` and against each variant's no-steer twin. Isolated `results/shell_fixsweep/`. Docs: [POSITION_BIAS.md](POSITION_BIAS.md), results in [ESA_RUN_2026-10-06.md](ESA_RUN_2026-10-06.md) §4 |
+| diffdetect | Label-free detection with the nominal diffusion score (causal / flip-ramp / top-16 multiscale). Isolated `results/shell_diffdetect/`. Results in [ESA_RUN_2026-10-06.md](ESA_RUN_2026-10-06.md) §5 |
+| geniasfair | GenIAS with the published objective (learned ψ, Alg. 2 whole-window patch), as an honest baseline beside the locked S3 gallery. Isolated `results/shell_genias_fair/`. Results in [ESA_RUN_2026-10-06.md](ESA_RUN_2026-10-06.md) §6 |
+| s1v2 | Retrain with a geometric schedule / v-prediction / EMA and an optional z-score scaler. Isolated `results/shell_s1_v2/`. Not run on ESA, see [ESA_RUN_2026-10-06.md](ESA_RUN_2026-10-06.md) §7 |
 
 CausalDiscovery path (read-only): `/mnt/extras/SSD/AI/CausalDiscovery`.

@@ -333,6 +333,10 @@ def guided_ddim(
     contrast_weights: np.ndarray | None = None,
     contrast_target: np.ndarray | None = None,
     lam_contrast: float = 0.0,
+    contrast_decay: float = 0.0,
+    polish_nu: float = 0.0,
+    polish_steps: int = 10,
+    polish_reproject: bool = False,
     n_recur: int = 1,
     anomaly_mask: np.ndarray | None = None,
     guidance_decay: float = 0.0,
@@ -405,6 +409,21 @@ def guided_ddim(
                        projection edit lam_contrast·(x̂₀·w − δ)·w/‖w‖² (λ = 1
                        lands exactly on w·x̂₀ = δ). A prototype-free type
                        target with no position collapse.
+    contrast_decay     weight on that projection along the chain, (σ_t/σ_start)^decay
+                       normalized to mean 1, like ``guidance_decay``. 0 keeps the
+                       frozen full-strength edit at every step, which lands the
+                       target in one step and then spends the rest of the chain
+                       fighting a score trained only on nominal windows: the
+                       segment ends with the right mean and 20× the real texture
+                       roughness (ESA_RUN_2026-10-06 §4b). A positive decay plants
+                       the step while the window is still noisy and leaves the
+                       last steps free to harmonize it.
+    polish_nu          SDEdit pass after the guided chain: re-noise to
+                       t = polish_nu·(T−1) and run ``polish_steps`` unguided DDIM
+                       steps back to 0, under the same mask. 0 is off (frozen).
+    polish_reproject   re-apply the contrast projection once after that pass, so
+                       the amplitude the polish denoised away comes back without
+                       the chain getting another 50 steps to roughen it.
     lam_repel          particle-guidance repulsion between samples of the same
                        call (Corso et al., ICLR 2024): RBF kernel on encoder
                        embeddings, median bandwidth. With repel_project the
@@ -532,6 +551,7 @@ def guided_ddim(
     n_correct = max(1, int(n_correct))
     times = np.linspace(t_start, 0, max(1, int(ddim_steps)), dtype=int)
     gweights = guidance_weights(sched.alpha_bar.detach().cpu().numpy(), times, guidance_decay)
+    cweights = guidance_weights(sched.alpha_bar.detach().cpu().numpy(), times, contrast_decay)
     use_anom = ref_a is not None and lam_anom != 0.0
     use_rare = ref_r is not None and lam_rare != 0.0
     use_cls = classifier is not None and lam_cls != 0.0
@@ -626,7 +646,9 @@ def guided_ddim(
                     # Contrast edit is in x̂₀ units; scaled by √ᾱ_next below so that
                     # subtracting it from x_{t'} moves the implied x̂₀ by exactly it.
                     c_edit = (
-                        F.pad(contrast_edit(x0_win), (crop, crop_end)) if (use_contrast and active) else None
+                        F.pad(contrast_edit(x0_win) * float(cweights[i]), (crop, crop_end))
+                        if (use_contrast and active)
+                        else None
                     )
                     if float(lam_parent) != 0.0 and not start_from_noise and active:
                         pull = _parent_pull(
@@ -646,7 +668,7 @@ def guided_ddim(
                     if gweights[i] != 1.0:
                         total = total * float(gweights[i])
                     if use_contrast and active:
-                        total = total + contrast_edit(leaf)
+                        total = total + contrast_edit(leaf) * float(cweights[i])
                     if float(lam_parent) != 0.0 and not start_from_noise and active:
                         total = total + float(lam_parent) * _parent_pull(
                             leaf.detach() - xt0[..., win], kind=parent_leash, delta=parent_delta
@@ -683,6 +705,40 @@ def guided_ddim(
                 xt = (ratio.sqrt() * xt + (1.0 - ratio).sqrt() * torch.randn_like(xt)).detach()
         if t_prev < 0:
             break
+    t_pol = int(round(float(polish_nu) * (n_times - 1)))
+    if t_pol > 0:
+        # SDEdit (Meng et al., ICLR 2022): re-noise the finished sample and let the
+        # *unguided* denoiser walk it back down. Guidance leaves two things in the
+        # window: the slow component it was asked for, and broadband residue from
+        # fighting a score trained only on nominal data. A short free chain from a
+        # small t keeps the first (large and slow survives weak noise) and re-renders
+        # the second as nominal texture. ν_polish trades realism against fidelity.
+        p_times = np.linspace(t_pol, 0, max(1, int(polish_steps)), dtype=int)
+        with torch.no_grad():
+            tb = torch.full((xt.size(0),), t_pol, device=device_t, dtype=torch.long)
+            xt = q_sample(xt, tb, sched)[0]
+            for j, tp in enumerate(p_times):
+                tp_next = p_times[j + 1] if j + 1 < len(p_times) else -1
+                tb = torch.full((xt.size(0),), int(tp), device=device_t, dtype=torch.long)
+                ab = sched.alpha_bar[int(tp)]
+                if gen_mask is not None:  # the donor context stays exact
+                    xt = torch.where(gen_mask, xt, q_sample(xt0, tb, sched)[0])
+                eps = model(xt, tb, cb)
+                x0_hat = (xt - (1.0 - ab).sqrt() * eps) / ab.sqrt()
+                if tp_next < 0 or int(tp_next) == int(tp):
+                    xt = x0_hat
+                    break
+                a_next = sched.alpha_bar[int(tp_next)]
+                xt = a_next.sqrt() * x0_hat + (1.0 - a_next).sqrt() * eps
+            if polish_reproject and use_contrast:
+                # The polish denoises the step along with the junk, so put the
+                # amplitude back: one block-constant offset, no further chain to
+                # fight it. The discontinuity this leaves at the segment edge is
+                # the feature -- real level shifts are edge/interior ~15.
+                e = F.pad(contrast_edit(xt[..., win]), (crop, crop_end))
+                xt = xt - (e * gen_mask.to(e.dtype) if gen_mask is not None else e)
+            if gen_mask is not None:
+                xt = torch.where(gen_mask, xt, xt0)
     # Occupancy uses the last predicted x0 energy (before the final subtract).
     samples = xt[..., win].squeeze(1).detach().cpu().numpy().astype(np.float32)
     if scaler is not None:

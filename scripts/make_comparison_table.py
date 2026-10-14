@@ -189,8 +189,49 @@ def main() -> None:
         "",
     ]
     md += _within_run(root)
+    md += _detection(root)
     (root / "docs/COMPARISON.md").write_text("\n".join(md))
     print("\n".join(md[9:]))
+
+
+def _detection(root: Path) -> list[str]:
+    """Downstream usefulness, which none of the distances above measures."""
+    path = root / "results/shell_augdetect/summary.json"
+    if not path.is_file():
+        return []
+    blob = json.loads(path.read_text())
+    out = [
+        "## Detection utility (`results/shell_augdetect`)",
+        "",
+        "Event recall at 1 % nominal FAR, median over seeds x folds, each arm being",
+        "the real training anomalies plus that generator's windows (`real_only` is",
+        "the no-augmentation control). `no-leak` drops fold 0, which holds the only",
+        "level-shift event. `fused` adds the label-free diffusion score",
+        "(`results/shell_diffdetect`). `novelty` is the share of generated windows",
+        "outside the nominal set at q = 0.99, from the filtered run. Paired",
+        "intervals and the claims they support: ESA_RUN_2026-10-06.md §6.",
+        "",
+        "| arm | event recall | no-leak | fused | flipped | AP | rare FAR | novelty |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|",
+    ]
+    filt = root / "results/shell_augdetect_filter/summary.json"
+    rates = {}
+    if filt.is_file():
+        rates = {
+            k: v.get("synth_pass_rate_mean")
+            for k, v in json.loads(filt.read_text())["summary"].items()
+        }
+    for arm, v in blob["summary"].items():
+        rate = rates.get(arm)
+        out.append(
+            f"| {arm.replace('|', '/')} | {v['event_recall_median']:.3f} | "
+            f"{v['event_recall_noleak_median']:.3f} | {v['event_recall_fused_median']:.3f} | "
+            f"{v['event_recall_flipped_mean']:.3f} | {v['ap_mean']:.3f} | "
+            f"{v['rare_far_mean']:.3f} | "
+            f"{'' if rate is None or rate != rate else f'{rate:.3f}'} |"
+        )
+    out.append("")
+    return out
 
 
 def _within_run(root: Path) -> list[str]:
