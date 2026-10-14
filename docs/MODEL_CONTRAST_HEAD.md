@@ -453,6 +453,98 @@ about a twentieth of the time.
 Galleries land in `results/shell_fixsweep/<variant>_fold<f>.npz` with `x`,
 `channel_idx`, `kind_alloc` and, for masked variants, the bin-level `mask`.
 
+## The sampler, in equations
+
+Both models run the same chain. Let ε_θ be the frozen S1 causal denoiser
+(trained on **nominal** windows only), c the channel index, ᾱ_t the schedule,
+and T = 200. Sampling starts at t₀ = ν(T−1) = 39 with ν = 0.2 — the donor is
+noised only one fifth of the way, so what comes out is an *edit* of the donor,
+not a fresh draw — and runs 50 DDIM steps to t = 0.
+
+One step, with `guidance_space: "x0"`:
+
+    ε    = ε_θ(x_t, t, c)                          (FlipEnsemble, below)
+    x̂₀   = (x_t − √(1−ᾱ_t)·ε) / √ᾱ_t              DDIM's current guess of the clean window
+    E    = the edit, see below                      in x̂₀ units
+    x_{t'} = √ᾱ_{t'}·(x̂₀ − E) + √(1−ᾱ_{t'})·ε
+
+`flip: "ramp"` replaces the first line with a FlipEnsemble, which is what
+removes the causal denoiser's start-of-window bias without retraining:
+
+    ε[i] = r[i]·ε_θ(x_t)[i] + (1−r[i])·flip(ε_θ(flip x_t))[i],   r[i] = i/(L−1)
+
+`guidance_space: "x0"` means E is computed as a function of x̂₀ and subtracted
+there, so no gradient is backpropagated through ε_θ. The last step applies
+`final_grad_scale`·E instead of E.
+
+### C1's edit: a gradient in encoder space
+
+Let e(·) be the frozen `time_both` encoder and A the event-OOF embeddings of
+the real anomalies of the window's assigned kind. C1 descends
+
+    h_soft(z, A) = −τ · log Σ_{a∈A} exp(−‖z − e(a)‖² / τ),      z = e(x̂₀)
+
+a soft minimum of the distance to the reference set, plus a band term that
+pulls the window's energy toward the quantile Q_q. The edit is the normalized
+gradient, λ = 0.3, clipped:
+
+    E = λ · ∇_{x̂₀} h / ‖∇_{x̂₀} h‖,   clipped to c_max
+
+Nothing in this says what a spike or a step *is*. The shape is whatever the
+encoder's embedding of the reference implies — **and so is the position**,
+because every real anomaly window in ESA-ADB is cut centred on its event.
+
+### This model's edit: an exact projection onto a linear constraint
+
+For the two kinds with a functional, λ_anom = 0: the encoder term is off
+entirely. The objective is a scalar linear constraint
+
+    d(x) = ⟨w, x⟩ = Σ_t w[t]·x[t]  →  δ,      Σ_t w[t] = 0
+
+with w built from the morphology (`contrast_weights`) and δ resampled from
+the real anomalies of that kind. The edit is the exact projection
+
+    E = (d(x̂₀) − δ) · w / ‖w‖²
+
+which lands on the target in one step, since
+
+    d(x̂₀ − E) = ⟨w, x̂₀⟩ − (d − δ)·⟨w, w⟩/‖w‖² = d − (d − δ) = δ
+
+A gradient step on f = (d − δ)² would give ∇f = 2(d − δ)w, i.e. the same
+direction with step size η; the projection is that step at η = 1/(2‖w‖²), the
+Newton step for a quadratic. Using it rather than a fixed η matters because
+‖w‖² depends on where the contrast sits: for `step_head` at split p,
+
+    ‖w‖² = 1/p + 1/(W − p)
+
+which runs 0.0333 at p = 32 to 0.0133 at p = 92 over the allowed range alone.
+A fixed step size would plant amplitudes differing by that factor; the
+projection is scale-free.
+
+Three things are sampled per window and they are the model's entire freedom:
+
+    p ~ U(pos_range · W)            where the contrast sits
+    δ ~ empirical{measure_contrast(kind, real anomalies)}   how big it is
+    mirror ~ Bernoulli(0.5)         which end carries it (level shift only)
+
+The remaining two kinds have no functional, so they keep C1's h_soft edit
+unchanged.
+
+### What `nomask` drops
+
+`..._head_sharp` additionally runs RePaint: with a binary mask m,
+
+    x_t ← m ⊙ x_t + (1 − m) ⊙ q(x₀^donor, t)      at every step
+    x   ← m ⊙ x + (1 − m) ⊙ x₀^donor              at the end
+
+so only the anomaly's own bins are ever generated and m is exportable as a
+bin-level label. `..._sharp_nomask` removes both lines. The chain then evolves
+the whole window, which is why the edit footprint goes from 0.9% of a
+Point/Global window to 28.7% (ESA_RUN §11.3), and — unexpectedly — why the
+morphology improves: the mask had been forcing a discontinuity at the seam
+between generated and donor bins that the chain had to resolve inside the
+masked region, and that was the source of the texture defect (§11.4).
+
 ## The two §10 switches
 
 `contrast_mirror: {kind: frac}` time-reverses the contrast and its mask for a
