@@ -1,0 +1,449 @@
+% AnoGen / GenFSDiff briefing deck.
+%
+%   make            rebuild figures and compile
+%   make slides     compile only (figures unchanged)
+%
+% Figures come from slides/141026/make_figs.py, which reads the run outputs in
+% results/. Every number below is sourced in docs/ESA_RUN_2026-10-06.md §11 and
+% docs/MODEL_CONTRAST_HEAD.md; re-measure the morphology rows with
+% scripts/measure_morphology.py.
+
+% 9pt: a 16x9cm Beamer page is small relative to the type, and these frames are
+% dense. Raise it if you cut content.
+\documentclass[aspectratio=169,9pt,xcolor=table]{beamer}
+
+\usepackage{amsmath,amssymb,booktabs,graphicx}
+\usepackage[most]{tcolorbox}
+\usepackage{tikz}
+
+\usetheme{default}
+\setbeamertemplate{navigation symbols}{}
+
+% ---------------------------------------------------------------- palette
+\definecolor{ink}{HTML}{16304A}      % body text, headings
+\definecolor{accent}{HTML}{1F6FB4}   % our emphasis / "generated"
+\definecolor{good}{HTML}{1A7A4C}     % results in our favour
+\definecolor{bad}{HTML}{9B1C1C}      % caveats / "real"
+\definecolor{mute}{HTML}{5C6B7A}     % secondary text
+\definecolor{hair}{HTML}{D6DDE4}     % rules
+\definecolor{band}{HTML}{F2F6FA}     % table striping
+
+\newcommand{\gd}[1]{\textcolor{good}{\textbf{#1}}}
+\newcommand{\bd}[1]{\textcolor{bad}{#1}}
+\newcommand{\mt}[1]{\textcolor{mute}{#1}}
+
+% ------------------------------------------------------------------ theme
+\setbeamercolor{normal text}{fg=ink}
+\setbeamercolor{frametitle}{fg=ink}
+\setbeamercolor{itemize item}{fg=accent}
+\setbeamercolor{itemize subitem}{fg=accent}
+\setbeamerfont{frametitle}{size=\Large,series=\bfseries}
+\setbeamerfont{framesubtitle}{size=\small}
+\setbeamercolor{framesubtitle}{fg=mute}
+\setbeamertemplate{itemize item}{\raisebox{0.15ex}{\scriptsize$\bullet$}}
+\setbeamertemplate{itemize subitem}{\raisebox{0.15ex}{\tiny$\bullet$}}
+\setlength{\leftmargini}{1.1em}
+\setlength{\leftmarginii}{1.1em}
+
+% Left-aligned frame title with a subtitle and a hairline under it.
+% Beamer already indents this template to the body margin, so \hsize here is the
+% body width (14cm) and no extra \hspace is wanted.
+\makeatletter
+\setbeamertemplate{frametitle}{%
+  \vskip0.3em%
+  \begin{minipage}{\hsize}%
+    \raggedright
+    {\usebeamerfont{frametitle}\usebeamercolor[fg]{frametitle}\insertframetitle}%
+    \ifx\insertframesubtitle\@empty\else
+      \\[0.1em]{\usebeamerfont{framesubtitle}%
+        \usebeamercolor[fg]{framesubtitle}\insertframesubtitle}%
+    \fi
+  \end{minipage}%
+  \vskip0.3em%
+  {\color{hair}\rule{\hsize}{0.4pt}}%
+  \vskip-0.3em%
+}
+\makeatother
+
+% A box for an equation or a definition. #1 = title, #2 = colour.
+\newtcolorbox{eqbox}[2][accent]{%
+  colback=#1!5, colframe=#1!35, boxrule=0.5pt, arc=2pt,
+  left=5pt, right=5pt, top=2pt, bottom=2pt,
+  title={\color{ink}\bfseries\small #2}, coltitle=ink,
+  fonttitle=\bfseries, colbacktitle=#1!5, titlerule=0pt,
+  attach title to upper=\par\vspace{2pt}}
+
+\newcommand{\tablestripe}{\rowcolors{2}{band}{white}}
+
+% ------------------------------------------------------------------ meta
+\title{AnoGen / GenFSDiff}
+\subtitle{Few-shot steered diffusion for satellite-telemetry anomalies}
+\date{14 October 2026}
+
+\begin{document}
+
+% ======================================================= 1. title
+\begin{frame}[plain]
+  \vspace{0.3cm}
+  {\usebeamerfont{title}\Huge\bfseries\color{ink}GenFSDiff}\\[0.45em]
+  {\large\color{accent}Few-shot steered diffusion for satellite-telemetry anomalies}\\[0.35em]
+  {\small\color{mute}ESA-ADB Mission 1, channels 41--46}
+
+  \vspace{0.45cm}
+  {\color{hair}\rule{\textwidth}{0.4pt}}
+  \vspace{0.25cm}
+
+  \begin{itemize}\setlength\itemsep{0.35em}
+    \item \textbf{Problem.} Seven years of telemetry per channel hold only \textbf{22}
+          labelled anomaly events. \\ Too few anomalies to train a reasonable detector.
+    \item \textbf{Approach.} A generative model to generate an anomaly of a chosen kind (+size and position).
+    \item \textcolor{good}{\textbf{Result.} A detector trained on real anomalies plus generated ones improves its performance.}
+  \end{itemize}
+
+  \vfill
+  {\footnotesize\color{mute}14 October 2026}
+\end{frame}
+
+% ======================================================= 2. the data
+\begin{frame}{The data: ESA-ADB Mission 1}{}
+
+  \vspace{0.3cm}
+  \centering
+  \tablestripe
+  \small\renewcommand{\arraystretch}{1.2}
+  \begin{tabular}{@{}l l r r@{}}
+    \toprule
+    the four kinds we generate & what it looks like & windows & events \\
+    \midrule
+    Point / Global            & one sample far outside the normal range      &  18 &  3 \\
+    level shift               & the signal steps to a new level and stays    &   6 &  1 \\
+    global subsequence        & a long stretch outside the normal range      & 636 & 17 \\
+    local subsequence         & a stretch of normal values, wrong for the context & 12 & 2 \\
+    \bottomrule
+  \end{tabular}
+
+  \vspace{0.18cm}
+  \includegraphics[width=\textwidth]{figs/kinds.pdf}
+
+  \vspace{0.1cm}
+  \raggedright
+  {\scriptsize\color{mute}}
+\end{frame}
+
+% ======================================================= 3. diffusion primer
+\begin{frame}{What are diffusion models?}{The framework behind e.g. image generators;
+  we apply it to telemetry}
+
+  \centering
+  \begin{tikzpicture}
+    \node[inner sep=0] (strip) {\includegraphics[width=9.8cm]{figs/diffusion_strip.pdf}};
+    % reverse process, above the strip
+    \draw[->,thick,accent] ([yshift=5mm]strip.north east) -- ([yshift=5mm]strip.north west);
+    \node[above,accent,font=\small] at ([yshift=6mm]strip.north)
+      {reverse: a trained neural network $\varepsilon_\theta$ removes it one step at a time
+      };
+    % forward process, below
+    \draw[->,thick,mute!60] ([yshift=-7mm]strip.south west) -- ([yshift=-7mm]strip.south east);
+    \node[below,mute,font=\small] at ([yshift=-7.5mm]strip.south)
+      {forward: add Gaussian noise --- fixed, nothing is learned};
+    \node[below left,font=\scriptsize] at ([xshift=10mm]strip.south west) {$x_0$\ \ data};
+    \node[below right,font=\scriptsize] at ([xshift=-10mm]strip.south east)
+      {$x_T$\ \ pure noise};
+  \end{tikzpicture}
+
+  \vspace{0.35cm}
+
+  \begin{columns}[T]
+    \begin{column}{0.52\textwidth}
+      \begin{eqbox}{Forward process $q(x_t \mid x_0)$,\\ model's guess of the original $\hat x_0$:}
+        \small
+        \vspace{-0.6em}
+        \begin{align*}
+          q(x_t \mid x_0) &= \mathcal{N}\bigl(\sqrt{\bar\alpha_t}\,x_0,\;
+                             (1-\bar\alpha_t)I\bigr)\\[0.1em]
+          \hat x_0 &= \bigl(x_t - \sqrt{1-\bar\alpha_t}\,
+                      \varepsilon_\theta(x_t,t)\bigr)\big/\sqrt{\bar\alpha_t}
+        \end{align*}
+        \vspace{-1.1em}
+      \end{eqbox}
+    \end{column}
+    \begin{column}{0.45\textwidth}
+      \begin{itemize}\setlength\itemsep{0.25em}\small
+        \item $\bar\alpha_t$: a fixed schedule \\--- how much of the
+              original signal is left\\ at step $t$.
+        \item $\varepsilon_\theta$: trained to predict the noise that was added.
+      \end{itemize}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% ======================================================= 4. sampling
+\begin{frame}{How a (nominal) sample is generated}{Start from noise, predict the added noise, and remove it. Repeat.}
+
+  \begin{eqbox}[ink]{The loop, as implemented}
+    \renewcommand{\arraystretch}{1.6}
+    \centering
+    \resizebox{0.85\linewidth}{!}{%
+    \begin{tabular}{@{}l@{\hspace{2em}}l@{}}
+      $x_T \sim \mathcal{N}(0,\,I)$
+        & \mt{draw pure noise} \\
+      \multicolumn{2}{@{}l@{}}{\textbf{for} $t = T\!-\!1,\;\dots,\;0$:} \\
+      \quad $\varepsilon \leftarrow \varepsilon_\theta(x_t,\,t,\,c)$
+        & \mt{one network call: the noise it sees in $x_t$} \\
+      \quad $\hat x_0 \leftarrow \bigl(x_t - \sqrt{1-\bar\alpha_t}\,\varepsilon\bigr)
+             \big/\sqrt{\bar\alpha_t}$
+        & \mt{undo the forward process: guess of $x_0$} \\
+      \quad $x_{t-1} \leftarrow \sqrt{\bar\alpha_{t-1}}\,\hat x_0
+             + \sqrt{1-\bar\alpha_{t-1}}\,\varepsilon$
+        & \mt{\emph{same} noise back, at level $t-1$} \\
+      \quad $t \leftarrow t-1$
+        & \mt{go to the next step} \\
+      \textbf{return} $x_0$
+    \end{tabular}}
+    \vspace{-0.1em}
+  \end{eqbox}
+\end{frame}
+
+% ======================================================= 5. our setting
+\begin{frame}{Our setting: Steer the sample to generate an anomaly}{}
+
+  \begin{eqbox}{One sampling step with the steering edit $\mathbf{E}$}
+    \vspace{-0.3em}
+    \[
+      \color{ink}\boldsymbol{x_{t-1} \;=\; \sqrt{\bar\alpha_{t-1}}\,
+      \bigl(\hat x_0 - \mathbf{E}\bigr) \;+\; \sqrt{1-\bar\alpha_{t-1}}\,\varepsilon}
+    \]
+    \vspace{-0.9em}
+  \end{eqbox}
+  \begin{center}
+  $\mathbf{E}$ is the only thing we add --- the denoiser itself is never retrained.
+  \end{center}
+  \vspace{0.1cm}
+  {\color{accent}
+
+    \vspace{0.1cm}
+    $\mathbf{E}$ should have the following effects:
+    \begin{itemize}
+      \item make the sample unusual enough to be an anomaly
+      \item give it the shape and size of the anomaly kind we asked for
+    \end{itemize}
+    \vspace{0.1cm}
+    Now, what is $\mathbf{E}$?
+  \par}
+\end{frame}
+
+% ======================================================= 5. how we steer
+\begin{frame}{How we steer}{Two forces, applied to the model's running guess
+  $\hat x_0$ at every step}
+
+  \begin{columns}[T]
+    \begin{column}{0.615\textwidth}
+      \begin{eqbox}{1. Be as unusual as normal data ever gets --- the \emph{shell}}
+        \footnotesize
+        \vspace{-0.75em}
+        \begin{align*}
+          h(x) &= -\tau \log \textstyle\sum_{r \in R}
+                  e^{-\lVert e(x) - e(r)\rVert^2/\tau}
+                  &&\text{\scriptsize how unusual $x$ is}\\[0em]
+          Q &= \text{99th percentile of } h,\ \text{held-out nominal}
+                  &&\text{}\\[0em]
+          \text{shell} &= \bigl\{\, x \;:\; \lvert h(x) - Q\rvert \le \delta \,\bigr\}
+                  &&\text{}
+        \end{align*}
+        \vspace{-1.6em}
+      \end{eqbox}
+
+      \vspace{0.02cm}
+      \begin{eqbox}[good]{2. Have the shape and size we asked for}
+        \footnotesize
+        \vspace{-0.55em}
+        \[
+          \begin{gathered}
+            \langle w,\, x\rangle \;=\; \textstyle\sum_t w[t]\,x[t]
+            \;\longrightarrow\; a,
+            \qquad \textstyle\sum_t w[t] = 0 \\[0.15em]
+            \text{\scriptsize where $w$ encodes the shape and $a$ the size}
+          \end{gathered}
+        \]
+        \vspace{-1.2em}
+      \end{eqbox}
+
+      \vspace{0.02cm}
+      \begin{eqbox}[ink]{Together, the edit $\mathbf{E}$}
+        \footnotesize
+        \vspace{-0.9em}
+        \[
+          \mathbf{E} \;=\;
+          \underbrace{\lambda\, \nabla_{\hat x_0}\bigl(h(\hat x_0) - Q\bigr)^2}
+                     _{\text{\scriptsize onto the shell}}
+          \;+\;
+          \underbrace{\bigl(\langle w, \hat x_0\rangle - a\bigr)\, w
+                      \,/\, \lVert w \rVert^2}
+                     _{\text{\scriptsize to the asked-for shape}}
+        \]
+        \vspace{-1.12em}
+      \end{eqbox}
+    \end{column}
+
+    \begin{column}{0.365\textwidth}
+      \centering
+      \includegraphics[width=\textwidth]{figs/shell.pdf}
+
+      \vspace{-0.05cm}
+      \raggedright
+      {\footnotesize
+       \textbf{In words.} Make the window as unusual as the most unusual 1\% of normal
+       telemetry}
+    \end{column}
+  \end{columns}
+
+  \vspace{0.2em}
+  \noindent{\color{hair}\rule{\textwidth}{0.4pt}}\par
+  \vspace{-0.4em}
+  {\small\color{mute}
+   $e(\cdot)$ is a trained encoder.\par}
+\end{frame}
+
+% ======================================================= 6. gallery
+\begin{frame}{What the model produces}{three real windows and five generated ones, per kind}
+
+  \begin{center}
+    \includegraphics[width=0.97\textwidth]{figs/gallery.pdf}
+  \end{center}
+
+\end{frame}
+
+% ======================================================= 7. realism
+\begin{frame}{Realism and diversity}{Evaluation against other existing generators, on the
+  two metrics the GenIAS paper reports}
+
+  \begin{columns}[T]
+    \begin{column}{0.53\textwidth}
+      \begin{eqbox}{ARP --- realism}
+        \footnotesize
+        How close the \emph{real} anomalies are to their nearest generated window:
+        \vspace{-0.4em}
+        \[
+          \mathrm{ARP} = \frac{1}{1 + \frac{1}{|A|}\sum_{a \in A}
+            \min_{g \in G}\,\lVert \phi(a) - \phi(g)\rVert_2}
+        \]
+        \vspace{-1.5em}
+      \end{eqbox}
+
+      \vspace{0.06cm}
+      \begin{eqbox}[good]{EDI --- diversity}
+        \footnotesize
+       Entropy-like term of the distribution of the generated windows:
+        \vspace{-0.4em}
+        \[
+          \mathrm{EDI} = -\sum_{j=1}^{k} p_j \log p_j
+        \]
+        \vspace{-1.5em}
+      \end{eqbox}
+
+      \vspace{0.06cm}
+      {}
+    \end{column}
+
+    \begin{column}{0.44\textwidth}
+      \centering
+      \tablestripe
+      \small\renewcommand{\arraystretch}{1.5}
+      \begin{tabular}{@{}l r r@{}}
+        \toprule
+          & ARP & EDI \\
+        \midrule
+        real anomalies \mt{(target)}               & 0.792 & 1.48 \\
+        \textbf{ours}                              & \gd{0.509} & \gd{2.44} \\
+        GenIAS                                     & 0.317 & 1.14 \\
+        CutAddPaste                                & 0.323 & 1.27 \\
+        handcrafted injection                      & 0.319 & 1.31 \\
+        \bottomrule
+      \end{tabular}
+
+      \vspace{0.25cm}
+      \raggedright
+      {}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% ======================================================= 8. detection
+\begin{frame}{Does it help a detector?}{$k$ real anomalies plus $k$ generated ones, against
+  $k$ real alone. recall at 1\% false-alarm rate}
+
+  \begin{columns}[T]
+    \begin{column}{0.52\textwidth}
+      \vspace{-0.1cm}
+      \includegraphics[width=\textwidth]{figs/sweep.pdf}
+    \end{column}
+
+    \begin{column}{0.46\textwidth}
+      \tablestripe
+      \small\renewcommand{\arraystretch}{1.15}
+      \begin{tabular}{@{}r r r r@{}}
+        \toprule
+        $k$ & real only & + generated & gain \\
+        \midrule
+          8 & 0.364 & 0.545 & \gd{+0.155\,*} \\
+         16 & 0.455 & 0.591 & +0.164 \\
+         32 & 0.364 & 0.636 & \gd{+0.200\,*} \\
+         64 & 0.545 & 0.636 & \gd{+0.136\,*} \\
+        128 & 0.591 & 0.727 & +0.118 \\
+        256 & 0.591 & 0.682 & +0.109 \\
+        \bottomrule
+      \end{tabular}
+
+      \vspace{0.1cm}
+      {\scriptsize\color{mute}* 95\% confidence interval excludes zero}
+
+      \vspace{0.2cm}
+      {\small\color{good}\bfseries +0.200 event recall at $k=32$}\\
+      {\footnotesize\color{good}4.4 more events of 22 detected}
+    \end{column}
+  \end{columns}
+
+  \vspace{0.12cm}
+  \begin{itemize}\setlength\itemsep{0.08em}\small
+    \item \gd{Comparison against existing generators at $k=256$:\\ GenFSDiff 0.682 vs GenIAS 0.591, CutAddPaste 0.545.}
+  \end{itemize}
+
+  \vspace{0.04cm}
+  {\scriptsize\color{mute}
+   \textbf{The detector}: a 31k-parameter 1-D CNN on the raw window --- three convolutions
+   with SiLU activations ($1\!\to\!32$ width 7, $32\!\to\!64$ width 5, $64\!\to\!64$ width
+   5, each stride 2)
+   \textbf{Held-out anomalies:} 22 anomaly events}
+\end{frame}
+
+% ======================================================= 9. summary
+\begin{frame}{Summary, and what is not settled}
+
+  \begin{columns}[T]
+    \begin{column}{0.48\textwidth}
+      \begin{eqbox}[good]{What we showed}
+        \small
+        \begin{itemize}\setlength\itemsep{0.4em}
+          \item GenFSDiff generates synthetic anomalies of a
+                \emph{chosen} kind and size, without retraining the denoiser.
+          \item Adding them to training improves anomaly detection on
+                ESA-ADB Mission~1.
+        \end{itemize}
+      \end{eqbox}
+    \end{column}
+
+    \begin{column}{0.48\textwidth}
+      \begin{eqbox}[ink]{What is not settled}
+        \small
+        \begin{itemize}\setlength\itemsep{0.4em}
+          \item \textbf{Continuous channels only.} Discrete telemetry
+                (status flags, modes) would need e.g.\ discrete diffusion.
+          \item \textbf{One channel at a time.} Anomalies that live in
+                the relation between channels are not generated. Potential to include causality here?
+        \end{itemize}
+      \end{eqbox}
+    \end{column}
+  \end{columns}
+
+\end{frame}
+\end{document}
