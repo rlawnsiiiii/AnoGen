@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+import zlib
 from pathlib import Path
 
 import matplotlib
@@ -31,6 +32,7 @@ KINDS = (
     "real level shift",
     "real ESA global subsequence",
     "real ESA local subsequence",
+    "subsequence",
 )
 
 
@@ -144,7 +146,7 @@ def main() -> None:
             tag_g = f"generated\n{100 * (ends == 'head').mean():.0f}% head / " \
                     f"{100 * (ends == 'tail').mean():.0f}% tail\nover all {len(g)}"
         # one stream per kind, so one kind's sample does not shift another's
-        rng = np.random.default_rng(abs(hash(kind)) % (2**32))
+        rng = np.random.default_rng(zlib.crc32(kind.encode()))
         g = g[rng.choice(len(g), min(n, len(g)), replace=False)] if len(g) else g
         for row, (u, colour, tag) in enumerate(
             ((r, "#9b1c1c", f"REAL\n{kind}\n({len(r)} windows)"), (g, "#1f6fb4", tag_g))
@@ -153,9 +155,14 @@ def main() -> None:
                 a = ax[2 * i + row, j]
                 if j < len(u):
                     _draw(a, u[j], colour, mark)
+                    a.set_yticks([0, 1] if j == 0 else [])
+                elif j == 0:
+                    a.set_xticks([])
+                    a.set_yticks([])
+                    for s in a.spines.values():
+                        s.set_visible(False)
                 else:
                     a.axis("off")
-                a.set_yticks([0, 1] if j == 0 else [])
             ax[2 * i + row, 0].set_ylabel(tag, fontsize=7, rotation=0, ha="right",
                                           va="center", labelpad=6)
     fig.suptitle(f"{args.variant}: every target kind, real above generated "

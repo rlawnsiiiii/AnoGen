@@ -3,8 +3,8 @@
 Collection for the GenFSDiff write-up. ESA-ADB Mission 1 **channels 41–46**,
 frozen S4 \(\tau \approx 0.105\), \(\varphi=\) `feature_pack_v1`, **1536**
 S3 donors, **3-fold OOF**. Plots are copies under
-[`figures/`](figures/). Sources stay in `docs/findings/`,
-`docs/kindmix_htune/`, and `results/shell_plots/shell_tune/`.
+[`figures/`](figures/). The current generator is
+[`docs/flip_x0_contrast_head_sharp_nomask.md`](../docs/flip_x0_contrast_head_sharp_nomask.md).
 
 This is **not** a new S4 freeze and does **not** beat GenIAS on Coverage@τ.
 Scores here follow GenIAS: **ARP** (realism) and **EDI** (diversity).
@@ -362,11 +362,6 @@ ARP/EDI in the table in §2. These strips are the locked S4 galleries
 - Overwriting `results/shell_s4` or running S6.
 
 Longer score table and kill list: [`docs/PAPER_CANDIDATES.md`](../docs/PAPER_CANDIDATES.md).
-Hybrid allocation: [`docs/HYBRID.md`](../docs/HYBRID.md).
+Current generator: [`docs/flip_x0_contrast_head_sharp_nomask.md`](../docs/flip_x0_contrast_head_sharp_nomask.md).
 Sampling: [`docs/STEERING_MATH.md`](../docs/STEERING_MATH.md).
-
-Lab notes (not this pack): quiet-kind \(\lambda\) sweep
-[`docs/QUIET_TUNE.md`](../docs/QUIET_TUNE.md), CutAddPaste / Lai taxonomy
-[`docs/GEN_BASELINES.md`](../docs/GEN_BASELINES.md), downstream CNN
-[`docs/AUGDETECT.md`](../docs/AUGDETECT.md), hash knobs
-[`docs/HASHFIX.md`](../docs/HASHFIX.md).
+The run that selected it: [`docs/ESA_RUN_2026-10-06.md`](../docs/ESA_RUN_2026-10-06.md).

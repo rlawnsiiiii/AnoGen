@@ -2,7 +2,7 @@
 
 What we have actually run on ESA-ADB Mission 1 channels 41–46, and what is worth a paper.
 
-Locked training log: [RESULTS.md](RESULTS.md). Sampling math: [STEERING_MATH.md](STEERING_MATH.md). Encoder variants: [ENCODER_ABLATION.md](ENCODER_ABLATION.md). Adapters: [S5.md](S5.md). Other channels / Mission 2: [XFER.md](XFER.md) (separate τ and galleries — do not mix into the tables below). Combined \(f\) vs GenIAS/post-hoc (continuous 41–46, from-noise figure): [COMBINED_VS_REFS.md](COMBINED_VS_REFS.md). Replacing the \(h_\mathrm{anom}\) KDE (nearest / kNN / proto): [H_ANOM.md](H_ANOM.md) — isolated, not a new S4 freeze. Code / which script scored which row: [REPO.md](REPO.md). Waveforms: `results/shell_plots/shell_tune/` and `results/shell_plots/shell_s5/`.
+Sampling math: [STEERING_MATH.md](STEERING_MATH.md). Current generator: [flip_x0_contrast_head_sharp_nomask.md](flip_x0_contrast_head_sharp_nomask.md). Adapters: [S5.md](S5.md). Other channels / Mission 2: [XFER.md](XFER.md) (separate τ and galleries — do not mix into the tables below). Code / which script scored which row: [REPO.md](REPO.md). Waveforms: `results/shell_plots/shell_tune/` and `results/shell_plots/shell_s5/`. Training curves: `results/shell_s1/`, `results/shell_s3/`.
 
 **Two different stories — do not mix them.**
 
@@ -44,7 +44,7 @@ Shared 3-layer stride-2 conv → map \((B,64,64)\). Then pool or keep time.
 
 ### Stratified proto (`time_recon` / `time_both`)
 
-The 256-donor eyes in [KIND_MIX.md](KIND_MIX.md) used this recipe. §2 scores it on the locked 1536 / 3-fold protocol (`kindmixscore`). Same frozen TSDiff score and same fold-0 encoder weights as encscore. **Not** a new S4 freeze. 256-donor kindmix numbers stay out of the table below.
+The 256-donor eyes used this recipe. §2 scores it on the locked 1536 / 3-fold protocol (`kindmixscore`). Same frozen TSDiff score and same fold-0 encoder weights as encscore. **Not** a new S4 freeze. 256-donor kindmix numbers stay out of the table below.
 
 Both models share the same \(e\) family and the same \(f\). They differ only in how \(e\) was trained.
 
@@ -144,7 +144,7 @@ GenIAS ([arXiv:2502.08262](https://arxiv.org/abs/2502.08262) App. E) reports **A
 
 Coverage and ARP disagree. τ is a small ball. High ARP can mean “near the many near-nominal faults,” not “looks like a dropout.” High Div / EDI with low Coverage@τ is spread-out junk, not useful diversity.
 
-Locked S4-only EDI (5-method union) is in [RESULTS.md](RESULTS.md) and must not be mixed with the 9-method EDI below — the partition changes when combined galleries join the union.
+Locked S4-only EDI (5-method union) is in `results/shell_s4/summary.json` and must not be mixed with the 9-method EDI below — the partition changes when combined galleries join the union.
 
 ---
 
@@ -184,7 +184,7 @@ Energy diagnostic on locked S2 (do not retune): rares sit on \(Q_q\) (mean h ≈
 
 **Stratified proto (2026-09-10, ESA kinds).** Same 1536 / 3-fold protocol as encscore. Math: §0. Kinds are official Point/Global, local subsequence, level shift (overlay), and global subsequence — Point/Local has no pretest windows. Coverage@τ is **0** on every fold and **every kind** (combined was 0.011–0.023). Occupancy collapses to 0.07 — proto overpowers the band. ARP 0.45–0.49 beats GenIAS (0.32) and the morphology-kind stratified freeze (0.43–0.47) but **loses to combined** (0.51–0.54) and sits **closer to rares than to anomalies** (ARP rare 0.55 / 0.62). Div is in the combined family. Fold 0 still leaks the six level-shift refs. Do not drop the 256-donor kindmix table into this one. Neither row is a protocol upgrade over **time_recon + combined**.
 
-**Hybrid / hybrid_needles (2026-09-10, 1536 / 3-fold).** Same τ/φ/donors/parent50 as stratified. Isolated `results/shell_kindmix_score_hybrid/` — does not rewrite the ESA stratified freeze. `hybrid` protos only level shift (3/4 slices are band). `hybrid_needles` protos shift + Point/Global (2/4 band). Occupancy tracks that split (0.62–0.64 vs 0.45–0.47): band slices sit near \(Q_q\); proto slices knock occupancy down. Coverage@τ is **0.023–0.039** — above stratified (0) and combined (0.011–0.023), still **5× below GenIAS** (0.195). That coverage is **global subsequence only** (band-like campaigns). Aimed Point/Global and level shift stay at Coverage **0** (`feature_pack_v1` z-scores DC). Local-subsequence Coverage 0.08–0.17 on `time_both` is \(n=4\) queries — ignore it. `time_both` + hybrid_needles is the strongest hybrid row: gap **+0.014**, ARP **0.584** (above unguided 0.568; fold 2 is a 0.77 spike). ARP rare is still ~0.78–0.80 — galleries remain closer to rares. Div peaks at **7.94** (`time_recon` needles). Still loses the frozen win rule (occupancy ≪ 0.8; Coverage ≪ GenIAS / post-hoc). Eyes stay [FINDINGS.md](FINDINGS.md); this block is the protocol cite.
+**Hybrid / hybrid_needles (2026-09-10, 1536 / 3-fold).** Same τ/φ/donors/parent50 as stratified. Isolated `results/shell_kindmix_score_hybrid/` — does not rewrite the ESA stratified freeze. `hybrid` protos only level shift (3/4 slices are band). `hybrid_needles` protos shift + Point/Global (2/4 band). Occupancy tracks that split (0.62–0.64 vs 0.45–0.47): band slices sit near \(Q_q\); proto slices knock occupancy down. Coverage@τ is **0.023–0.039** — above stratified (0) and combined (0.011–0.023), still **5× below GenIAS** (0.195). That coverage is **global subsequence only** (band-like campaigns). Aimed Point/Global and level shift stay at Coverage **0** (`feature_pack_v1` z-scores DC). Local-subsequence Coverage 0.08–0.17 on `time_both` is \(n=4\) queries — ignore it. `time_both` + hybrid_needles is the strongest hybrid row: gap **+0.014**, ARP **0.584** (above unguided 0.568; fold 2 is a 0.77 spike). ARP rare is still ~0.78–0.80 — galleries remain closer to rares. Div peaks at **7.94** (`time_recon` needles). Still loses the frozen win rule (occupancy ≪ 0.8; Coverage ≪ GenIAS / post-hoc). This block is the protocol cite.
 
 **From noise (2026-09-10, same 1536 / 3-fold).** `start_from_noise=True`, ν=1, \(x_T\sim\mathcal N(0,I)\). Channel index still conditions ε; no donor waveform. Isolated `results/shell_noise_score/` (`noisescore`). Same \(f\) / encoders / OOF refs as the ν=0.2 rows. Unguided in the main table is **not** this: it is q_sample(ν=1) from a real parent. EDI ¶ is a new union — compare **Div**, not EDI, to the ν=0.2 rows.
 

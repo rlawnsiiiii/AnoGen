@@ -1,0 +1,33 @@
+augdetect: event recall @ 1% nominal FAR. Dev only, sealed test closed.
+C1 fold 0 is the level-shift proto leak; noleak median drops that fold.
+
+  real_only: event_rec=0.591 noleak=0.591 AP=0.472 rareFAR=0.026
+  genias+real: event_rec=0.545 noleak=0.545 AP=0.469 rareFAR=0.027
+  geniasfair:genias_fair+real: event_rec=0.545 noleak=0.545 AP=0.469 rareFAR=0.027
+  posthoc+real: event_rec=0.591 noleak=0.591 AP=0.472 rareFAR=0.029
+  cutaddpaste+real: event_rec=0.545 noleak=0.545 AP=0.469 rareFAR=0.027
+  fixsweep:flip_x0_contrast_head_sharp_nomask+real: event_rec=0.682 noleak=0.714 AP=0.485 rareFAR=0.059
+
+paired event recall A - B (bootstrap over events, 95% CI, P(no gain)):
+  fixsweep:flip_x0_contrast_head_sharp_nomask+real - genias+real [all]: +0.118 [-0.036, +0.273] p=0.068 events=22
+  fixsweep:flip_x0_contrast_head_sharp_nomask+real - genias+real [noleak]: +0.114 [+0.000, +0.257] p=0.029 events=14
+  fixsweep:flip_x0_contrast_head_sharp_nomask+real - genias+real [fused]: +0.136 [+0.036, +0.264] p=0.002 events=22
+  fixsweep:flip_x0_contrast_head_sharp_nomask+real - geniasfair:genias_fair+real [all]: +0.118 [-0.036, +0.273] p=0.068 events=22
+  fixsweep:flip_x0_contrast_head_sharp_nomask+real - geniasfair:genias_fair+real [noleak]: +0.114 [+0.000, +0.257] p=0.029 events=14
+  fixsweep:flip_x0_contrast_head_sharp_nomask+real - geniasfair:genias_fair+real [fused]: +0.136 [+0.036, +0.264] p=0.002 events=22
+  fixsweep:flip_x0_contrast_head_sharp_nomask+real - posthoc+real [all]: +0.109 [-0.018, +0.245] p=0.049 events=22
+  fixsweep:flip_x0_contrast_head_sharp_nomask+real - posthoc+real [noleak]: +0.114 [-0.014, +0.286] p=0.073 events=14
+  fixsweep:flip_x0_contrast_head_sharp_nomask+real - posthoc+real [fused]: +0.127 [+0.027, +0.264] p=0.009 events=22
+  fixsweep:flip_x0_contrast_head_sharp_nomask+real - cutaddpaste+real [all]: +0.118 [-0.036, +0.273] p=0.068 events=22
+  fixsweep:flip_x0_contrast_head_sharp_nomask+real - cutaddpaste+real [noleak]: +0.114 [+0.000, +0.257] p=0.029 events=14
+  fixsweep:flip_x0_contrast_head_sharp_nomask+real - cutaddpaste+real [fused]: +0.136 [+0.036, +0.264] p=0.002 events=22
+  fixsweep:flip_x0_contrast_head_sharp_nomask+real - real_only [all]: +0.091 [-0.045, +0.236] p=0.106 events=22
+  fixsweep:flip_x0_contrast_head_sharp_nomask+real - real_only [noleak]: +0.086 [-0.014, +0.229] p=0.080 events=14
+  fixsweep:flip_x0_contrast_head_sharp_nomask+real - real_only [fused]: +0.136 [+0.036, +0.264] p=0.002 events=22
+  genias+real - real_only [all]: -0.027 [-0.055, +0.000] p=1.000 events=22
+  genias+real - real_only [noleak]: -0.027 [-0.055, +0.000] p=1.000 events=22
+  genias+real - real_only [fused]: +0.000 [-0.027, +0.027] p=0.465 events=22
+
+  event_recall.png
+  rare_far.png
+  per_kind_recall.png

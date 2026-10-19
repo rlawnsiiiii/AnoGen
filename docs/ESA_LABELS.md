@@ -98,6 +98,15 @@ anything else                              real ESA unknown               (not i
 Point events keep the official Local / Global bit. They are **not** re-tested
 with amplitude. A quiet official Point stays Point.
 
+Generated windows of `flip_x0_contrast_head_sharp_nomask` use one more name,
+`subsequence`. The sampler draws the local and global subsequence groups with
+the same edit, then ranks that pool inside each channel. The windows farthest
+outside the channel's ordinary range are global. Among the rest, the windows
+whose in-range stretch disagrees most with the rest of the window are local.
+The remaining third is `subsequence`. That name is not an ESA type and it is
+not applied to real windows. The rank is in
+[flip_x0_contrast_head_sharp_nomask.md](flip_x0_contrast_head_sharp_nomask.md).
+
 `Dimensionality` and `Class` / `Subclass` are stored but **not** used in the
 kind name. Do not write `class_3` → spike: on 41–46 that class also owns the
 shelf (`id_83`) and a campaign (`id_185`).

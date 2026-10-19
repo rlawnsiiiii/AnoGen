@@ -117,6 +117,7 @@ shell:
     baseline: c1_repro
     # `only: [...]` runs a subset; the per-fold npz cache is keyed by the spec, so
     # removing it and rerunning adds the rest and reuses what is already there
+    # only: [c1_repro, flip_x0_contrast_head_sharp_nomask]
     # variants: omit to use DEFAULT_VARIANTS in phases/fixsweep.py. Example of
     # adding the bidirectional backbone once `anogen s1bidir` has run:
     # variants:
@@ -131,7 +132,7 @@ shell:
     n_draws: 4
     target_far: 0.01
   # augdetect (dev only). donor_disjoint fixes the train/test donor overlap
-  # (REVIEW_2026-10-03 §2.6); set false only to reproduce docs/AUGDETECT.md.
+  # Donor/test overlap fix (2026-10-03). Set false only to reproduce the pre-fix numbers.
   augdetect:
     donor_disjoint: true
     flip_test: true
@@ -145,7 +146,10 @@ shell:
            "fixsweep:flip_x0_contrast_masked+real", "fixsweep:flip_x0_contrast_masked_div+real",
            "fixsweep:nosteer_flip_x0_masked+real", "fixsweep:flip_x0_contrast_only+real",
            "fixsweep:flip_x0_final025_recur2_decay1+real", "fixsweep:nosteer_flip_x0_recur2+real",
-           "geniasfair:genias_fair+real"]
+           "geniasfair:genias_fair+real",
+           # the recommended recipe (ESA_RUN_2026-10-06 §10.3); its twin
+           # nosteer_flip_x0_masked is already listed, so the pair is complete
+           "fixsweep:flip_x0_contrast_head_sharp+real"]
     compare:
       - ["fixsweep:flip_x0_contrast_masked_div+real", "genias+real"]
       - ["fixsweep:flip_x0_contrast_masked_div+real", c1_plus_real]
@@ -156,6 +160,9 @@ shell:
       - ["fixsweep:flip_x0_contrast_only+real", "fixsweep:flip_x0_contrast_masked_div+real"]
       # claim "generated anomalies improve detection" is against real_only
       - ["fixsweep:flip_x0_final025_recur2_decay1+real", real_only]
+      - ["fixsweep:flip_x0_contrast_head_sharp+real", real_only]
+      - ["fixsweep:flip_x0_contrast_head_sharp+real", c1_plus_real]
+      - ["fixsweep:flip_x0_contrast_head_sharp+real", "fixsweep:flip_x0_contrast_only+real"]
       - ["fixsweep:flip_x0_contrast_only+real", real_only]
       - ["fixsweep:flip_x0_contrast_masked_div+real", real_only]
       - [c1_plus_real, real_only]
@@ -164,6 +171,20 @@ shell:
       - ["geniasfair:genias_fair+real", real_only]
       - ["fixsweep:flip_x0_contrast_only+real", "geniasfair:genias_fair+real"]
       - [c1_plus_real, "geniasfair:genias_fair+real"]
+    # Budget sweep (opt-in, docs/ESA_RUN_2026-10-06 §11): k real positives plus
+    # k generated ones, k rising, so the few-shot regime the generator exists
+    # for is actually measured. The frozen arms above give every "+real" arm all
+    # ~450 real training windows plus 256 generated, where the gain has washed
+    # out. `only: true` runs the sweep alone and leaves the frozen arms be.
+    # sweep:
+    #   only: true
+    #   k: [1, 2, 4, 8, 16, 32, 64, 128, 256]
+    #   synth_per_k: match
+    #   arms: [real_only, c1_plus_real,
+    #          "fixsweep:flip_x0_final025_recur2_decay1+real",
+    #          "fixsweep:flip_x0_contrast_head_sharp+real",
+    #          "fixsweep:flip_x0_contrast_head_sharp_nomask+real",
+    #          "fixsweep:nosteer_flip_x0_masked+real"]
     # Optional, both off by default (docs/TESTBED.md E20):
     # synth_filter: {kind: rocket_knn, q: 0.99}  # drop generated windows inside the nominal set;
     #   rescues near-nominal galleries (twin +15 points, unguided +3 in E20), neutral for the

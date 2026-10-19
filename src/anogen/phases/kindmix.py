@@ -287,7 +287,7 @@ def run_kindmix(cfg: dict[str, Any]) -> dict[str, Any]:
     written += _plot_both_encoders_compare(plots, galleries, examples, bin_seconds)
 
     (plots / "INDEX.txt").write_text(
-        "Mixed galleries on Mission 1 41–46. Docs: docs/KIND_MIX.md.\n"
+        "Mixed galleries on Mission 1 41–46.\n"
         "stratified = uniform kind, then proto from R_kind.\n"
         "hybrid = same slices; proto only on level shift, band on the rest.\n"
         "hybrid_needles = proto on level shift + Point/Global, band on subsequences.\n"

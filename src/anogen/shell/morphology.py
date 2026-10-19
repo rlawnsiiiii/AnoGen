@@ -30,7 +30,16 @@ KIND_SLUG = {
     "real ESA local subsequence": "esa_local_subseq",
     "real level shift": "level_shift",
     "real ESA global subsequence": "esa_global_subseq",
+    "subsequence": "subsequence",
 }
+
+# Band-only generated windows are labeled after sampling. These two names are
+# the pool; ``subsequence`` is the share that is neither out of range nor a
+# contextual stretch. See ``assign_subsequence_locality``.
+SUBSEQ_GLOBAL = "real ESA global subsequence"
+SUBSEQ_LOCAL = "real ESA local subsequence"
+SUBSEQ_PLAIN = "subsequence"
+SUBSEQ_POOL = (SUBSEQ_LOCAL, SUBSEQ_GLOBAL)
 
 MORPH_KIND_ORDER = (
     "real short spike",
@@ -139,6 +148,109 @@ def assign_anomaly_kinds(
         else:
             labels[i] = "real ESA unknown"
     return labels
+
+
+def _segment_contrast(x: np.ndarray, segment: int, stride: int) -> np.ndarray:
+    """Largest |segment mean − mean of the other bins| along each window."""
+    n, width = x.shape
+    segment = int(segment)
+    stride = int(stride)
+    if segment < 1 or segment >= width:
+        raise ValueError(f"segment length must be in 1..{width - 1}, got {segment}")
+    if stride < 1:
+        raise ValueError("stride must be positive")
+    total = x.sum(axis=1)
+    best = np.zeros(n, dtype=np.float64)
+    for start in range(0, width - segment + 1, stride):
+        piece = x[:, start : start + segment].sum(axis=1)
+        gap = np.abs(piece / segment - (total - piece) / (width - segment))
+        best = np.maximum(best, gap)
+    return best
+
+
+def _subseq_counts(n: int, turn: int) -> dict[str, int]:
+    """Split ``n`` into three shares. The remainder rotates with ``turn``."""
+    names = (SUBSEQ_GLOBAL, SUBSEQ_LOCAL, SUBSEQ_PLAIN)
+    base, rem = divmod(int(n), 3)
+    counts = {name: base for name in names}
+    for i in range(rem):
+        counts[names[(i + int(turn)) % 3]] += 1
+    return counts
+
+
+def assign_subsequence_locality(
+    x: np.ndarray,
+    channel_idx: np.ndarray,
+    labels: np.ndarray,
+    nominal: np.ndarray,
+    nominal_channel: np.ndarray,
+    *,
+    range_q: float = 0.05,
+    segment: int = 64,
+    stride: int = 16,
+) -> np.ndarray:
+    """Relabel the band-only subsequence pool after sampling.
+
+    Point / Global and level shift rows are left as they are. Rows tagged
+    ``real ESA local subsequence`` or ``real ESA global subsequence`` were
+    drawn by the same edit; those tags were only a balanced pre-assignment.
+    Inside each channel that pool is split into three equal shares:
+
+    * global — the windows whose values stick farthest outside the channel's
+      ordinary range (the central ``1 - 2·range_q`` of nominal bins)
+    * local — of what remains, the windows whose in-range stretch disagrees
+      most with the rest of the window
+    * ``subsequence`` — the rest, which earns neither claim
+
+    The cut is this rank, so the three names come out one third each. A
+    remainder of ``n mod 3`` rotates with the channel index.
+    """
+    x = np.asarray(x, dtype=np.float64)
+    labels_in = np.asarray(labels, dtype=object)
+    ch = np.asarray(channel_idx, dtype=np.int64).reshape(-1)
+    nominal = np.asarray(nominal, dtype=np.float64)
+    nch = np.asarray(nominal_channel, dtype=np.int64).reshape(-1)
+    if x.ndim != 2:
+        raise ValueError(f"x must be (N, W), got {x.shape}")
+    if len(labels_in) != len(x) or len(ch) != len(x):
+        raise ValueError("labels and channel_idx must align with x")
+    if nominal.ndim != 2 or nominal.shape[1] != x.shape[1]:
+        raise ValueError("nominal windows must share the generated window length")
+    if len(nch) != len(nominal):
+        raise ValueError("nominal_channel must align with nominal")
+    q = float(range_q)
+    if not 0.0 < q < 0.5:
+        raise ValueError("range_q must lie in (0, 0.5)")
+    out = labels_in.copy()
+    pool = np.isin(out, list(SUBSEQ_POOL))
+    if not np.any(pool):
+        return out
+    bounds: dict[int, tuple[float, float]] = {}
+    for c in np.unique(nch):
+        values = nominal[nch == c].ravel()
+        bounds[int(c)] = (float(np.quantile(values, q)), float(np.quantile(values, 1.0 - q)))
+    for c in np.unique(ch[pool]):
+        c = int(c)
+        if c not in bounds:
+            raise ValueError(f"channel {c} has subsequence windows but no nominal windows")
+        lo, hi = bounds[c]
+        idx = np.flatnonzero(pool & (ch == c))
+        w = x[idx]
+        excess = np.maximum(0.0, w - hi) + np.maximum(0.0, lo - w)
+        outside = excess.mean(axis=1)
+        clipped = np.clip(w, lo, hi)
+        context = _segment_contrast(clipped, segment, stride)
+        counts = _subseq_counts(len(idx), c)
+        order = np.lexsort((np.arange(len(idx)), -context, -outside))
+        n_global = counts[SUBSEQ_GLOBAL]
+        global_at = order[:n_global]
+        rest = order[n_global:]
+        rest = rest[np.lexsort((np.arange(len(rest)), -context[rest]))]
+        n_local = counts[SUBSEQ_LOCAL]
+        out[idx[global_at]] = SUBSEQ_GLOBAL
+        out[idx[rest[:n_local]]] = SUBSEQ_LOCAL
+        out[idx[rest[n_local:]]] = SUBSEQ_PLAIN
+    return out
 
 
 def kinds_for_windows(

@@ -63,8 +63,8 @@ difference measured between kinds would then be partly a difference between
 channels, and "the level-shift slice is rough" could just mean "channel 43 is
 rough". Splitting within the channel removes that confound, and with equal
 per-channel counts the totals come out identical to the contiguous split, so
-nothing else about the protocol changes. [CHANMIX.md](CHANMIX.md) has the
-measurement that motivated it.
+nothing else about the protocol changes. Splitting inside the channel
+is what removes that confound.
 
 It matters twice over for this model: the per-kind numbers in §9 of the run
 document are only interpretable because every kind sees all six channels, and

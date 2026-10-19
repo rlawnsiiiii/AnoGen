@@ -1,7 +1,7 @@
 """Envelope-centric eyeball plots for the raw-window realism audit.
 
 Channel-span units: 0 and 1 are the S0 nominal training min/max, so the shaded
-band is the envelope the diagnostics in docs/REALISM.md 17.4 count against.
+band is the envelope the raw-window diagnostics count against.
 
 Writes docs/realism_eyes/. Reads only; touches no S3/S4/audit artifact.
 """
@@ -155,7 +155,7 @@ def main() -> None:
     ]
     kinds = pd.Series(real_kind).value_counts()
     (out / "INDEX.txt").write_text(
-        "Envelope eyeballs for the realism audit (docs/REALISM.md 17).\n"
+        "Envelope eyeballs for the raw-window realism audit.\n"
         f"channel-span units; band = S0 nominal train [min, max].\n"
         f"real anomaly windows={len(x_real)}; kinds:\n"
         + kinds.to_string()

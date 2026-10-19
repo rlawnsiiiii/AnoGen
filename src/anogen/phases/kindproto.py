@@ -1,6 +1,6 @@
 """Kind-conditional proto: aim each gallery at one morphology kind.
 
-Same proto energy as H_ANOM.md, different ref list (LEVEL_SHIFT.md idea A).
+Same proto energy, aimed at one anomaly kind rather than the pooled set.
 Recipes: locked parent ν=0.2 / 50 DDIM steps, and from-noise / 200 steps
 (n_times=200, so 200 is one iterate per diffusion time).
 

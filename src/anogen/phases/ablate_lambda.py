@@ -232,7 +232,7 @@ def run_ablate_lambda(cfg: dict[str, Any]) -> dict[str, Any]:
         )
 
     (plots / "INDEX.txt").write_text(
-        "λ_shell=0 and no-steer ablations. Docs: docs/ABLATE_LAMBDA.md.\n"
+        "λ_shell=0 and no-steer ablations.\n"
         "protoonly: λ=0, λ_anom=1 (proto pull only).\n"
         "nosteer: λ=0, λ_anom=0 (zero force, ν=0.2 parent edit).\n"
         "Aimed = best-stat in the allocated kind slice (fold 0, 1536).\n"

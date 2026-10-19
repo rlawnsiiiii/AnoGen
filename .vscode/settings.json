@@ -1,0 +1,20 @@
+{
+  // LaTeX Workshop, for slides/141026/anogen_briefing.tex.
+  // This box has no TeX Live; tectonic is the engine and fetches packages on
+  // demand. Absolute path because the extension does not source ~/.bashrc.
+  "latex-workshop.latex.tools": [
+    {
+      "name": "tectonic",
+      "command": "/home/kim_jo/.local/bin/tectonic",
+      "args": ["-X", "compile", "--synctex", "--keep-logs", "%DOC%.tex"],
+      "env": {}
+    }
+  ],
+  "latex-workshop.latex.recipes": [{ "name": "tectonic", "tools": ["tectonic"] }],
+  "latex-workshop.latex.autoBuild.run": "onSave",
+  "latex-workshop.view.pdf.viewer": "tab",
+  // tectonic writes next to the source and cleans up after itself, so the
+  // extension should not go looking for an out/ directory or sweep for aux files
+  "latex-workshop.latex.outDir": "%DIR%",
+  "latex-workshop.latex.autoClean.run": "never"
+}

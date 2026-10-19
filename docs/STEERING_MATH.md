@@ -118,7 +118,7 @@ s_θ(x_t, t)  ≈  − ε_θ(x_t, t, c) / √(1 − ᾱ_t)
 
 Following the **score** walks toward higher **nominal** density. Unguided DDIM therefore looks nominal. That is why λ = 0 is the control: if unguided already covers real anomalies, the shell is unnecessary.
 
-On channels whose raw values live on a small alphabet (stairs, 0/1 dropouts), this Gaussian \(L^2\) denoiser emits the **posterior mean** and fills the gaps between levels. Post-hoc and GenIAS keep the stairs because they copy the parent. Fixes (snap, residual diffusion, categorical / index models): [DISCRETE_CHANNELS.md](DISCRETE_CHANNELS.md).
+On channels whose raw values live on a small alphabet (stairs, 0/1 dropouts), this Gaussian \(L^2\) denoiser emits the **posterior mean** and fills the gaps between levels. Post-hoc and GenIAS keep the stairs because they copy the parent.
 
 ### 3.3 Tweedie / DDIM x̂_0
 
@@ -154,7 +154,7 @@ Guided default ν = 0.2. Unguided control ν = 1.0. Small ν keeps the donor win
 
 `ConvEncoder`: 1-D conv autoencoder, reconstruction MSE on nominal windows. Only e(x) ∈ R³² is used at sample time. Protocol lock for S2/S4: reconstruction, not contrastive.
 
-OOF ablations (temporal map, 3-class SupCon) live in `ShellEncoder` / phase `enc` and do **not** replace this lock. See [ENCODER_ABLATION.md](ENCODER_ABLATION.md).
+OOF ablations (temporal map, 3-class SupCon) live in `ShellEncoder` / phase `enc` and do **not** replace this lock.
 
 ### 4.2 Soft energy
 
@@ -330,7 +330,7 @@ f(x̂_0)  =  λ (h_nom(x̂_0) − Q_q)²  +  λ_anom h_anom(x̂_0)  +  λ_rare (
 
 Band-only is λ_anom = λ_rare = 0 (locked S4). Combined (tune id 14) is λ = 0.3, λ_anom = λ_rare = 1. Contrast-only (tune c15) is λ = 0, λ_anom = λ_rare = 3.
 
-The sum in \(h_\mathrm{anom}\) is a KDE. Far from every \(a_i\) the gradient aims at the **mean of \(R_\mathrm{anom}\)**. Alternatives that only need *one* nearby fault (min, local \(k\)NN, one proto per sample): [H_ANOM.md](H_ANOM.md). Default `anom_energy_kind="soft"` is this formula; locked tables stay on soft.
+The sum in \(h_\mathrm{anom}\) is a KDE. Far from every \(a_i\) the gradient aims at the **mean of \(R_\mathrm{anom}\)**. Alternatives that only need *one* nearby fault are min, local \(k\)NN, and one proto per sample (`anom_energy_kind`). Default `"soft"` is this formula; locked tables stay on soft.
 
 That is sampling-time contrast, not a new score. S5 still goes further: residual adapter + classifier with rares as hard negatives.
 

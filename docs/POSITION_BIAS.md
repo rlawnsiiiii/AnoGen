@@ -1,9 +1,8 @@
 # Position bias, sharp edges and envelope exits: root causes and fixes
 
-Written 03.10.2026. Addresses L1–L4 and P2–P4 of
-[NEXT_STEPS_2026-09-30.md](NEXT_STEPS_2026-09-30.md). Mechanism evidence is
-from the torch-free testbed ([TESTBED.md](TESTBED.md)); the ESA numbers still
-have to come from `fixsweep` (§6). Every switch below defaults to the frozen
+Written 03.10.2026. Mechanism evidence is
+from the torch-free testbed ([TESTBED.md](TESTBED.md)); the ESA numbers are
+in [ESA_RUN_2026-10-06.md](ESA_RUN_2026-10-06.md). Every switch below defaults to the frozen
 behaviour, and `tests/test_steer_equivalence.py` checks bit-for-bit
 equality of the refactored sampler with the old one.
 
@@ -190,8 +189,8 @@ What the testbed says to expect, in order of cost:
 
 ## 6. How to run (workstation, in this order)
 
-Step by step, with what to check after each run and what to send back:
-[NEXT_STEPS_2026-10-06.md](NEXT_STEPS_2026-10-06.md).
+The workstation run and its numbers:
+[ESA_RUN_2026-10-06.md](ESA_RUN_2026-10-06.md).
 
 ```bash
 # 0. 5 min, no generation: confirm the diagnosis on the real checkpoint and galleries

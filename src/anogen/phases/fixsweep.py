@@ -329,6 +329,7 @@ DEFAULT_VARIANTS: dict[str, dict[str, Any]] = {
         "n_recur": 2,
         "guidance_decay": 1.0,
         "twin": "nosteer_flip_x0_recur2",
+        "subseq_postassign": True,
     },
     "flip_x0_contrast_head_sharp_nomask_proto": {
         "flip": "ramp",
@@ -525,6 +526,15 @@ DEFAULT_VARIANTS: dict[str, dict[str, Any]] = {
     },
 }
 
+# Post-sampling labels. They do not change the draw, so they stay out of the
+# sampler kwargs and out of the gallery cache key.
+_LABEL_KEYS = {
+    "subseq_postassign",
+    "subseq_range_q",
+    "subseq_segment",
+    "subseq_stride",
+}
+
 # Keys the phase interprets itself; everything else goes to guided_ddim.
 _PHASE_KEYS = {
     "flip",
@@ -551,7 +561,19 @@ _PHASE_KEYS = {
     "contrast_polish",
     "contrast_mirror",
     "contrast_geom",
+    *_LABEL_KEYS,
 }
+
+
+def _sync_kind_alloc(path: Path, alloc: np.ndarray) -> None:
+    """Write post-sampling labels into an existing gallery without resampling."""
+    blob = np.load(path, allow_pickle=True)
+    new = np.asarray(alloc).astype(str)
+    if "kind_alloc" in blob.files and np.array_equal(np.asarray(blob["kind_alloc"]).astype(str), new):
+        return
+    payload = {key: np.array(blob[key]) for key in blob.files}
+    payload["kind_alloc"] = new
+    np.savez_compressed(path, **payload)
 
 
 def run_fixsweep(cfg: dict[str, Any]) -> dict[str, Any]:
@@ -605,7 +627,13 @@ def run_fixsweep(cfg: dict[str, Any]) -> dict[str, Any]:
     from anogen.shell.encoders import embed_shell
     from anogen.shell.events import types_from_cfg
     from anogen.shell.features import embed_windows
-    from anogen.shell.morphology import KIND_ORDER, KIND_SLUG, kind_ref_indices, kinds_for_windows
+    from anogen.shell.morphology import (
+        KIND_ORDER,
+        KIND_SLUG,
+        assign_subsequence_locality,
+        kind_ref_indices,
+        kinds_for_windows,
+    )
     from anogen.shell.scaler import load_minmax, resolve_scaler
     from anogen.shell.steer import chunked_guided_ddim
 
@@ -733,7 +761,11 @@ def run_fixsweep(cfg: dict[str, Any]) -> dict[str, Any]:
                     common[key] = float(common[key]) * u_scale
         resolved = {"nu": float(common["nu"]), "unit_scale": float(u_scale)}
         cache_key = json.dumps(
-            {"spec": spec, "resolved": resolved, "den": str(spec.get("denoiser") or "frozen S1")},
+            {
+                "spec": {k: v for k, v in spec.items() if k not in _LABEL_KEYS},
+                "resolved": resolved,
+                "den": str(spec.get("denoiser") or "frozen S1"),
+            },
             sort_keys=True,
             default=str,
         )
@@ -762,6 +794,7 @@ def run_fixsweep(cfg: dict[str, Any]) -> dict[str, Any]:
             alloc = channel_stratified_alloc(cond_ch, active, seed=fseed)
             cplan = _contrast_plan(spec, kind_lab, fold_a, fold_id, x_a, ch_a, scaler, KIND_ORDER)
             blob = np.load(cache, allow_pickle=True) if (cache.is_file() and not force) else None
+            fresh_extra: dict[str, Any] | None = None
             if blob is not None and "key" in blob.files and str(blob["key"]) == cache_key:
                 x, h = np.asarray(blob["x"]), np.asarray(blob["h"])
                 masks = np.asarray(blob["mask"]) if "mask" in blob.files else None
@@ -808,9 +841,21 @@ def run_fixsweep(cfg: dict[str, Any]) -> dict[str, Any]:
                     span_scaler=span_scaler,
                     flips_out=flips,
                 )
-                extra_npz = {"mask": masks, "mask_rows": masks.any(axis=1)} if masks is not None else {}
+                fresh_extra = {"mask": masks, "mask_rows": masks.any(axis=1)} if masks is not None else {}
                 if flips:
-                    extra_npz["contrast_flipped"] = np.asarray(json.dumps(flips))
+                    fresh_extra["contrast_flipped"] = np.asarray(json.dumps(flips))
+            if bool(spec.get("subseq_postassign")):
+                alloc = assign_subsequence_locality(
+                    x,
+                    cond_ch,
+                    alloc,
+                    x_cond,
+                    cond_ch,
+                    range_q=float(spec.get("subseq_range_q", 0.05)),
+                    segment=int(spec.get("subseq_segment", 64)),
+                    stride=int(spec.get("subseq_stride", 16)),
+                )
+            if fresh_extra is not None:
                 np.savez_compressed(
                     cache,
                     x=x,
@@ -819,8 +864,10 @@ def run_fixsweep(cfg: dict[str, Any]) -> dict[str, Any]:
                     kind_alloc=alloc.astype(str),
                     spec=json.dumps(spec),
                     key=np.asarray(cache_key),
-                    **extra_npz,
+                    **fresh_extra,
                 )
+            elif bool(spec.get("subseq_postassign")):
+                _sync_kind_alloc(cache, alloc)
             galleries[(vname, fold_id)] = (x, alloc.astype(str))
             if fold_id == folds[0]:
                 fold0[vname] = x
@@ -840,7 +887,7 @@ def run_fixsweep(cfg: dict[str, Any]) -> dict[str, Any]:
                 cfg=cfg,
                 arp_coverage_ci=arp_coverage_ci,
                 score_gallery=_score_gallery,
-                kind_order=KIND_ORDER,
+                kind_order=tuple(KIND_ORDER) + (("subsequence",) if np.any(np.asarray(alloc).astype(str) == "subsequence") else ()),
                 kind_slug=KIND_SLUG,
                 rocket=rocket_space,
             )

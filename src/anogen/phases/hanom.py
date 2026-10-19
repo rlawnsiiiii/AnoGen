@@ -1,4 +1,4 @@
-"""Try the three H_ANOM.md strategies on locked Mission 1 channels 41–46.
+"""Try nearest / knn / proto h_anom on locked Mission 1 channels 41–46.
 
 Frozen S1 score + fold-0 time_recon / time_both. Combined f (tune id 14).
 Does not overwrite results/shell_s4 or shell_tune. Isolated results/shell_hanom/.
@@ -219,7 +219,7 @@ def run_hanom(cfg: dict[str, Any]) -> dict[str, Any]:
         written += _plot_strategy_grid(fam_plots, galleries, kinds, bin_seconds, label=label)
         (fam_plots / "INDEX.txt").write_text(
             f"h_anom strategies on Mission 1 41–46. {label}.\n"
-            "nearest / knn / proto: docs/H_ANOM.md.\n\n"
+            "nearest / knn / proto (anom_energy_kind).\n\n"
             + "\n".join(f"  {n}" for n in written)
             + "\n"
         )

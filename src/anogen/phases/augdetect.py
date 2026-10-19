@@ -120,7 +120,7 @@ def run_augdetect(cfg: dict[str, Any]) -> dict[str, Any]:
     # Synthetic positives for test fold k only from donors whose S3 index is not
     # a fold-k test nominal (index % 3 == k). Before 2026-10-03 every arm drew
     # from all 1536 donors, so a test negative's own edited copy could be a
-    # training positive. Set false only to reproduce docs/AUGDETECT.md.
+    # training positive. Set false only to reproduce the pre-fix numbers.
     donor_disjoint = bool(acfg.get("donor_disjoint", True))
     shift_aug = int(acfg.get("shift_aug", 0))
     flip_test = bool(acfg.get("flip_test", True))

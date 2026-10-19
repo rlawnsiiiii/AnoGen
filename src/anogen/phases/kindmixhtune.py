@@ -287,7 +287,7 @@ def run_kindmix_htune(cfg: dict[str, Any]) -> dict[str, Any]:
     written += _plot_recommend(plots, galleries, examples, recommend, bin_seconds)
     _write_metrics_csv(out / "metrics.csv", methods)
     (plots / "INDEX.txt").write_text(
-        "ESA stratified / hybrid λ / λ_anom sweep. Docs: docs/KIND_MIX.md §9.\n"
+        "ESA stratified / hybrid λ / λ_anom sweep.\n"
         "l03_a10 = locked parent50 (λ=0.3, λ_anom=1).\n"
         "hybrid = proto on level shift only; band on points + subsequences.\n"
         "hybrid_needles = proto on shift + Point/Global; band on subsequences.\n"

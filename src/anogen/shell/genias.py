@@ -154,7 +154,7 @@ def train_genias(
 
     ``faithful=False`` (locked S3): reconstruction + standard KL only, ψ chosen
     at sampling time. This is a reconstructor, so ψ=2 barely leaves the parent
-    (RMSE 8e-4 in docs/RESULTS.md) and every GenIAS row so far scores a
+    (RMSE about 8e-4 on the locked S3 run) and every GenIAS row so far scores a
     near-copy of the donor.
 
     ``faithful=True`` follows the published objective (Darban et al. 2025,

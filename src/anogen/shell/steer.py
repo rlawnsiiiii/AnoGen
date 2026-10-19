@@ -198,7 +198,7 @@ def anom_energy(
     proto: "torch.Tensor | None" = None,
     kind_ids: "torch.Tensor | None" = None,
 ) -> "torch.Tensor":
-    """h_anom under one of the H_ANOM.md / KIND_MIX.md strategies. ``soft`` is locked."""
+    """h_anom under soft / nearest / knn / proto / kind_soft. ``soft`` is locked."""
     name = str(kind or "soft").lower()
     if name == "soft":
         return soft_energy(z, ref, tau)
@@ -348,7 +348,7 @@ def guided_ddim(
     mode=band pulls toward Q_q. mode=push maximizes h_soft (no leash).
     classifier is a few-shot anomaly head; its logit is maximized (Sehwag).
     ref_anom / lam_anom attract toward train-fold anomaly embeddings
-    (minimize h vs that set). anom_energy_kind selects the H_ANOM.md
+    (minimize h vs that set). anom_energy_kind selects the
     strategy (soft | nearest | knn | proto | kind_soft); default soft is locked S4.
     ref_rare / lam_rare still use full-set soft_energy (repel Rare Events).
     Both refs must be event-OOF.

@@ -139,7 +139,7 @@ Plots: `results/xfer/mission2/plots/`.
 
 Plots: `results/xfer/mission1_extra/plots/`.
 
-Eyes: post-hoc and GenIAS keep the **stairs / binary dropouts**; unguided and `time_recon` look continuous. That is the Gaussian score smearing a small alphabet, not a τ bug. Ideas and formulas: [DISCRETE_CHANNELS.md](DISCRETE_CHANNELS.md).
+Eyes: post-hoc and GenIAS keep the **stairs / binary dropouts**; unguided and `time_recon` look continuous. That is the Gaussian score smearing a small alphabet, not a τ bug.
 
 Unguided-only strips (judge stairs yourself): `results/xfer/mission1_extra/plots/unguided_discrete/` — start with `overview_one_per_channel.png` and `channel_47_parent_vs_unguided.png`.
 
@@ -166,4 +166,4 @@ Keep-mask: `keep_fold_mask(..., channels=cfg.channels)` — not `channel_41+c`.
 - Quote transfer Coverage@τ next to locked S4 0.267 / 0.195 / 0.109 / 0.081.
 - Mix EDI from this 5-method union with the 5-method S4, 9-method encscore, or S5-extended unions.
 - Apply Mission 1 `denoiser.pt` to Mission 2.
-- Treat post-hoc / GenIAS “looking discrete” as a score win. They copy the parent alphabet; see [DISCRETE_CHANNELS.md](DISCRETE_CHANNELS.md).
+- Treat post-hoc / GenIAS “looking discrete” as a score win. They copy the parent alphabet.
