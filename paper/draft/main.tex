@@ -6,6 +6,10 @@
 \usepackage{booktabs}
 \usepackage{graphicx}
 \usepackage{xcolor}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,calc,positioning}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
 \usepackage[hidelinks]{hyperref}
 
 \setlength{\textfloatsep}{10pt plus 2pt minus 3pt}
@@ -21,33 +25,43 @@
 \newcommand{\phivec}{\phi}
 \newcommand{\xhat}{\hat{x}_{0}}
 \newcommand{\abar}{\bar\alpha}
+\newcommand{\Eshell}{E_{\mathrm{shell}}}
+\newcommand{\Econ}{E_{\mathrm{con}}}
+\newcommand{\lo}{\underline{x}}
+\newcommand{\hi}{\overline{x}}
 
 \title{Steering a nominal diffusion model\\ to synthesize spacecraft anomalies}
-\author{Joon Kim \and Nils-Holger Kaul\\[0.4em]
+\author{Joon Kim\qquad Nils-Holger Kaul\\[0.4em]
 \large DLR Galileo Competence Center}
-\date{Draft, 19 October 2026}
+\date{Draft, 10 November 2026}
 
 \begin{document}
 \maketitle
 
 \begin{abstract}
 \noindent
-Seven years of telemetry on one spacecraft channel contain a handful of labelled
-anomalies, too few to train a detector and too few to train a generator on the
-anomalies themselves. We train a diffusion model on nominal operation only, and
-at sampling time we steer it. Every window is edited toward a high quantile of
-a soft distance to nominal reference windows. Spikes and level shifts are
-additionally pinned to a sampled amplitude by an exact linear contrast, placed
-at a sampled position. On the development split of ESA-ADB Mission~1, channels
-41--46, the resulting windows match the height and width of the real point
-anomalies, and adding them to a small detector raises event recall when real
-anomalies are scarce: $+0.20$ at 32 real training windows, with a 95\% interval
-that excludes zero. The same comparison is not significant once the detector
-already sees every development anomaly. A prototype-pull baseline is stronger
-at the smallest budgets, and an untargeted edit of the same model scores higher
-on a feature-space realism metric while looking less like the requested
-anomaly. Published generators on this data stay close to their nominal donors.
-The sealed test split has not been opened.
+Seven years of telemetry on six channels of one spacecraft contain 22 labelled
+anomalies: enough to evaluate a detector, and too few to train one or to train
+a generator on the anomalies themselves. We train a diffusion model on nominal
+operation only and steer it at sampling time. Each sample starts from a partly
+noised nominal window, and at every denoising step the predicted clean window
+is edited by two terms. A shell term moves a soft encoder distance to nominal
+reference windows toward its 99th percentile on nominal data. On spikes and
+level shifts, an exact linear projection sets a weighted difference of means to
+an amplitude resampled from real examples, at a sampled position. On the
+development split of ESA-ADB Mission~1, channels 41--46, the generated spikes
+match the real ones in height (0.838 against 0.831 of the channel span) and
+width (99\% occupy a single bin), and the generated level shifts carry the real
+step amplitude. Added to a small detector, the windows raise event recall when
+real anomalies are scarce: by $+0.20$ at 32 real training windows, 95\%
+interval $[+0.07, +0.32]$, with intervals above zero also at 8 and 64 windows.
+With every development anomaly available, the gain of $+0.09$ is unresolved.
+Two baselines that pull each window toward the embedding of a real anomaly
+score higher on feature-space realism or gain more at the smallest budgets;
+they plant spikes at about half the real height and inherit the position of
+the labelled windows. Published editors applied to the same donors score at
+the level of the unedited donors. The sealed test split is unopened and
+reserved for one pre-registered run.
 \end{abstract}
 
 \noindent\textit{This draft reports the development split only.
@@ -58,50 +72,67 @@ the sealed test events.}
 \label{sec:intro}
 
 Anomaly detection in spacecraft telemetry is limited by labels. A channel can
-be recorded for years and still contain a few dozen annotated events, of
-several shapes, many of which never repeat~\cite{kotowski2024esa,hundman2018lstm}.
-A detector trained on those events overfits the ones it has seen. A generator
+be recorded for years and still hold a few dozen annotated events, of several
+shapes, many of which occur once~\cite{kotowski2024esa,hundman2018lstm}. A
+detector trained on those events learns the ones it has seen. A generator
 trained on them has almost nothing to fit.
 
-The alternative is to learn the nominal process, which is abundant, and to
-ask for anomalies only at sampling time. Diffusion models are a convenient
-nominal model: once the denoiser is trained, a sample can be edited by changing
-the predicted clean window before it is re-noised~\cite{ho2020ddpm,song2021ddim,meng2022sdedit}.
-Classifier guidance and related methods already do this for images and for
-time series~\cite{dhariwal2021diffusion,coletta2023guided,chung2023dps,bansal2023universal}.
-What they do not supply is a target. ``Be anomalous'' is not an objective
-until it is written as a function of the window.
+Nominal operation, in contrast, is abundant. We learn it with a diffusion model
+and request anomalies only at sampling time. Once the denoiser is trained, a
+sample can be edited by changing the predicted clean window before the chain
+re-noises it~\cite{ho2020ddpm,song2021ddim,meng2022sdedit}. Classifier guidance
+and its successors use this mechanism for images and for time
+series~\cite{dhariwal2021diffusion,coletta2023guided,chung2023dps,bansal2023universal}.
+Each of them needs a target written as a function of the window, and ``be
+anomalous'' becomes usable only once it is written that way.
 
-This paper writes that function for four anomaly kinds defined by
-ESA-ADB~\cite{kotowski2024esa,blazquez2021taxonomy}. Two of them, an isolated
-spike and a level shift, are linear contrasts: a weighted difference of means,
-with a known amplitude. The edit that realises a linear constraint in one step
-is a projection, and it does not depend on the scale of the weight vector.
-The other two kinds, long subsequences that sit outside the channel's usual
-range or outside the range expected from their context, have no such one-line
-description here. For those, and as a background term on every kind, we use a
-soft distance in a frozen encoder and pull it toward a high quantile of the
-same distance on nominal windows. The quantile asks for windows that are
-unusual among nominal data. It does not ask for a copy of a labelled anomaly.
+We write such targets for the four anomaly kinds that occur on our channels of
+ESA-ADB~\cite{kotowski2024esa,blazquez2021taxonomy}. An isolated spike and a
+level shift are linear contrasts: a weighted difference of means with a known
+amplitude. The smallest edit that meets a linear constraint is a projection,
+which is exact in one step and independent of the scale of the weight vector.
+The other two kinds are long subsequences, one outside the channel's usual
+range and one outside the range expected from its context. They receive a
+shell term: a soft distance to nominal reference windows in a frozen encoder,
+moved toward the 99th percentile of the same distance on nominal windows. The
+shell asks for windows that are unusual among nominal data, and it runs on
+every window.
 
-We evaluate the samples in two ways. The first is the realism and diversity
-protocol of GenIAS~\cite{genias2025}, on a frozen twelve-dimensional feature
-of each window. The second is whether the samples help a small convolutional
-detector, scored by event recall at a fixed false-alarm rate, as the number of
-real training anomalies varies. Both comparisons are event-held-out on the
-development events. The test events stay sealed.
+We evaluate the samples in three ways, all held out by event on the
+development events. The first is the realism and diversity protocol of
+GenIAS~\cite{genias2025} on a fixed twelve-dimensional feature of each window.
+The second measures the shape of the generated spikes and level shifts
+directly. The third asks whether the samples help a small convolutional
+detector, scored by event recall at a fixed false-alarm rate as the number of
+real training anomalies varies. The 91 test events stay sealed for a single
+pre-registered run.
 
-The result is narrower than a claim of a best generator. Against its own
-unguided edit of the same donors, the contrast model is closer to real
-anomalies in the frozen feature, and the morphology of its spikes and level
-shifts tracks the real measurements. Against a detector trained on real
-anomalies alone, the gain is concentrated at intermediate training budgets and
-shrinks once real anomalies are plentiful. A cruder edit, with no contrast and
-no requested shape, is closer still in the frozen feature and is the stronger
-detector when data are plentiful, at the cost of spikes that collapse to one
-position and a large fraction of noise bursts. We report that disagreement
-rather than averaging it away. Further changes to the backbone are left as
-future work; the recipe in this paper is frozen.
+The contributions are:
+\begin{itemize}
+\setlength{\itemsep}{1pt}
+\item per-kind targets for a nominal diffusion model: an exact contrast
+  projection for spikes and level shifts, with explicit weight vectors, and a
+  shell quantile for every window (Sections~\ref{sec:shell}
+  and~\ref{sec:contrast});
+\item a sampler for a causal nominal denoiser: SDEdit from nominal donors, a
+  noise prediction blended from forward and time-reversed passes, edits on the
+  clean-window prediction, one self-recurrence per step, and an SDEdit polish
+  for level shifts (Sections~\ref{sec:denoiser} and~\ref{sec:chain},
+  Algorithm~\ref{alg:chain});
+\item an evaluation on ESA-ADB Mission~1 that pairs feature-space realism,
+  direct morphology measurements and detector utility at matched real-data
+  budgets, with intervals from a bootstrap over events
+  (Section~\ref{sec:eval}).
+\end{itemize}
+
+The generated spikes match the real height and width, and the level shifts
+match the real step amplitude. Added to $k$ real windows, the gallery raises
+event recall with an interval above zero at $k = 8$, 32 and 64; at the full
+budget the gain is unresolved. Two prototype baselines, which pull each window
+toward the embedding of a real anomaly, score higher on feature-space realism
+or gain more at the smallest budgets, with spikes at half the real height and
+positions copied from the labelled windows. We report both sides of that trade.
+The recipe in this paper is frozen; changes to the backbone are future work.
 
 \section{Related work}
 \label{sec:related}
@@ -118,40 +149,46 @@ a pulse, a ramp, or a change of scale~\cite{wen2021augmentation,carmona2021ncad}
 CutAddPaste pastes a real patch into another window~\cite{wang2024cutaddpaste}.
 GenIAS trains a variational generator to occupy regions of a feature space
 where real anomalies sit, and defines the realism and diversity scores we
-report~\cite{genias2025}. All three edit an existing window. So do we. We do
-not compare with generators that draw a series from pure noise.
+report~\cite{genias2025}. All three edit an existing window, and so do we.
+Diffusion models that generate or impute whole series from noise
+\cite{tashiro2021csdi,kollovieh2023tsdiff} are outside this comparison.
 
-Classifier guidance adds the gradient of a label to a diffusion
+Classifier guidance adds the gradient of a label to the diffusion
 score~\cite{dhariwal2021diffusion}. Later work aims the same mechanism at
-low-density regions, minority classes, and explicit time-series
-constraints~\cite{sehwag2022low,um2023minority,coletta2023guided}, and applies
-the correction to the clean-data prediction rather than to the
-noise~\cite{chung2023dps,bansal2023universal}. SDEdit starts from a partly
-noised observation so that unedited structure
-survives~\cite{meng2022sdedit}; RePaint restricts that edit to a
-mask~\cite{lugmayr2022repaint}. Our sampler is that SDEdit chain, with one
-self-recurrence~\cite{bansal2023universal}, a causal S4 denoiser of the kind
-used by TSDiff~\cite{gu2022s4,kollovieh2023tsdiff,ho2020ddpm,song2021ddim},
-and a target built for these four kinds. A prototype attraction toward a real
-anomaly also attracts the sample toward that anomaly's position. On ESA-ADB
-the labelled window is cut with the event in the middle, so the prototype
-reproduces the middle. A contrast specifies shape and amplitude and samples
-the position.
+low-density regions and minority samples~\cite{sehwag2022low,um2023minority}
+and at explicit time-series constraints~\cite{coletta2023guided}, and applies
+the correction to the clean-window prediction~\cite{chung2023dps,bansal2023universal}.
+Our shell term belongs to the low-density family: it targets a fixed quantile
+of a nominal energy, which places the sample at a controlled distance from the
+nominal set. SDEdit starts from a partly noised observation so that its coarse
+structure survives~\cite{meng2022sdedit}; RePaint confines the edit to a
+mask~\cite{lugmayr2022repaint}. Our sampler is an SDEdit chain with one
+self-recurrence per step~\cite{bansal2023universal} and a causal S4 denoiser of
+the kind used by TSDiff~\cite{gu2022s4,kollovieh2023tsdiff}.
+
+A prototype attraction toward a real anomaly also attracts the sample toward
+that anomaly's position. On ESA-ADB, windows of short events are cut with the
+event in the middle, so a prototype reproduces the middle. A contrast
+specifies shape and amplitude and leaves the position to be sampled.
 
 \section{Data}
 \label{sec:data}
 
 We use ESA-ADB Mission~1, channels 41--46~\cite{kotowski2024esa}. Each channel
-is a regularly sampled series of $7{,}364{,}160$ bins at 30\,s, which is seven
-years. Windows are $W = 512$ bins, about 4.27\,hours, cut so that a labelled
-event lies in the window.
+is a regular series of 30\,s bins. The development period runs from 1~January
+2000 to 31~December 2006, $7{,}364{,}160$ bins per channel; the test period
+starts on 1~January 2007. Windows are $W = 512$ bins, about 4.3\,hours.
 
 The mission catalogue has 200 annotated events. We keep the benchmark split:
-109 events for development and 91 for a sealed test. The test telemetry is not
-read in any experiment below. Of the development events, 22 are anomalies and
-the rest are rare but valid operations. Windowing the 22 anomalies gives 672
-windows. Their kinds, and one real window of each, are in
-Table~\ref{tab:kinds} and Figure~\ref{fig:kinds}.
+the 109 events of the development period are used below, and the 91 events of
+the test period form a sealed test. The data loader refuses to read test-period
+telemetry. Of the development events, 22 anomalies and 27 rare but valid
+operations have windows on channels 41--46; the others produce none. Every one
+of the 22 anomalies is annotated on all six channels. An event shorter than
+$W$ gives one window centred on its midpoint, and a longer event gives up to
+eight evenly spaced windows inside it. This yields 112 anomaly windows per
+channel, 672 in total, and 943 rare windows. Table~\ref{tab:kinds} lists the
+anomaly kinds, and Figure~\ref{fig:kinds} shows one real window of each.
 
 \begin{table}[t]
 \centering
@@ -178,43 +215,95 @@ All anomalies & 672 & 22 \\
 \includegraphics[width=\textwidth]{kinds.pdf}
 \caption{One real anomalous window of each kind, channel~41, in channel-span
 units. The grey band is the 1st to 99th percentile of nominal windows on the
-same channel. A level shift and a local subsequence occupy only part of the
-512 bins; the rest of the window is context.}
+same channel. Where the label covers only part of the window, the labelled
+bins are shaded. The local subsequence is drawn over a nominal window (grey
+line): it stays inside the band and differs in its pattern.}
 \label{fig:kinds}
 \end{figure}
 
 The imbalance matters. A method that only ever produced a plausible global
 subsequence would already match 636 of the 672 windows and 17 of the 22
-events. The level shift is a single event. Anything we report about level
+events. The level shift is a single event, so anything we report about level
 shifts is a statement about that event.
 
-The nominal training pool is 24{,}576 windows drawn from everyday operation,
-plus 943 windows from the rare-but-valid events. The denoiser trains on this
-pool and never sees an anomaly. A separate gallery of 1{,}536 nominal donor
-windows, 256 per channel, is the starting point for every generated sample.
-Development anomalies are partitioned into three folds by event, with 270, 276
-and 126 windows. A fold's test events are never used to choose that fold's
-contrast amplitudes, except for the level shift on the fold that contains its
-only event, which is discussed in Section~\ref{sec:limits}.
+Nominal windows are drawn at random starts in everyday operation, 4{,}096 per
+channel, at least 16 bins away from any labelled span. These 24{,}576 windows
+and the 943 rare windows form the training pool of the diffusion model, which
+never sees an anomaly. A gallery of 1{,}536 nominal donors, 256 per channel
+drawn from the nominal windows, is the starting point of every generated
+sample, for our method and for every baseline.
+
+The development anomalies are split into three folds by event: 8, 7 and
+7~events, with 270, 276 and 126 windows. Every comparison below holds one fold
+out, so the training folds hold 402, 396 or 546 anomaly windows. A fold's
+held-out events never set that fold's contrast amplitudes, with one exception
+for the level shift, discussed in Section~\ref{sec:contrast}.
 
 \section{Method}
 \label{sec:method}
 
+Figure~\ref{fig:flow} shows how one gallery is made, and
+Algorithm~\ref{alg:chain} gives the chain for a single window. A diffusion
+model is trained on nominal windows (Section~\ref{sec:denoiser}). Generation
+runs it from partly noised donors (Section~\ref{sec:chain}). At every step the
+predicted clean window is edited by a shell term on every window
+(Section~\ref{sec:shell}) and by a contrast term on spikes and level shifts
+(Section~\ref{sec:contrast}). The windows of the subsequence pool are named
+after sampling (Section~\ref{sec:pool}).
+
 \subsection{Nominal diffusion model}
+\label{sec:denoiser}
 
-Each window is scaled to $[0, 1]$ by a per-channel minimum and maximum fit on
-the nominal training pool, and the denoiser is trained in that space. The
-forward process has $T = 200$ steps with a linear noise schedule from
-$\beta = 10^{-4}$ to $\beta = 2 \cdot 10^{-2}$~\cite{ho2020ddpm}. The network
-predicts the added noise. It is an S4 model with hidden width 64, six layers
-and state size 64, causal, conditioned on the channel index
-\cite{gu2022s4,kollovieh2023tsdiff}. Training is 20{,}000 steps of noise-prediction
-loss, batch size 128, learning rate $2 \cdot 10^{-4}$, on the 24{,}576 nominal
-windows and 943 rare windows. The network has $315{,}841$ parameters. Anomalies
-are not in this training set.
+\paragraph{One scaling.}
+For each channel $c$, a minimum $\lo_{c}$ and a maximum $\hi_{c}$ are fit once
+on the training pool, and
+\begin{equation}
+\label{eq:minmax}
+m(x) = \frac{x - \lo_{c}}{\hi_{c} - \lo_{c}}
+\end{equation}
+maps the channel onto $[0, 1]$. We call these channel-span units; every
+amplitude in this paper is given in them. The map is the only scaling in the
+recipe. A donor is mapped at the start of sampling, the noisy state stays in
+these units throughout the chain, and $m^{-1}$ is applied once to the finished
+window, which returns it to panel units. Three requirements fix this choice.
+The diffusion noise is standard normal, so the clean signal must be of order
+one for the schedule's signal-to-noise ratios to hold~\cite{ho2020ddpm}. The
+contrast targets of Section~\ref{sec:contrast} are measured on real windows
+after the same map, so a target means the same step on every donor of a
+channel; a per-window normalization would rescale it by each window's own
+range. And the steering encoder was trained in panel units: it reads
+$m^{-1}(\xhat)$, and because $m$ is affine this multiplies the shell gradient
+by a per-channel constant that the normalization of the shell step removes.
 
-The network is causal, so a bin is denoised without seeing the future. At
-sampling time we evaluate it twice and blend the noise predictions,
+\paragraph{Forward process and denoiser.}
+The forward process is $x_{t} = \sqrt{\abar_{t}}\,x_{0} +
+\sqrt{1 - \abar_{t}}\,\varepsilon$ with $\varepsilon \sim \mathcal{N}(0, I)$,
+$\abar_{t} = \prod_{s \le t}(1 - \beta_{s})$, $T = 200$ steps, and $\beta$
+linear from $10^{-4}$ to $2 \cdot 10^{-2}$~\cite{ho2020ddpm}. The network
+$\varepsilon_{\theta}(x_{t}, t, c)$ predicts the added noise, and the
+clean-window prediction is
+\begin{equation}
+\label{eq:x0hat}
+\xhat(x_{t})
+  = \frac{x_{t} - \sqrt{1 - \abar_{t}}\;\varepsilon(x_{t})}{\sqrt{\abar_{t}}}.
+\end{equation}
+The network follows the S4 backbone of
+TSDiff~\cite{kollovieh2023tsdiff,gu2022s4}. A pointwise convolution lifts the
+window to 64 channels, and a learned embedding of the channel index $c$ is
+added. Six residual blocks follow. Each applies layer normalization, a causal
+diagonal S4 layer with state size 64, a FiLM scale and shift computed from a
+128-dimensional sinusoidal embedding of $t$ passed through a two-layer
+perceptron, and a pointwise feed-forward layer with a GELU, and adds the
+block's input. A final layer normalization and pointwise convolution return
+one channel. The network has $315{,}841$ parameters. It is trained for
+20{,}000 steps of noise-prediction loss, batch size 128, learning rate
+$2 \cdot 10^{-4}$, on the $25{,}519$ windows of the training pool, of which
+10\% are held out for validation.
+
+\paragraph{Reading the window both ways.}
+The S4 layers are causal, so the network denoises bin $i$ from bins $0$
+to~$i$. At sampling time we evaluate it on the window and on its time reversal
+and blend the two noise predictions with a linear ramp,
 \begin{equation}
 \label{eq:flip}
 \varepsilon(x)_{i}
@@ -222,341 +311,723 @@ sampling time we evaluate it twice and blend the noise predictions,
   + (1 - r_{i})\,
     \bigl(\varepsilon_{\theta}(\mathrm{flip}\, x)\bigr)_{\!\mathrm{flip},\, i},
 \qquad
-r_{i} = \frac{i}{L - 1}.
+r_{i} = \frac{i}{W - 1}.
 \end{equation}
-The second pass is the same network reading the window backwards. The ramp
-gives it the start of the window and gives the forward pass the end. The
-weights are unchanged. We do not train a bidirectional backbone.
+The forward pass carries the most weight at the end of the window, where it
+has seen the most context, and the reversed pass at the start. Both passes use
+the same weights, and the blend assumes that the nominal process is
+approximately reversible in time. Every network evaluation below means this
+blend of two passes.
 
-\subsection{Where an edit starts}
+\subsection{From donor to window}
+\label{sec:chain}
 
-Generation starts from a nominal donor, not from pure noise. The donor is
-noised to time index
+\paragraph{Donors and kinds.}
+Each channel's 256 donors are split into four groups of 64: spikes, level
+shifts, and two groups that together form the subsequence pool of 128
+windows. A spike or level shift is requested before sampling and keeps its
+name. The subsequence pool is named after sampling (Section~\ref{sec:pool}).
+
+\paragraph{Starting point.}
+A donor $u$ is mapped by~\eqref{eq:minmax} and noised to
 \begin{equation}
 \label{eq:t0}
-t_{0} = \mathrm{round}\bigl(0.2 \cdot (T - 1)\bigr) = 40
+t_{0} = \mathrm{round}\bigl(0.2 \cdot (T - 1)\bigr) = 40,
+\qquad
+x_{t_{0}} = \sqrt{\abar_{40}}\, m(u) + \sqrt{1 - \abar_{40}}\,\xi,
 \end{equation}
-and then denoised with 50 DDIM steps from $t_{0}$ down to $0$
-\cite{song2021ddim,meng2022sdedit}. The next state is the ordinary DDIM step
-on an edited clean window,
+where $\xi$ is standard normal and $\abar_{40} = 0.917$. The noise is then 0.30
+of the clean signal's scale, so the donor's slow structure survives and its
+fine texture is drawn again~\cite{meng2022sdedit}.
+
+\paragraph{Time grid and step.}
+The chain takes 50 DDIM steps~\cite{song2021ddim} on the grid
+$t_{n} = \lfloor 40\,(1 - n/49) \rfloor$, $n = 0, \ldots, 49$. Rounding down
+gives 41 distinct indices; nine of them occur twice in a row, and a step
+between two equal indices keeps $t$ fixed. From $x_{t}$ at $t = t_{n}$ to
+$t' = t_{n+1}$, the step is the ordinary DDIM update applied to an edited clean
+window,
 \begin{equation}
 \label{eq:ddim}
 x_{t'}
-  = \sqrt{\abar_{t'}}\,(\xhat - E)
-  + \sqrt{1 - \abar_{t'}}\,\varepsilon(x_{t}).
+  = \sqrt{\abar_{t'}}\,\bigl(\xhat - E_{t}\bigr)
+  + \sqrt{1 - \abar_{t'}}\;\varepsilon(x_{t}).
 \end{equation}
-$E$ has the same length as the window. It is a shell term, on every kind, plus
-a contrast term on spikes and level shifts only. After each step that
-advances, the result is re-noised to $t$ and the step is run once
-more~\cite{bansal2023universal}. On the final step $E$ is multiplied by $1/4$.
+The edit $E_{t} \in \mathbb{R}^{W}$ is the shell term $\Eshell$ of
+Section~\ref{sec:shell} on every window, plus the contrast term $\Econ$ of
+Section~\ref{sec:contrast} on spikes and level shifts. Both are functions of
+$\xhat$ alone. The denoiser is evaluated without gradients, and the shell
+gradient passes through the encoder only, which is the clean-window form of
+guidance~\cite{bansal2023universal}.
 
-The shell term is multiplied along the chain by a weight proportional to the
-remaining noise $\sigma_{t} = \sqrt{(1 - \abar_{t})/\abar_{t}}$, renormalized
-so that the weights average to one. Early steps, which still have noise left
-to remove, carry more of the shell edit than late steps. The contrast term is
-not decayed.
+\paragraph{Self-recurrence and the last step.}
+Whenever $t' < t$, the new state is re-noised back to $t$,
+\begin{equation}
+\label{eq:recur}
+x_{t} \leftarrow \sqrt{\abar_{t}/\abar_{t'}}\;x_{t'}
+  + \sqrt{1 - \abar_{t}/\abar_{t'}}\;\xi,
+\end{equation}
+and the step is run once more~\cite{bansal2023universal}. A step between equal
+indices has no noise interval to travel back over and runs once. At $n = 49$
+the chain returns $\xhat - E_{0}/4$. No later step remains to blend this last
+edit into the window, so it enters at a quarter of its strength. In total the
+chain makes 90 network evaluations: 40 steps run twice, nine run once, and the
+last step.
+
+\paragraph{Shell weights.}
+The shell term is scaled along the chain by
+\begin{equation}
+\label{eq:omega}
+\omega_{t}
+  = \frac{\sigma_{t}}{\tfrac{1}{50}\sum_{n=0}^{49}\sigma_{t_{n}}},
+\qquad
+\sigma_{t} = \sqrt{\frac{1 - \abar_{t}}{\abar_{t}}},
+\end{equation}
+which falls from 2.0 at $t = 40$ to 0.067 at $t = 0$. The shell edit is large
+while the chain still has noise to remove and fades as the window settles. The
+contrast term keeps weight one throughout: it is an exact projection, and its
+size is already set by its residual.
+
+\paragraph{Polish for level shifts.}
+After the chain, a level shift is re-noised to
+$t = \mathrm{round}(0.35 \cdot (T - 1)) = 70$, where $\abar_{70} = 0.774$,
+denoised by ten unguided DDIM steps, and projected once more by $\Econ$. This
+SDEdit pass~\cite{meng2022sdedit} lets the nominal denoiser rebuild the texture
+around the step. The denoiser also shrinks the step, and the final projection
+restores its amplitude exactly.
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}[
+  font=\footnotesize,
+  box/.style={draw, rounded corners=1.5pt, align=center, inner sep=3pt,
+              text width=3.35cm, minimum height=11mm},
+  wide/.style={draw, rounded corners=1.5pt, align=center, inner sep=3pt,
+               text width=4.55cm, minimum height=14mm},
+  arr/.style={-{Stealth[length=1.7mm]}, semithick}
+]
+\node[box] (don) at (0,0) {1{,}536 nominal donors\\256 per channel};
+\node[box] (sc) at (3.7,0) {min-max $m$\\onto $[0,1]$, once};
+\node[box] (grp) at (7.4,0) {four groups of 64\\on each channel};
+\node[box] (den) at (11.1,0) {noise to $t_{0}=40$\\guided chain, Alg.~\ref{alg:chain}};
+\node[wide] (spk) at (0,-2.7) {spike, 64 per channel\\shell $+$ contrast\\$m^{-1}$, name kept};
+\node[wide] (lev) at (5.0,-2.7) {level shift, 64 per channel\\shell $+$ contrast\\polish, then $m^{-1}$};
+\node[wide] (sub) at (10.0,-2.7) {subsequence pool, 128\\shell only, then $m^{-1}$\\ranked into three names};
+\draw[arr] (don) -- (sc);
+\draw[arr] (sc) -- (grp);
+\draw[arr] (grp) -- (den);
+\coordinate (bus) at ($(den.south)+(0,-4mm)$);
+\draw (den.south) -- (bus);
+\draw[arr] (bus) -| (spk.north);
+\draw[arr] (bus) -| (lev.north);
+\draw[arr] (bus) -| (sub.north);
+\end{tikzpicture}
+\caption{One generated gallery. The min-max map is applied once, at the start,
+and inverted once, at the end. Spikes and level shifts keep the kind they were
+assigned; the subsequence pool is named after sampling.}
+\label{fig:flow}
+\end{figure}
+
+\begin{algorithm}[t]
+\caption{One steered window. $\xi$ is fresh standard normal noise at each use,
+$\varepsilon(x, t)$ the blended prediction~\eqref{eq:flip}, and $\xhat$
+follows from~\eqref{eq:x0hat}. $\Econ$ is zero on the subsequence pool.}
+\label{alg:chain}
+\begin{algorithmic}[1]
+\Require donor $u$ on channel $c$; for a spike or level shift, weight $w$ and
+  target $\delta$
+\State $x \gets \sqrt{\abar_{40}}\, m(u) + \sqrt{1 - \abar_{40}}\,\xi$
+\For{$n = 0, \ldots, 48$}
+  \State $t \gets t_{n}$, \ $t' \gets t_{n+1}$, \ $P \gets 2$ if $t' < t$, else $1$
+  \For{$p = 1, \ldots, P$}
+    \State $\varepsilon \gets \varepsilon(x, t)$, \ $\xhat \gets \xhat(x)$
+    \State $E \gets \Eshell(\xhat, t) + \Econ(\xhat)$
+    \State $x \gets \sqrt{\abar_{t'}}\,(\xhat - E) + \sqrt{1 - \abar_{t'}}\,\varepsilon$
+    \If{$p < P$}
+      \State $x \gets \sqrt{\abar_{t}/\abar_{t'}}\;x + \sqrt{1 - \abar_{t}/\abar_{t'}}\;\xi$
+        \Comment{self-recurrence}
+    \EndIf
+  \EndFor
+\EndFor
+\State $\xhat \gets \xhat(x)$ at $t = 0$; \ $x \gets \xhat - \tfrac{1}{4}\bigl(\Eshell(\xhat, 0) + \Econ(\xhat)\bigr)$
+\If{level shift}
+  \State $x \gets \sqrt{\abar_{70}}\,x + \sqrt{1 - \abar_{70}}\,\xi$; ten unguided DDIM steps from $t = 70$ to $0$
+  \State $x \gets x - \Econ(x)$ \Comment{polish}
+\EndIf
+\State \Return $m^{-1}(x)$
+\end{algorithmic}
+\end{algorithm}
 
 \subsection{Shell term}
+\label{sec:shell}
 
-Let $e(\cdot)$ be a frozen convolutional encoder and $r_{1}, \ldots, r_{N}$ a
-set of $N = 512$ nominal reference embeddings. The soft energy of an embedding
-$z$ is
+The shell term asks for a window that is unusual among nominal windows by a
+controlled amount. It works in the embedding space of a frozen encoder $e$,
+described below, with $z = e\bigl(m^{-1}(\xhat)\bigr) \in \mathbb{R}^{512}$.
+
+\paragraph{Energy.}
+Let $\zeta_{1}, \ldots, \zeta_{N}$ be the embeddings of $N = 512$ nominal
+reference windows. The soft energy of an embedding $z$ is
 \begin{equation}
 \label{eq:h}
 h(z)
   = -\tau \log \sum_{j=1}^{N}
-    \exp\bigl(-\lVert z - r_{j}\rVert^{2} / \tau\bigr),
+    \exp\bigl(-\lVert z - \zeta_{j}\rVert^{2} / \tau\bigr),
 \end{equation}
 a soft minimum of squared distance to the references. As $\tau \to 0$ it
-becomes the distance to the nearest reference. Large $h$ means far from every
-nominal reference. Because of the $-\tau \log N$ contribution of the sum, $h$
-is not itself a distance and need not be positive.
+becomes the squared distance to the nearest reference, and with a single
+reference the two factors of $\tau$ cancel and $h(z) = \lVert z - \zeta
+\rVert^{2}$. The factor inside the exponential decides which references still
+contribute; the factor in front returns $h$ to units of squared distance. A
+large $h$ means far from the nominal references. The sum also contributes
+$-\tau \log N$, so $h$ can be negative.
 
-The encoder keeps the time axis. Three stride-2 convolutions
-($1 \to 32$, kernel 7; $32 \to 64$, kernel 5; $64 \to 64$, kernel 5), each
-followed by a SiLU, reduce 512 bins to 64, and a pointwise convolution maps
-the 64 channels to 8. The embedding is the resulting $8 \times 64$ map, flattened
-to 512 dimensions. It is trained with a reconstruction loss and a supervised
-contrastive loss~\cite{khosla2020supcon} on three classes: everyday nominal,
-rare-but-valid, and anomaly. The checkpoint used for every fold is the one
-trained when fold~0 is held out, so its anomaly class is the anomalies of
-folds~1 and~2. Section~\ref{sec:limits} records what that implies.
-
-Let $Q$ be the 0.99 quantile of $h$ on held-out nominal windows. The one
-percent of nominal windows above $Q$ are the most unusual nominal windows, so
-$Q$ is the upper edge of ordinary operation, not a typical value. The shell
-loss on a predicted clean window is the squared distance of its energy to that
-edge, $(h - Q)^{2}$, averaged over the batch. The shell edit is $\lambda = 0.3$
-times the gradient of this loss with respect to $\xhat$, divided by the
-gradient's Euclidean norm. Subtracting it, as in~\eqref{eq:ddim}, moves $h$
-toward $Q$. The same term runs on all four kinds. It is the only term on the
-two subsequence kinds.
-
-\subsection{Contrast term}
-
-A spike and a level shift are each specified by a linear functional
-$d(x) = \langle w, x \rangle$ and a target amplitude $a$. The weight $w \in
-\mathbb{R}^{512}$ sums to zero, so $d$ is blind to the window's overall level.
-
-For a spike at bin $p$, with the half-width set to zero, $w$ equals $+1$ at
-$p$. It equals $-1/m$ on the flanking bins that remain after a gap of three
-bins, up to eight bins on each side, and $m$ is the number of those flank bins.
-Then $d(x)$ is the height of the centre bin above the mean of its flanks.
-For a level shift whose high side is the head of the window and whose split is
-at $p$, $w$ equals $+1/p$ on the head and $-1/(W - p)$ on the tail, so $d(x)$
-is the difference between the two means. Reversing $w$ moves the high side to
-the tail without changing the amplitude.
-
-The edit that realises $\langle w, \xhat - E \rangle = a$ and changes $\xhat$
-as little as possible in Euclidean norm is the projection
+\paragraph{Temperature and target.}
+The temperature is set from the reference embeddings themselves,
 \begin{equation}
-\label{eq:contrast}
-E_{\mathrm{contrast}}
-  = \bigl(\langle w, \xhat \rangle - a\bigr)\,
-    \frac{w}{\lVert w \rVert^{2}}.
+\label{eq:tau}
+\tau
+  = \sqrt{\operatorname{median}_{i \neq j}\,
+      \lVert \zeta_{i} - \zeta_{j} \rVert^{2}},
 \end{equation}
-It is an exact solution, not a gradient step of a fixed size, and it is
-unchanged if $w$ is multiplied by a constant. We add it to the shell edit.
-The implementation subtracts $E$ inside~\eqref{eq:ddim}, so a window whose
-contrast is already $a$ is left unchanged by this term.
+with a floor of $10^{-3}$. The embeddings are unnormalized, and the square root
+of the median squared distance puts the kernel on their scale. The target $Q$
+is the 0.99 quantile of $h$ over 256 further donors. A nominal window exceeds
+$Q$ one time in a hundred, so $Q$ marks the outer edge of ordinary operation.
+The references and the 256 windows are drawn independently from the 1{,}536
+donors, with a fixed seed, when sampling starts. The encoder checkpoint stores
+weights only; $\tau$ and $Q$ are computed at that point.
 
-Three quantities are sampled per window, and they are the freedom in the
-contrast. The position is uniform on the bins where $w$ is defined. For a
-level shift the split is drawn from $6.25\%$ to $18\%$ of the window, which
-is the range of the real event, and the weight is reversed with probability
-$1/2$, so the step is not always at the same end. The amplitude $a$ is drawn
-from the values of $d$ measured on real windows of that kind outside the query
-fold. If the requested sign would push the donor outside the channel span
-$[0, 1]$ and the opposite sign would not, the sign is flipped and the
-magnitude is kept. After the guided chain, a level shift is re-noised to
-$35\%$ of the schedule and denoised for ten steps with $E = 0$, and the
-contrast is then applied once more. That pass is an SDEdit polish
-\cite{meng2022sdedit}: it asks the nominal denoiser to rebuild the texture
-around a step that the polish would otherwise shrink.
+\paragraph{Step.}
+The shell loss is $(h - Q)^{2}$, and the edit is its gradient with respect to
+the clean window, normalized over the window,
+\begin{equation}
+\label{eq:shell}
+\Eshell
+  = \lambda\,\omega_{t}\,\frac{g}{\lVert g \rVert},
+\qquad
+g = \nabla_{\xhat}\,\bigl(h(z) - Q\bigr)^{2},
+\qquad
+\lambda = 0.3 .
+\end{equation}
+With $J = \partial z / \partial \xhat$, the chain rule gives
+\begin{equation}
+\label{eq:grad}
+g = 2\,(h - Q)\,J^{\top}\nabla_{z} h,
+\qquad
+\nabla_{z} h = 2 \sum_{j=1}^{N} \pi_{j}\,(z - \zeta_{j}),
+\qquad
+\pi_{j} = \frac{\exp(-\lVert z - \zeta_{j}\rVert^{2}/\tau)}
+               {\sum_{l}\exp(-\lVert z - \zeta_{l}\rVert^{2}/\tau)}.
+\end{equation}
+After normalization, $\Eshell = \lambda\,\omega_{t}\,\mathrm{sign}(h - Q)\,
+J^{\top}\nabla_{z}h / \lVert J^{\top}\nabla_{z}h \rVert$. The step has length
+$\lambda\,\omega_{t}$ on every window, and $h$ and $Q$ decide only its sign.
+The leading $\tau$ of~\eqref{eq:h} cancels from $\nabla_{z} h$. The inner
+$\tau$ sets the weights $\pi_{j}$ and with them the direction: a small $\tau$
+points the step away from the nearest reference, a large $\tau$ away from the
+references' common centre. Most donors start below $Q$, so subtracting
+$\Eshell$ in~\eqref{eq:ddim} raises $h$ toward $Q$, and a window that
+overshoots $Q$ is pulled back. The term runs on every window and is the only term on the
+subsequence pool.
 
-The two subsequence kinds have no contrast. They receive the shell edit only.
-Dropping the contrast, rather than adding a prototype attraction toward a real
-anomaly embedding, is deliberate. A prototype of a centred event teaches the
-centre.
-
-There is no spatial mask. An earlier variant replaced every bin outside a mask
-with the noised donor at each step, as in RePaint~\cite{lugmayr2022repaint},
-and could export the mask as a bin-level label. Removing the mask lets the
-chain rewrite the whole window. Section~\ref{sec:results} compares the two.
-
-Donors are assigned to kinds inside each channel, in equal counts, so each
-kind is generated on every channel. A gallery of 1{,}536 donors therefore
-contains 384 windows of each kind. The real window counts in
-Table~\ref{tab:kinds} are not equal, and the generated training data do not
-pretend that they are.
+\paragraph{Encoder.}
+The encoder keeps the time axis. Its input is the clean window in panel units,
+the space it was trained in. Three stride-2 convolutions $C$ ($1 \to 32$,
+kernel 7; $32 \to 64$, kernel 5; $64 \to 64$, kernel 5), each followed by a
+SiLU, reduce 512 bins to 64. A pointwise convolution $P$ maps the 64 channels
+to 8, and $z \in \mathbb{R}^{512}$ is that $8 \times 64$ map flattened;
+$C$ and $P$ have $31{,}624$ parameters. A decoder $D$ of three stride-2
+transposed convolutions, kernel 4 ($64 \to 32 \to 32 \to 1$ channels), reads
+the 64-channel map $C(x)$ and is used only in training.
+Figure~\ref{fig:encoder} shows the two paths.
 
 \begin{figure}[t]
 \centering
-\includegraphics[width=\textwidth]{gallery.pdf}
-\caption{Three real windows and five generated windows of each kind, in
-channel-span units. Generated windows are from the contrast model. Dotted
-lines are the channel span, 0 and 1.}
-\label{fig:gallery}
+\begin{tikzpicture}[
+  font=\footnotesize,
+  box/.style={draw, rounded corners=1.5pt, align=center, inner sep=3pt, text width=3.15cm},
+  arr/.style={-{Stealth[length=1.7mm]}, semithick}
+]
+\node[box] (x) at (0,0) {window $x$\\panel units};
+\node[box] (c) at (3.55,0) {$C$: three stride-2\\convolutions};
+\node[box] (p) at (7.1,0) {$P$: 64 channels\\to 8};
+\node[box] (z) at (10.65,0) {$z \in \mathbb{R}^{512}$};
+\node[box] (d) at (3.55,-2.05) {$D$ reads $C(x)$\\squared error on $x$};
+\node[box] (s) at (10.65,-2.05) {SupCon on $z/\lVert z\rVert$\\grouped by class $y$};
+\node[box] (tau) at (7.1,-4.1) {after training:\\references $\zeta_{1..512}$};
+\node[box] (h) at (10.65,-4.1) {$\tau$ by~\eqref{eq:tau}, then\\$h(z)$ and $Q$};
+\draw[arr] (x) -- (c);
+\draw[arr] (c) -- (p);
+\draw[arr] (p) -- (z);
+\draw[arr] (c) -- (d);
+\draw[arr] (z) -- (s);
+\draw[arr] (p) -- (tau);
+\draw[arr] (tau) -- (h);
+\end{tikzpicture}
+\caption{The steering encoder. The top row and the two losses are training;
+$D$ reads the 64-channel map, and the class $y$ enters only the contrastive
+loss. After the weights are frozen, donor embeddings supply the references,
+$\tau$ and $Q$ of the shell energy.}
+\label{fig:encoder}
 \end{figure}
+
+Training minimizes a reconstruction loss and a supervised contrastive
+loss~\cite{khosla2020supcon} with equal weight,
+\begin{equation}
+\label{eq:encloss}
+\mathcal{L}
+  = \frac{1}{W}\lVert D(C(x)) - x \rVert^{2} + \mathrm{SupCon}(v, y),
+\qquad
+v = z / \lVert z \rVert .
+\end{equation}
+The class $y$ is everyday nominal, rare-but-valid, or anomaly. With positives
+$\mathcal{P}(i) = \{p \neq i : y_{p} = y_{i}\}$ in a batch and temperature
+$\kappa = 0.1$,
+\begin{equation}
+\label{eq:supcon}
+\mathrm{SupCon}
+  = \operatorname{mean}_{i\,:\,\mathcal{P}(i)\neq\emptyset}
+    \Biggl(
+      -\frac{1}{\lvert \mathcal{P}(i)\rvert}
+      \sum_{p \in \mathcal{P}(i)}
+      \log
+      \frac{\exp(v_{i}\cdot v_{p}/\kappa)}
+           {\sum_{l \neq i}\exp(v_{i}\cdot v_{l}/\kappa)}
+    \Biggr).
+\end{equation}
+Training runs for 1{,}200 Adam steps at learning rate $10^{-3}$, each batch
+holding 32 windows of each class. One checkpoint, trained with fold~0 held
+out, serves every fold, so its rare and anomaly windows are those of folds~1
+and~2 (Section~\ref{sec:limits}).
+
+\subsection{Contrast term}
+\label{sec:contrast}
+
+A spike and a level shift are each specified by a linear functional
+$d(x) = \langle w, x \rangle$ and a target amplitude $\delta$. The weight
+$w \in \mathbb{R}^{W}$ sums to zero, so $d$ ignores the window's overall level.
+Figure~\ref{fig:weights} shows both weight vectors.
+
+\paragraph{Spike.}
+The positive weight sits on one bin. With the centre at bin $c$,
+\begin{equation}
+\label{eq:wspike}
+w_{c} = 1,
+\qquad
+w_{i} = -\frac{1}{16}
+  \ \text{for}\ 
+  i \in [c-11, c-4] \cup [c+4, c+11],
+\end{equation}
+and $w_{i} = 0$ on the three bins to either side of $c$ and everywhere else.
+Then $d(x)$ is $x_{c}$ minus the mean of sixteen flank bins. The three-bin gap
+keeps the spike's own rise and fall out of the baseline estimate. The centre
+$c$ is drawn uniformly from bins 51 to 459, where both flanks always fit.
+
+\paragraph{Level shift.}
+The split $s$ is drawn uniformly from bins 32 to 91, which is 6.25\% to 18\%
+of the window and brackets the split of the real event. Head and tail carry
+total weights $+1$ and $-1$,
+\begin{equation}
+\label{eq:wstep}
+w_{i}
+  =
+  \begin{cases}
+    +1/s & 0 \le i < s, \\
+    -1/(W-s) & s \le i < W,
+  \end{cases}
+\end{equation}
+so $d(x)$ is the mean of the short head minus the mean of the long tail. With
+probability $1/2$ the weight is reversed in time, which moves the short side
+to the end of the window and keeps the amplitude.
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}[font=\footnotesize]
+\def\bw{0.19}
+\draw[-{Stealth[length=1.6mm]}] (0,0) -- ({29*\bw+0.3},0) node[right] {$i$};
+\fill[black!70] ({14*\bw-0.07},0) rectangle ({14*\bw+0.07},1.4);
+\foreach \k in {3,...,10}
+  \fill[black!35] ({\k*\bw-0.07},0) rectangle ({\k*\bw+0.07},-0.35);
+\foreach \k in {18,...,25}
+  \fill[black!35] ({\k*\bw-0.07},0) rectangle ({\k*\bw+0.07},-0.35);
+\node[right] at ({14*\bw+0.05},1.3) {$+1$};
+\node[below] at ({14*\bw},-0.02) {$c$};
+\node[below] at ({6.5*\bw},-0.35) {$-1/16$ each};
+\node[below] at ({21.5*\bw},-0.35) {$-1/16$ each};
+\draw[|-|, thin] ({2.6*\bw},0.32) -- ({10.4*\bw},0.32)
+  node[midway, above, font=\scriptsize] {8 bins};
+\draw[|-|, thin] ({10.6*\bw},0.32) -- ({13.4*\bw},0.32)
+  node[midway, above, font=\scriptsize] {3};
+\node[anchor=west] at (0,2.0) {(a) spike centred at bin $c$};
+\begin{scope}[xshift=7.4cm]
+\draw[-{Stealth[length=1.6mm]}] (0,0) -- (6.4,0) node[right] {$i$};
+\fill[black!70] (0,0) rectangle (0.8,1.1);
+\fill[black!35] (0.8,0) rectangle (6,-0.25);
+\node[above] at (0.4,1.1) {$+1/s$};
+\node[below] at (3.4,-0.25) {$-1/(W-s)$};
+\node[below] at (0,-0.02) {$0$};
+\node[above right] at (0.8,0) {$s$};
+\node[above] at (6,0) {$W$};
+\node[anchor=west] at (0,2.0) {(b) level shift with split $s$};
+\end{scope}
+\end{tikzpicture}
+\caption{The two weight vectors, heights not to scale. (a)~A spike: weight
+$+1$ on bin $c$ and $-1/16$ on eight bins on each side, after a gap of three.
+(b)~A level shift: the mean of the head minus the mean of the tail. Both
+vectors sum to zero. With probability $1/2$ the level-shift vector is reversed
+in time.}
+\label{fig:weights}
+\end{figure}
+
+\paragraph{Projection.}
+Among all edits $E$ with $\langle w, \xhat - E \rangle = \delta$, the one of
+smallest Euclidean norm is
+\begin{equation}
+\label{eq:contrast}
+\Econ
+  = \bigl(\langle w, \xhat \rangle - \delta\bigr)\,
+    \frac{w}{\lVert w \rVert^{2}}.
+\end{equation}
+It moves $\xhat$ along $w$ only, it meets the constraint exactly, and it is
+unchanged when $w$ is multiplied by a constant. The division by
+$\lVert w \rVert^{2}$ matters for the level shift, where
+$\lVert w \rVert^{2} = 1/s + 1/(W-s)$ changes with the split. A window whose
+contrast already equals $\delta$ is left as it is. The projection is evaluated
+in channel-span units, like the shell edit, and added to it.
+
+\paragraph{Amplitude and sign.}
+The target $\delta$ is resampled from real windows of the same kind in the
+other folds. On each real window, after $m$, $d$ is evaluated at every
+admissible position and the value of largest magnitude is kept with its sign.
+The sign of a draw is flipped only when $\lvert\delta\rvert$ exceeds the room
+between the donor and the edge of $[0, 1]$ in the requested direction, measured
+on the bins of positive weight, and the opposite direction has more room. The
+magnitude is always kept. The level shift has one real event, in fold~0, so
+folds~1 and~2 borrow its amplitude, and fold~0 measures the amplitude on its
+own held-out event.
+
+\subsection{Subsequence pool and gallery}
+\label{sec:pool}
+
+The 128 pool windows of a channel receive the shell edit and no weight vector.
+After sampling they are named from the finished window and from the donors on
+the same channel. Let $b_{-}$ and $b_{+}$ be the 5th and 95th percentiles of
+the donor bins. The out-of-range score is
+\begin{equation}
+\label{eq:gout}
+g_{\mathrm{out}}(x)
+  = \frac{1}{W}\sum_{i}
+    \bigl(\max(0, x_{i} - b_{+}) + \max(0, b_{-} - x_{i})\bigr).
+\end{equation}
+The contextual score clips the window into $[b_{-}, b_{+}]$ and compares a
+stretch with the rest of the window. Stretches are 64 bins long and start
+every 16 bins. Writing $\tilde{x}$ for the clipped window and $S$ for a
+stretch,
+\begin{equation}
+\label{eq:gctx}
+g_{\mathrm{ctx}}(x)
+  = \max_{S}\,
+    \bigl\lvert
+      \operatorname{mean}_{S}(\tilde{x})
+      - \operatorname{mean}_{\text{outside }S}(\tilde{x})
+    \bigr\rvert .
+\end{equation}
+The top third of the pool by $g_{\mathrm{out}}$ is named global subsequence.
+Of the rest, the top third by $g_{\mathrm{ctx}}$ is named local subsequence,
+and the remainder is named subsequence, without a local or global claim. Since
+128 is not divisible by three, the two spare windows rotate with the channel,
+and each of the three names totals 256 over the six channels. A gallery
+therefore holds 384 spikes, 384 level shifts and 256 windows of each
+subsequence name, a balance that differs from the real counts in
+Table~\ref{tab:kinds}.
+
+The pool receives the shell and nothing else. A prototype pull toward a real
+anomaly embedding would carry the real window's layout with it
+(Section~\ref{sec:related}). The final recipe also has no spatial mask. An
+earlier variant replaced every bin outside a mask around the requested anomaly
+with the noised donor at each step, as in RePaint~\cite{lugmayr2022repaint},
+which yields a bin-level label. The final recipe lets the chain rewrite the
+whole window; Section~\ref{sec:morph} compares the two.
 
 \section{Evaluation}
 \label{sec:eval}
 
 \subsection{Realism and diversity}
+\label{sec:realism-metrics}
 
-Following GenIAS~\cite{genias2025}, each window is mapped to a frozen feature
-$\phivec \in \mathbb{R}^{12}$: the mean, standard deviation, minimum and
-maximum of the window after it has been z-scored, the mean and standard
-deviation of its first difference, its peak absolute value, the longest run of
-bins whose absolute z-score exceeds one, and the log-energy of four Fourier
-bands. No coefficient of $\phivec$ is trained, and $\phivec$ is not the
-encoder used for steering.
+Following GenIAS~\cite{genias2025}, each window is mapped to a fixed feature
+$\phivec \in \mathbb{R}^{12}$. The window is z-scored, and $\phivec$ holds the
+mean and standard deviation of the z-scored window (zero and one by
+construction; they are part of the frozen feature pack), its minimum and
+maximum, the mean and standard deviation of its first difference, its peak
+absolute value, the longest run of bins with absolute value above one as a
+fraction of $W$, and the log mean energy in four equal bands of its Fourier
+spectrum. The z-scoring makes $\phivec$ blind to a window's level and scale,
+so it measures shape. Nothing in $\phivec$ is trained, and it is unrelated to
+the steering encoder.
 
-Let $A$ be the real anomalous windows of a query fold and $G$ a generated
-gallery. With $d(a) = \min_{g \in G} \lVert \phivec(a) - \phivec(g)\rVert_{2}$,
+Let $A$ be the real anomalous windows of a held-out fold and $G$ a generated
+gallery. With $\mathrm{dist}(a) = \min_{g \in G} \lVert \phivec(a) -
+\phivec(g)\rVert_{2}$,
 \begin{equation}
 \label{eq:arp}
 \mathrm{ARP}
-  = \frac{1}{1 + \lvert A\rvert^{-1}\sum_{a \in A} d(a)}.
+  = \frac{1}{1 + \lvert A\rvert^{-1}\sum_{a \in A} \mathrm{dist}(a)}.
 \end{equation}
-ARP is high when real anomalies lie close to some generated window. It says
-nothing about whether the rest of the gallery is far away, and nothing about
-which kind was requested. Coverage at a frozen radius $\tau = 0.105$ is the
-fraction of $a \in A$ with $d(a) \le \tau$. The radius was set so that an
-unguided full-noise gallery covers about ten percent of real anomalies, and
-it is not retuned.
+ARP is high when every real anomaly lies close to some generated window. It
+rewards a gallery for reaching the real anomalies and ignores the rest of the
+gallery and the requested kind. Coverage, a fixed-radius analogue of the
+coverage of Naeem et al.~\cite{naeem2020prdc}, is the fraction of $a \in A$
+with $\mathrm{dist}(a) \le \rho$. The radius $\rho = 0.105$ is frozen: it is
+the value at which an unguided gallery sampled from pure noise covers 10\% of
+the fold-0 anomalies.
 
 Diversity has two summaries. The mean pairwise distance in $\phivec$ is
 scale-dependent and unbounded. The entropy diversity index partitions the
 union of the real query windows and every gallery in the comparison by
-$k$-means with $k = 16$, seed 0, and reports the Shannon entropy of each
-gallery's share of those regions. The ceiling is $\log 16 \approx 2.77$. The
-partition depends on which galleries are included, so the entropies in
-Table~\ref{tab:realism} are comparable to each other and not to an entropy
-computed on a different set of methods. We refit the partition on each fold
-and average.
+$k$-means with 16 clusters and a fixed seed, and reports the Shannon entropy of
+each gallery's share of those clusters, with ceiling $\log 16 \approx 2.77$.
+The partition depends on which galleries are included, so the entropies in
+Table~\ref{tab:realism} are comparable with each other only. We refit the
+partition on each fold and average.
 
-A classifier two-sample test asks whether real anomalies and generated windows
-can be told apart~\cite{lopezpaz2017c2st}. We report two versions, because
-they disagree. One is a logistic regression on $\phivec$, the other a ridge
-classifier on ROCKET features of the raw window~\cite{dempster2020rocket}.
-Both are grouped so that windows of one event do not sit on both sides of a
-split. An area of $1/2$ means the classifier is at chance.
+Two classifier two-sample tests~\cite{lopezpaz2017c2st} ask whether a
+generated gallery can be told from the real anomalies. The first is a logistic
+regression on the raw window in channel-span units, balanced across channels,
+with a 70/30 split grouped by event, five seeds and a permutation test; it
+reports the median balanced accuracy. The second is a ridge classifier on
+standardized ROCKET features of the raw window, 300 random kernels fit on the
+donors~\cite{dempster2020rocket}, scored by out-of-fold AUC with folds grouped
+by event and averaged over three seeds. A value of $1/2$ means chance on
+either scale.
 
 Three galleries anchor the scale of ARP. Real anomalies from the training
-folds, offered as a gallery, score 0.792. The nominal donors score 0.320.
-White noise scores 0.158. A generated gallery that does no more than copy its
-donor lands near 0.32, whatever its diagrams look like.
+folds, offered as a gallery, score 0.792. The nominal donors score 0.320, and
+white noise scores 0.158. A gallery that stays close to its donors lands near
+0.32 whatever its windows look like.
 
-\subsection{Does the gallery help a detector?}
+\subsection{Detector utility}
+\label{sec:detector}
 
-The detector is a small convolutional network: three stride-2 convolutions
-($1 \to 32$, kernel 7; $32 \to 64$, kernel 5; $64 \to 64$, kernel 5) with
-SiLU nonlinearities, global average pooling, and a linear map to one logit.
-It has 31{,}169 parameters. It is trained with balanced batches of anomalies
-against nominal and rare windows, binary cross-entropy, Adam at learning rate
-$10^{-3}$, for 400 steps. The decision threshold is the empirical 1\%
-false-alarm point on held-out nominal windows. An event is counted as found if
-any of its windows exceeds the threshold. The reported number is event recall,
-the fraction of the 22 development events that are found.
+\paragraph{Detector.}
+The detector is a small convolutional network: the convolution stack $C$ of the
+steering encoder, trained separately here, followed by global average pooling
+and a linear map to one logit, $31{,}169$ parameters in all. Inputs are in
+channel-span units. Training runs for 400 Adam steps at learning rate
+$10^{-3}$ with binary cross-entropy. Each batch holds 16 positives and 16
+negatives drawn uniformly with replacement.
 
-Two operating points are easy to confuse. At the full budget the detector
-sees every training-fold anomaly window, on the order of four hundred, plus
-256 generated windows. At budget $k$ it sees $k$ real anomaly windows plus $k$
-generated ones. The real subset is drawn once per fold and seed and shared by
-every method, so differences are paired. We use five seeds and the three event
-folds. Paired differences are bootstrapped over the 22 events
-\cite{efron1994bootstrap}. With 22 events the intervals are wide; a difference
-whose interval contains zero is reported as unresolved, including when the
-bootstrap tail probability is just under 0.05.
+\paragraph{Data.}
+For held-out fold $k$, the donors whose index modulo~3 equals $k$ are test
+negatives: these 512 windows set the decision threshold, the empirical 1\%
+false-alarm point. The other donors, less a fifth reserved as a reference set
+for rank fusion, are training negatives, together with the rare windows of the
+training folds. Positives are real anomaly windows of the training folds plus
+generated windows from that fold's gallery. A generated window whose donor is
+a test negative is excluded, so no test negative has an edited copy among the
+positives.
 
-The generated gallery for a fold is built without that fold's anomaly events,
-with the level-shift exception already noted. Published and hand-built
-baselines are given the same donors: a locked GenIAS checkpoint, a
-reimplementation of the published GenIAS procedure, CutAddPaste
-\cite{wang2024cutaddpaste}, and a hand-built injector that adds a step, pulse,
-ramp or scale change of random amplitude. The reimplemented GenIAS differs
-from its donor by an RMSE of $2.3 \cdot 10^{-3}$ in channel-span units.
+\paragraph{Scoring.}
+An event of the held-out fold is found when any of its windows scores at or
+above the threshold. Event recall pools the three folds, 22 events, for each
+seed, and we report the median over five seeds. The false-alarm rate on
+rare-but-valid events is measured on the held-out fold's rare windows.
 
-\subsection{Ablations of the edit}
+\paragraph{Budgets.}
+At the full budget the detector sees every training-fold anomaly window, 396
+to 546 of them, plus 256 generated windows. At budget $k$ it sees $k$ real
+windows, drawn uniformly once per fold and seed and shared by every method,
+plus $k$ generated windows. Differences between methods are therefore paired.
 
-Four variants share the denoiser, the donors, the schedule and the seeds.
-The \emph{contrast model} is the method above. The \emph{masked} variant is
-the same method with the RePaint mask restored. The \emph{shell-only} variant
-applies the shell edit and no contrast, so it never asks for a spike or a step.
-The \emph{twin} is the same chain with every edit turned off: a partly noised
-donor, denoised, and nothing else. The \emph{prototype} baseline replaces the
-contrast with an attraction in the encoder toward the embedding of a real
-anomaly of the assigned kind, which is the natural use of the labelled windows
-and the one that inherits their positions.
+\paragraph{Intervals.}
+For each method and event, the hit is averaged over seeds. The paired
+difference from real data alone is the mean over events of the difference in
+hits. Resampling the 22 events 2{,}000 times~\cite{efron1994bootstrap} gives a
+95\% percentile interval and a one-sided tail probability. With 22 events the
+intervals are wide, and we call a difference resolved only when its interval
+excludes zero.
+
+\paragraph{Published baselines.}
+Published and hand-built editors are given the same donors: a locked GenIAS
+checkpoint, a reimplementation of the published GenIAS procedure, CutAddPaste
+\cite{wang2024cutaddpaste}, and a hand-built injector. CutAddPaste pastes a
+patch of 8 to 35\% of the window from another donor on the same channel, with a
+linear trend and Gaussian jitter. The injector adds a step, a pulse of 4 to 63
+bins or a ramp, of 0.5 to 2 window standard deviations with a random sign, or
+rescales the window by $1 \pm u/4$ with $u$ between 0.5 and 2. The
+reimplemented GenIAS differs from
+its donor by an RMSE of $2.3 \cdot 10^{-3}$ channel spans.
+
+\subsection{Galleries compared}
+\label{sec:ablations}
+
+Five galleries share the denoiser, the donors, the kind allocation and the
+seeds.
+\begin{itemize}
+\setlength{\itemsep}{1pt}
+\item The \emph{contrast model} is the method of Section~\ref{sec:method}.
+\item The \emph{masked} variant restores the RePaint mask: bins outside a mask
+  around the requested anomaly follow the noised donor, and edits stay inside
+  the mask.
+\item The \emph{twin} runs the same chain with every edit off: a partly noised
+  donor, denoised.
+\item The \emph{prototype} gallery replaces the contrast on spikes and level
+  shifts with a pull, in the steering encoder, toward the embedding of one real
+  anomaly of the assigned kind from the other folds. The pull is a normalized
+  gradient step of weight one, and the shell term and sampler are unchanged.
+  The subsequence pool keeps the shell only.
+\item The \emph{original-sampler prototype} uses the same targets on the
+  sampler this work started from: a single causal pass without the reversed
+  blend, the guidance gradient taken through the denoiser with respect to
+  $x_{t}$, constant weights, no self-recurrence, and a full-strength last edit.
+\end{itemize}
+The sweep in Section~\ref{sec:detect} also includes the contrast model with the
+prototype pull added on top, and the no-edit twin of the masked variant.
 
 \section{Results}
 \label{sec:results}
 
 \subsection{What the windows look like}
+\label{sec:morph}
 
-Figure~\ref{fig:gallery} shows real and generated windows. The numerical
-counterpart is Table~\ref{tab:morph}. Spike height and the share of spikes
-that occupy a single bin are measured in channel-span units. The contrast
-model lands on the real spike (height 0.838 against 0.831, 99\% of draws a
-single bin). The masked variant, which was built to protect the baseline,
-overshoots the height and spreads a third of the spikes over more than one
-bin. The prototype and the shell-only edit produce spikes of about half the
-real height, and about 22\% of their point-anomaly draws are noise bursts
-rather than spikes. The contrast model still produces a noise burst in 3\% of
-draws. More visibly, 14.8\% of its point-anomaly draws contain three or more
-deep downward dips in the baseline. The real windows have none. The mask
-suppresses these dips, because it holds the baseline at the donor, and the
-prototype is worse (48\%).
+Figure~\ref{fig:gallery} shows real and generated windows, and
+Table~\ref{tab:morph} measures them. The spike measurements take the bin of
+largest deviation from the window's median. Height is that deviation; a spike
+occupies one bin when no other bin within eight exceeds half of it; baseline
+texture is the mean absolute first difference outside twelve bins around the
+peak. Level-shift roughness is the mean absolute first difference over the
+window.
 
-Level shifts from the contrast model are 1.21 times as rough as the real
-event, against 1.53 times for the masked variant. The baseline texture around
-its spikes is 0.83 times the real texture, so the window is slightly smoother
-than the data. The edit touches 42\% of bins in a typical window and 29\% of
-bins in a point anomaly. The masked variant touches under 1\% of a point
-anomaly, which is the spike itself, and therefore has a bin-level label. The
-contrast model does not.
+\begin{figure}[t]
+\centering
+\includegraphics[width=\textwidth]{gallery.pdf}
+\caption{Three real windows and five generated windows of each kind, in
+channel-span units. Generated windows are random draws from the contrast
+model's three fold galleries; the subsequence rows show windows that received
+the global or local name. Dotted lines mark the channel span, 0 and 1.}
+\label{fig:gallery}
+\end{figure}
 
 \begin{table}[t]
 \centering
 \caption{Morphology of point anomalies and level shifts, development
-galleries. Spike height is in channel-span units. Roughness and texture are
+galleries pooled over folds, channel-span units. Roughness and texture are
 ratios to the real windows. A noise burst is a point-anomaly draw whose
-baseline is more than three times the real baseline texture. Deep dips are
-point-anomaly draws with three or more large downward spikes beside the
-requested one.}
+baseline texture is more than three times the real one. Deep dips counts
+point-anomaly draws with three or more large downward excursions beside the
+requested spike. Real windows of short events are cut with the event in the
+middle, which fixes the real spike position at 0.50. Prototype is the prototype
+pull on our sampler; Orig.\ is the original-sampler prototype.}
 \label{tab:morph}
 \setlength{\tabcolsep}{4.5pt}
 \small
 \begin{tabular}{@{}lrrrrr@{}}
 \toprule
- & Real & Contrast & Masked & Shell only & Prototype \\
+ & Real & Contrast & Masked & Prototype & Orig. \\
 \midrule
 Spike height & 0.831 & 0.838 & 0.988 & 0.496 & 0.447 \\
 Single-bin spikes & 100\% & 99\% & 53\% & 85\% & 53\% \\
-Noise bursts & 0\% & 3.0\% & 0\% & 22\% & 23\% \\
-Deep dips ($\ge 3$) & 0\% & 14.8\% & 2.0\% & --- & 48\% \\
-Level-shift roughness & 1 & 1.21$\times$ & 1.53$\times$ & 1.58$\times$ & 1.70$\times$ \\
+Spike position, 10th--90th pct. & 0.50--0.50 & 0.18--0.82 & 0.18--0.82 & 0.50--0.50 & 0.04--0.50 \\
+Noise bursts & 0\% & 3.0\% & 0\% & 21.8\% & 22.8\% \\
+Deep dips ($\ge 3$) & 0\% & 14.8\% & 2.0\% & --- & 48.4\% \\
 Baseline texture & 1 & 0.83$\times$ & 0.97$\times$ & 1.08$\times$ & 2.00$\times$ \\
+Level-shift roughness & 1 & 1.21$\times$ & 1.53$\times$ & 1.58$\times$ & 1.70$\times$ \\
+Level shift at the head & 100\% & 50\% & 50\% & 100\% & 100\% \\
 \bottomrule
 \end{tabular}
 \end{table}
+
+The contrast model plants spikes at the real height, 0.838 against 0.831, and
+in a single bin in 99\% of draws. Its level shifts carry the real step:
+scanned with the same level-shift contrast that sets $\delta$, the median
+generated amplitude is 0.85 against 0.81 for the six real windows, and the
+transitions are 1.21 times as rough as the real event. The masked variant overshoots the spike height (0.988), spreads about
+half of its spikes over more than one bin, and makes level shifts 1.53 times as
+rough. The mask is the only difference between the two, so it accounts for
+the wider spikes and the rougher steps. It forces a seam between edited and
+donor bins, and the chain has to resolve that seam inside the mask. Both
+prototype galleries plant spikes at about half the real height, and about
+22\% of their point-anomaly draws are noise bursts.
+
+Position separates the two families. The prototype on our sampler reproduces
+the real centring exactly (0.50--0.50), and every level shift it makes sits at
+the head of the window, where the one real event is. The contrast model places
+spikes where the sampled weight vector asks, between 0.18 and 0.82 of the
+window for 80\% of draws, and puts half of its level shifts at the tail.
+
+The contrast model has two visible defects. Three percent of its point draws
+are noise bursts, and 14.8\% carry three or more deep downward dips in the
+baseline, which the real windows never show. The mask suppresses the dips
+(2.0\%) by holding the baseline at the donor; the original-sampler prototype
+has them in 48\% of draws. Around its spikes the contrast model's baseline is
+slightly smoother than the data, at 0.83 times the real texture.
+
+The edit is spread over the window. Relative to its twin, the contrast model
+changes 42\% of all bins by more than 0.05 channel spans, and 29\% of the bins
+of a point-anomaly window. The masked variant changes 0.9\% of the bins of a
+point-anomaly window, essentially the spike, so its mask doubles as a
+bin-level label.
 
 \subsection{Feature-space realism}
 
 Table~\ref{tab:realism} is the GenIAS protocol. The contrast model reaches ARP
 0.509, against 0.318 for its twin and about 0.32 for every published or
-hand-built editor, which sit on the donor. The GenIAS reimplementation is
-slightly below the donor, consistent with its RMSE. Relative to the anchors,
+hand-built editor, which stay at the donor. The GenIAS reimplementation is
+slightly below the donor, consistent with its small RMSE. On the anchor scale,
 0.509 lies between the donor (0.320) and an oracle gallery of real anomalies
-(0.792). It is not the best ARP in the table: the shell-only edit scores
-0.579 and the prototype 0.567.
+(0.792). The prototype galleries score higher, 0.579 on our sampler and 0.567
+on the original one. Per-fold ARP intervals from an event bootstrap are wide,
+about 0.2 to 0.8, and the four steered galleries lie well inside each other's
+intervals; the paired comparison with the twin is the informative one.
 
-The paired ARP gain over the twin averages $+0.191$, interval
-$[+0.039, +0.346]$, from fold-wise gains $+0.143$, $+0.051$ and $+0.381$.
-Standardizing $\phivec$ shrinks those three numbers to $+0.025$, $+0.005$ and
-$+0.202$. Coverage moves the other way, from 8.1\% for the twin to 3.8\% for
-the contrast model: average distance falls, and so does the fraction of real
-anomalies inside the protocol's ball. The misses are mostly global
-subsequences, which dominate $A$ and which the contrast does not build.
-Entropy is 2.33 for the contrast gallery and 1.06 for the real anomalies in
-the same partition, so the gallery spreads into regions the real set does not
-occupy. Pairwise distance is 10.5 against 1.7 for the twin and about 1.1 for
-the editors.
+That paired gain averages $+0.191$, interval $[+0.039, +0.346]$, from
+fold-wise gains of $+0.143$, $+0.051$ and $+0.381$. Standardizing $\phivec$
+shrinks the three to $+0.025$, $+0.005$ and $+0.202$. Coverage moves the other
+way, from 8.1\% for the twin to 3.8\% for the contrast model: the average
+distance falls, and so does the fraction of real anomalies inside the radius.
+The misses are mostly global subsequences, which dominate $A$ and which the
+pool reaches through the shell alone. Entropy is 2.33 for the contrast gallery
+and 1.06 for the real anomalies in the same partition, so the gallery spreads
+into clusters the real set leaves empty. Pairwise distance is 10.5, against
+1.7 for the twin and about 1.1 for the editors.
 
-The two classifier tests disagree with ARP and with each other. On
-$\phivec$, logistic regression separates the contrast gallery from real
-anomalies at AUC 0.645, the prototype at 0.662 and the twin at 0.517, so by
-this test steering makes a sample easier to reject. On ROCKET features the
-twin is rejected at 0.905, the contrast model at 0.880, the shell-only edit
-at 0.882 and the prototype at 0.966. Neither AUC is the objective the sampler
-maximises.
+The two classifier tests read separability. On raw windows, the logistic
+regression tells the twin from real anomalies at a median balanced accuracy of
+0.517, close to chance, and the steered galleries at 0.63 to 0.66 (contrast
+0.645, masked 0.634, original-sampler prototype 0.662). ROCKET features
+separate every gallery well, with AUC 0.905 for the twin, 0.880 for the
+contrast model, 0.882 for the prototype and 0.966 for the original-sampler
+prototype. By the first test steering makes a window easier to tell from real
+anomalies; by the second the contrast model and the prototype are slightly
+harder to tell apart than the twin. The sampler optimizes neither test.
 
 \begin{table}[t]
 \centering
 \caption{Realism on the development folds. ARP, coverage and pairwise
-distance are means over the three event folds. Entropy is the mean of three
+distance are means over the three held-out folds. Entropy is the mean of three
 partitions, each fit to that fold's real anomalies together with every gallery
-listed here ($k = 16$, seed 0). The real row has no ARP: it would be the
-distance from a set to itself.}
+listed here. The ROCKET two-sample AUC was computed for the sampler variants
+only. The real row has no ARP, which would be the distance from a set to
+itself.}
 \label{tab:realism}
 \small
-\begin{tabular}{@{}lrrrr@{}}
+\begin{tabular}{@{}lrrrrr@{}}
 \toprule
-Gallery & ARP & Cov. & Entropy & Pairwise \\
+Gallery & ARP & Cov. & Entropy & Pairwise & ROCKET AUC \\
 \midrule
-Real anomalies & --- & --- & 1.06 & --- \\
-Contrast (ours) & 0.509 & 0.038 & 2.33 & 10.53 \\
-Contrast, masked & 0.499 & 0.033 & 2.32 & 9.68 \\
-Shell only & 0.579 & 0.029 & 2.37 & 8.83 \\
-Prototype & 0.567 & 0.015 & 2.34 & 7.30 \\
-Twin (no edit) & 0.318 & 0.081 & 0.97 & 1.71 \\
+Real anomalies & --- & --- & 1.06 & --- & --- \\
+Contrast (ours) & 0.509 & 0.038 & 2.33 & 10.53 & 0.880 \\
+Contrast, masked & 0.499 & 0.033 & 2.32 & 9.68 & 0.881 \\
+Prototype & 0.579 & 0.029 & 2.37 & 8.83 & 0.882 \\
+Prototype, original sampler & 0.567 & 0.015 & 2.34 & 7.30 & 0.966 \\
+Twin (no edit) & 0.318 & 0.081 & 0.97 & 1.71 & 0.905 \\
 \midrule
-GenIAS, locked & 0.317 & 0.195 & 0.72 & 1.09 \\
-GenIAS, reimplemented & 0.290 & 0.053 & 0.17 & 0.80 \\
-CutAddPaste & 0.322 & 0.290 & 0.72 & 1.11 \\
-Hand-built shapes & 0.319 & 0.267 & 0.74 & 1.21 \\
-Nominal donor & 0.320 & 0.354 & 0.71 & 1.11 \\
+GenIAS, locked & 0.317 & 0.195 & 0.72 & 1.09 & --- \\
+GenIAS, reimplemented & 0.290 & 0.053 & 0.17 & 0.80 & --- \\
+CutAddPaste & 0.322 & 0.290 & 0.72 & 1.11 & --- \\
+Hand-built shapes & 0.319 & 0.267 & 0.74 & 1.21 & --- \\
+Nominal donor & 0.320 & 0.354 & 0.71 & 1.11 & --- \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -564,72 +1035,87 @@ Nominal donor & 0.320 & 0.354 & 0.71 & 1.11 \\
 \subsection{Event recall}
 \label{sec:detect}
 
-At the full budget, with every training-fold anomaly available, median event
-recall is 0.591 for real anomalies alone and 0.682 with the contrast gallery
-added (mean 0.655, average precision 0.485, window AUROC 0.617). The paired
-difference is $+0.091$ with interval $[-0.045, +0.236]$. The interval contains
-zero. GenIAS, the reimplementation and CutAddPaste all sit at median 0.545,
-below real data alone (GenIAS minus real data is $-0.027$, interval
-$[-0.055, 0]$). The hand-built shapes match real data at 0.591. The contrast
-model's false-alarm rate on rare-but-valid events rises from 0.026 to 0.059,
-so part of the recall is paid for in alarms on operations that are unusual and
-not anomalous.
+At the full budget, median event recall is 0.591 for real anomalies alone and
+0.682 with the contrast gallery added (mean 0.655, average precision 0.485,
+window AUROC 0.617). The paired difference is $+0.091$, interval
+$[-0.045, +0.236]$, so it is unresolved. Against GenIAS and the hand-built
+shapes the paired differences are $+0.118$ $[-0.036, +0.273]$ and $+0.109$
+$[-0.018, +0.245]$. GenIAS, its reimplementation and CutAddPaste all reach a
+median of 0.545, and GenIAS minus real data alone is $-0.027$, interval
+$[-0.055, 0]$. The hand-built shapes reach 0.591. The contrast model raises
+the false-alarm rate on rare-but-valid events from 0.026 to 0.059, so part of
+the recall is paid for in alarms on operations that are unusual and valid.
 
-The shell-only edit, in the same detector protocol, reaches median recall
-0.727, and the prototype reaches 0.636. The ordering at the full budget is
-the ordering of ARP, not the ordering of spike morphology. A window-level
-network can use a large, unstructured deviation. It does not need the
-deviation to be a one-bin spike.
+The prototype gallery reaches a full-budget median of 0.727, with a rare
+false-alarm rate of 0.088, and the original-sampler prototype reaches 0.636.
+At this budget the ordering follows ARP more closely than spike morphology:
+a window-level network can use a large deviation of any shape. The twin
+reaches 0.500 in a second run of the same protocol, in which real data alone
+again reaches 0.591, so regenerated donors without an edit lower recall when
+they are added as positives.
 
 Figure~\ref{fig:sweep} and Table~\ref{tab:sweep} are the comparison the
-generator is for: $k$ real anomaly windows, plus $k$ generated ones. For the
-contrast model the 95\% interval excludes zero at $k = 8$, $32$ and $64$
-($+0.155$, $+0.200$, $+0.136$), and the $k = 32$ interval is
-$[+0.073, +0.318]$. At $k \le 4$ and from $k = 128$ up, the interval contains
-zero, and the prototype is ahead at the small end. Putting the prototype
-attraction back on top of the contrast changes the $k = 32$ gain from
-$+0.200$ to $+0.182$. Restoring the mask cuts it to $+0.109$. The twin does
-not help. The annotation in Figure~\ref{fig:sweep} is that paired $+0.200$,
-not the vertical gap between the two median curves.
+generator is for: $k$ real anomaly windows plus $k$ generated ones. For the
+contrast model the interval excludes zero at $k = 8$, 32 and 64, with gains of
+$+0.155$, $+0.200$ and $+0.136$; at $k = 32$ the interval is
+$[+0.073, +0.318]$. At $k \le 4$ the generated windows add nothing measurable,
+and from $k = 128$ on the gain is about $+0.11$ with intervals that include
+zero. The original-sampler prototype has the largest gains up to $k = 32$ and
+is resolved from $k = 2$ to $k = 32$; from $k = 64$ on, the contrast model's
+point estimates exceed it. The prototype on our sampler is resolved
+at $k = 32$ only. Adding the prototype pull on top of the contrast gives
+$+0.182$ at $k = 32$, and restoring the mask gives $+0.109$. The no-edit twin
+of the masked variant lowers recall: its paired difference is negative at
+seven of the nine budgets, and its interval lies below zero at $k = 2$, 4, 64
+and 256.
 
 Rank-fusing the detector logit with a label-free diffusion reconstruction
-score changes the full-budget comparison: the contrast model minus real data
-becomes $+0.136$ with interval $[+0.036, +0.264]$. That is a different system.
-We do not use it as the primary endpoint.
+score changes the full-budget comparison: the paired difference between the
+contrast model and real data alone becomes $+0.136$, with interval
+$[+0.036, +0.264]$. Fusion makes it a different system, and we keep the
+detector alone as the primary endpoint.
 
 \begin{figure}[t]
 \centering
 \includegraphics[width=0.64\textwidth]{sweep.pdf}
-\caption{Event recall of a detector trained on $k$ real anomaly windows (dashed)
-or on those windows plus $k$ windows from the contrast model (solid). The band
-is the minimum and maximum over five seeds. The annotation at $k = 32$ is the
-paired difference $+0.200$, not the gap between the plotted medians.}
+\caption{Event recall of a detector trained on $k$ real anomaly windows
+(dashed) or on those windows plus $k$ windows from the contrast model (solid),
+median over five seeds. The shaded band is the range of the solid curve over
+the seeds. The annotation at $k = 32$ is the paired difference $+0.200$; the
+two medians differ by more, because the pairing is per event.}
 \label{fig:sweep}
 \end{figure}
 
 \begin{table}[t]
 \centering
-\caption{Paired change in event recall relative to the same $k$ real windows
-and no synthetic windows. Five seeds, three folds, bootstrap over 22 events.
-An interval that excludes zero is marked. Medians can tie while paired
-differences differ, because the pairing is at the level of events.}
+\caption{Event recall at budget $k$: median over five seeds, and paired change
+$\Delta$ relative to the same $k$ real windows alone, bootstrapped over 22
+events. Medians can tie while paired differences differ, because the pairing
+is per event. Prototype is the prototype pull on our sampler; Orig.\ is the
+original-sampler prototype.}
 \label{tab:sweep}
 \small
-\begin{tabular}{@{}rrrrrrr@{}}
+\begin{tabular}{@{}rrrrrrrr@{}}
 \toprule
- & \multicolumn{2}{c}{Contrast} & \multicolumn{2}{c}{Prototype} & \multicolumn{2}{c}{Shell only} \\
-\cmidrule(lr){2-3}\cmidrule(lr){4-5}\cmidrule(lr){6-7}
-$k$ & median & $\Delta$ & median & $\Delta$ & median & $\Delta$ \\
+ & Real & \multicolumn{2}{c}{Contrast} & \multicolumn{2}{c}{Prototype}
+ & \multicolumn{2}{c}{Orig.} \\
+\cmidrule(lr){3-4}\cmidrule(lr){5-6}\cmidrule(lr){7-8}
+$k$ & median & median & $\Delta$ & median & $\Delta$ & median & $\Delta$ \\
 \midrule
-1  & 0.318 & $+0.01$ & 0.409 & $+0.09$ & 0.318 & $+0.04$ \\
-8  & 0.545 & $+0.15^{\ast}$ & 0.545 & $+0.18^{\ast}$ & 0.500 & $+0.10^{\ast}$ \\
-32 & 0.636 & $+0.20^{\ast}$ & 0.636 & $+0.24^{\ast}$ & 0.591 & $+0.16^{\ast}$ \\
-64 & 0.636 & $+0.14^{\ast}$ & 0.636 & $+0.13^{\ast}$ & 0.636 & $+0.10$ \\
-256 & 0.682 & $+0.11$ & 0.636 & $+0.08$ & 0.727 & $+0.12$ \\
+1   & 0.273 & 0.318 & $+0.009$ & 0.318 & $+0.036$ & 0.409 & $+0.091$ \\
+2   & 0.318 & 0.273 & $-0.009$ & 0.318 & $-0.018$ & 0.500 & $+0.136^{\ast}$ \\
+4   & 0.273 & 0.364 & $+0.027$ & 0.364 & $+0.082$ & 0.545 & $+0.182^{\ast}$ \\
+8   & 0.364 & 0.545 & $+0.155^{\ast}$ & 0.500 & $+0.100$ & 0.545 & $+0.182^{\ast}$ \\
+16  & 0.455 & 0.591 & $+0.164$ & 0.545 & $+0.118$ & 0.636 & $+0.200^{\ast}$ \\
+32  & 0.364 & 0.636 & $+0.200^{\ast}$ & 0.591 & $+0.164^{\ast}$ & 0.636 & $+0.236^{\ast}$ \\
+64  & 0.545 & 0.636 & $+0.136^{\ast}$ & 0.636 & $+0.100$ & 0.636 & $+0.127$ \\
+128 & 0.591 & 0.727 & $+0.118$ & 0.682 & $+0.127$ & 0.636 & $+0.091$ \\
+256 & 0.591 & 0.682 & $+0.109$ & 0.727 & $+0.118$ & 0.636 & $+0.082$ \\
 \bottomrule
 \end{tabular}\\[0.3em]
-{\footnotesize $^{\ast}$95\% bootstrap interval excludes zero.
-Real-only medians at these $k$ are 0.273, 0.364, 0.364, 0.545, 0.591.}
+{\footnotesize $^{\ast}$95\% bootstrap interval excludes zero. Two intervals
+end exactly at zero and are left unmarked: Prototype at $k = 8$ and Orig.\ at
+$k = 64$.}
 \end{table}
 
 \subsection{Held-out test}
@@ -637,61 +1123,78 @@ Real-only medians at these $k$ are 0.273, 0.364, 0.364, 0.545, 0.591.}
 
 The 91 test events have not been used. The pre-registered test report is one
 run of the contrast model, with the frozen $\phivec$ and the same detector, at
-full budget and at $k = 32$, with no retuning after the numbers are seen.
+the full budget and at $k = 32$, with no retuning after the numbers are seen.
 Until that run, every claim above is a claim about the 22 development events.
 
 \section{Limitations}
 \label{sec:limits}
 
+\paragraph{Sample size.}
 Every interval in this paper is computed on 22 events, and the level-shift
-numbers are one event. The three fold-wise ARP gains are $+0.143$, $+0.051$
-and $+0.381$.
+numbers describe one event. The three fold-wise ARP gains, $+0.143$, $+0.051$
+and $+0.381$, show how much a single fold can move a mean.
 
-Global and local subsequences are steered only by the shell. On this split
+\paragraph{Subsequences.}
+Global and local subsequences are steered by the shell alone. On this split
 the shell energy ranks labelled anomalies against nominal windows at an AUROC
-of about 0.54, so $Q$ means unusual among nominal windows, not similar to a
-labelled subsequence. Those two kinds are 648 of the 672 windows. A budget
-sweep that draws real windows uniformly is mostly a sweep over subsequences;
-a kind-stratified sweep is not here. The steering encoder is the fold-0
-checkpoint on every fold, and its contrastive loss was trained on the
-anomalies of folds~1 and~2, so the shell gradient for those folds is taken in
-a representation that has seen their labels. The contrast term does not use
-the encoder. The subsequence windows have no contrast, so they do. All six
-level-shift windows are one event in one fold: the other folds borrow its
-amplitude, and its own fold measures the amplitude on itself.
+of about 0.54, so $Q$ means unusual among nominal windows and carries no
+information about labelled subsequences. Those two kinds are 648 of the 672
+real windows. A budget sweep that draws real windows uniformly is mostly a
+sweep over subsequences; a sweep stratified by kind is future work.
 
-A quarter of each gallery is each kind, against 95\% global subsequences in
-the real windows. The kind assignment alone does not explain the detector
-gain, because the twin uses it and does not help, but the gallery is still
-not the mission's prior. The shell-only edit wins ARP and full-budget recall
-without placing the spike it was not asked for; the contrast model does the
-reverse. Bin-level localisation, where a known position should matter, is not
-implemented. The masked model is the one with a mask, and it is the weaker
-detector. Beating GenIAS, CutAddPaste and the hand-built shapes is a weak
-claim on these donors: they remain within a few thousandths of the donor in
-RMSE, and their ARP is the donor's. The comparisons that carry weight are the
-twin, the prototype, the shell-only edit, and real data alone.
+\paragraph{Labels inside the encoder.}
+The steering encoder is the fold-0 checkpoint on every fold, and its
+contrastive loss was trained on the anomalies of folds~1 and~2. For those two
+folds the shell gradient is taken in a representation that has seen their
+labels. The contrast term is independent of the encoder; the subsequence pool
+depends on it entirely. The level shift has a related exception: all six
+windows are one event in fold~0, so the other folds borrow its amplitude and
+fold~0 measures the amplitude on its own held-out event.
 
-The denoiser stays causal apart from~\eqref{eq:flip}, the schedule stays
-linear, and samples start from a donor at $t_{0} = 40$. Other channels and
-other missions are untouched. None of those changes would repair a missing
-subsequence target or an interval computed on 22 events.
+\paragraph{Gallery and windows.}
+Spikes and level shifts are each a quarter of a gallery, and the subsequence
+pool is the other half, split into three names of 256. In the real windows,
+636 of 672 are global subsequences. The twin uses the same donors and the same
+balance and lowers recall, so the balance alone does not produce the gain, but
+the gallery still departs from the mission's prior. The held-out windows are
+cut like the training windows, with short events in the middle, so the event
+recall endpoint gives no credit for the position spread of
+Table~\ref{tab:morph}. The prototype galleries win ARP and full-budget recall
+with spikes at half the real height; the contrast model plants the requested
+shape. Bin-level localisation, where a known position would matter, is left
+open, and the masked variant is the only recipe that emits a bin-level label.
+
+\paragraph{Published baselines.}
+Beating GenIAS, CutAddPaste and the hand-built shapes is a weak claim on these
+donors: their ARP equals the donor's to within 0.03, and the reimplemented
+GenIAS stays within an RMSE of $2.3 \cdot 10^{-3}$ of its donor. The
+comparisons that carry weight are the twin, the two prototype galleries, and
+real data alone.
+
+\paragraph{Model scope.}
+The denoiser is causal apart from~\eqref{eq:flip}, the schedule is linear and
+ends at $\abar_{199} = 0.13$, and every sample starts from a donor at
+$t_{0} = 40$. Other channels and other missions are untouched. A different
+backbone or schedule would leave the subsequence target and the 22-event
+intervals as they are.
 
 \section{Conclusion}
 
 A nominal diffusion model can be steered into spikes and level shifts whose
-size matches the few labelled examples, by a shell quantile plus an exact
-linear contrast. On the development events of ESA-ADB Mission~1, channels
-41--46, the windows help a small detector when real anomalies number in the
-tens, and the gain is unresolved once every development anomaly is already
-available. A prototype baseline leads at the smallest budgets. An untargeted
-shell edit leads on feature-space realism and on full-budget recall, and about
-one point-anomaly draw in seven still carries a run of deep baseline dips. We
-stop at this recipe. Subsequence targets, a bin-level detector, a
-kind-stratified budget, and one pre-registered run on the sealed test are the
-open measurements. A bidirectional backbone, a different noise schedule, and
-sampling from pure noise are future work, not a requirement for reporting
-what this recipe does.
+size matches the few labelled examples, using a shell quantile on every window
+and an exact linear contrast on the two kinds that have one. On the
+development events of ESA-ADB Mission~1, channels 41--46, the generated
+windows help a small detector when real anomalies number in the tens, and the
+gain is unresolved once every development anomaly is available. Prototype
+pulls toward real anomaly embeddings lead on feature-space realism, on
+full-budget recall and at the smallest budgets, with spikes at half the real
+height and positions copied from the labelled windows. The contrast model
+plants the requested shape at a sampled position, and about one point-anomaly
+draw in seven still carries a run of deep baseline dips. We stop at this
+recipe. Subsequence targets, a bin-level detector, a kind-stratified budget
+and one pre-registered run on the sealed test are the open measurements. A
+bidirectional backbone, a different noise schedule and sampling from pure noise
+are future work.
 
 \bibliographystyle{plain}
 \bibliography{refs}

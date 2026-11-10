@@ -1,5 +1,6 @@
-% Draft bibliography. Entries marked VERIFY were written from memory and must be
-% checked against the publisher record before submission.
+% Checked against publisher or preprint records on 10 Nov 2026.
+% GenIAS is still an arXiv preprint; its header prints "Mike Wang" for the
+% author DBLP lists as Qizhou Wang. ESA-ADB is still arXiv:2406.17826.
 
 @inproceedings{ho2020ddpm,
   title     = {Denoising Diffusion Probabilistic Models},
@@ -22,13 +23,11 @@
   year      = {2021}
 }
 
-% VERIFY: published as "Constrained Diffusion Models for Synthesizing
-% Representative Power Flow Datasets"? Check the final title and venue.
-@article{coletta2023guided,
-  title   = {On the Constrained Time-Series Generation Problem},
-  author  = {Coletta, Andrea and Gopalakrishnan, Sriram and Borrajo, Daniel and Vyetrenko, Svitlana},
-  journal = {arXiv preprint arXiv:2307.01717},
-  year    = {2023}
+@inproceedings{coletta2023guided,
+  title     = {On the Constrained Time-Series Generation Problem},
+  author    = {Coletta, Andrea and Gopalakrishan, Sriram and Borrajo, Daniel and Vyetrenko, Svitlana},
+  booktitle = {Advances in Neural Information Processing Systems},
+  year      = {2023}
 }
 
 @inproceedings{sehwag2022low,
@@ -38,8 +37,6 @@
   year      = {2022}
 }
 
-% VERIFY: published at ICLR 2024 as "Don't Play Favorites: Minority Guidance
-% for Diffusion Models".
 @inproceedings{um2023minority,
   title     = {Don't Play Favorites: Minority Guidance for Diffusion Models},
   author    = {Um, Soobin and Lee, Suhyeon and Ye, Jong Chul},
@@ -54,27 +51,25 @@
   year      = {2023}
 }
 
-% VERIFY: authors and title (the old refs.bib had "Generalized Imbalanced
-% Anomaly Synthesis" with anonymous authors).
 @article{genias2025,
-  title   = {{GenIAS}: Generator for Instantiating Anomalies in Time Series},
+  title   = {{GenIAS}: Generator for Instantiating Anomalies in time Series},
   author  = {Zamanzadeh Darban, Zahra and Wang, Qizhou and Webb, Geoffrey I. and Pan, Shirui and Aggarwal, Charu C. and Salehi, Mahsa},
   journal = {arXiv preprint arXiv:2502.08262},
   year    = {2025}
 }
 
-% VERIFY: authors.
 @inproceedings{wang2024cutaddpaste,
   title     = {{CutAddPaste}: Time Series Anomaly Detection by Exploiting Abnormal Knowledge},
   author    = {Wang, Rui and Mou, Xudong and Yang, Renyu and Gao, Kai and Liu, Pin and Liu, Chongwei and Wo, Tianyu and Liu, Xudong},
-  booktitle = {ACM SIGKDD Conference on Knowledge Discovery and Data Mining},
-  year      = {2024}
+  booktitle = {Proceedings of the 30th ACM SIGKDD Conference on Knowledge Discovery and Data Mining},
+  pages     = {3176--3187},
+  year      = {2024},
+  doi       = {10.1145/3637528.3671739}
 }
 
-% VERIFY: authors and final title.
 @article{kotowski2024esa,
   title   = {European Space Agency Benchmark for Anomaly Detection in Satellite Telemetry},
-  author  = {Kotowski, Krzysztof and Haskamp, Christoph and Andrzejewski, Jacek and Ruszczak, Bogdan and Nalepa, Jakub and Lakey, Daniel and Collins, Peter and Kolmas, Aybike and Bartesaghi, Mauro and Martinez-Heras, Jose and De Canio, Gabriele},
+  author  = {Kotowski, Krzysztof and Haskamp, Christoph and Andrzejewski, Jacek and Ruszczak, Bogdan and Nalepa, Jakub and Lakey, Daniel T. and Collins, Peter and Kolmas, Aybike and Bartesaghi, Mauro and Martinez-Heras, Jose Antonio and De Canio, Gabriele},
   journal = {arXiv preprint arXiv:2406.17826},
   year    = {2024}
 }
@@ -185,7 +180,9 @@
   title     = {Time Series Data Augmentation for Deep Learning: A Survey},
   author    = {Wen, Qingsong and Sun, Liang and Yang, Fan and Song, Xiaomin and Gao, Jingkun and Wang, Xue and Xu, Huan},
   booktitle = {International Joint Conference on Artificial Intelligence},
-  year      = {2021}
+  pages     = {4653--4660},
+  year      = {2021},
+  doi       = {10.24963/ijcai.2021/631}
 }
 
 @book{efron1994bootstrap,
