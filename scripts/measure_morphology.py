@@ -88,6 +88,7 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("-c", "--config", required=True)
     ap.add_argument("--variants", nargs="+", required=True)
+    ap.add_argument("--dir", default="results/shell_fixsweep", help="gallery directory under the repo root")
     args = ap.parse_args()
 
     cfg = load_config(args.config)
@@ -107,7 +108,7 @@ def main() -> None:
     for v in args.variants:
         got: dict[str, list[np.ndarray]] = {SPIKE: [], STEP: []}
         for f in range(3):
-            p = root / f"results/shell_fixsweep/{v}_fold{f}.npz"
+            p = root / args.dir / f"{v}_fold{f}.npz"
             if not p.is_file():
                 continue
             b = np.load(p, allow_pickle=True)

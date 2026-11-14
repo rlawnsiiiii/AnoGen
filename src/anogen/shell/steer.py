@@ -283,6 +283,11 @@ def shell_from_nominal(
 
 GUIDANCE_SPACES = ("x", "x0")
 
+# Figures only: when set to a list, every ``guided_ddim`` call appends one dict
+# with the step times and the edited clean prediction x̂₀ − E after each step
+# (denoiser units, window bins). None, the default, records nothing.
+TRACE: list | None = None
+
 
 def guided_ddim(
     model: Any,
@@ -621,6 +626,8 @@ def guided_ddim(
         return total
 
     last_h = None
+    trace_t: list[int] = []
+    trace_x: list[np.ndarray] = []
     for i, t in enumerate(times):
         t_prev = times[i + 1] if i + 1 < len(times) else -1
         frac = float(t) / float(max(t_start, 1))
@@ -682,6 +689,10 @@ def guided_ddim(
                         c_edit = c_edit * gen_mask.to(c_edit.dtype)
                 last_h = h.detach()
                 advance = corr == n_correct - 1
+                if TRACE is not None and advance and rec == n_rec - 1:
+                    shown = x0_next - edit - (c_edit if c_edit is not None else 0.0)
+                    trace_t.append(int(t))
+                    trace_x.append(shown[..., win].squeeze(1).detach().cpu().numpy().astype(np.float32))
                 if t_prev < 0 and advance:
                     if c_edit is not None:
                         edit = edit + c_edit
@@ -741,6 +752,9 @@ def guided_ddim(
                 xt = torch.where(gen_mask, xt, xt0)
     # Occupancy uses the last predicted x0 energy (before the final subtract).
     samples = xt[..., win].squeeze(1).detach().cpu().numpy().astype(np.float32)
+    if TRACE is not None:
+        TRACE.append({"t": np.asarray(trace_t), "x0": np.stack(trace_x, axis=1), "final": samples.copy(),
+                      "channel": ch_np.copy()})
     if scaler is not None:
         samples = scaler.inverse(samples, ch_np)
     h_np = last_h.cpu().numpy() if last_h is not None else np.zeros(len(samples))

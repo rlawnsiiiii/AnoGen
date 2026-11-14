@@ -509,7 +509,13 @@ def _run_one(
     synth_filter: Any = None,
     novelty_cache: dict[tuple, Any] | None = None,
     real_cap: int | None = None,
+    real_strata: np.ndarray | None = None,
+    keep_detail: bool = False,
 ) -> dict[str, Any]:
+    """One detector run. ``real_strata`` (one label per row of ``x_a``) makes the
+    ``real_cap`` draw stratified by label (``_stratified_pick``) instead of
+    uniform. ``keep_detail`` adds the real rows, generated donors and test-fold
+    scores used, for per-event plots; neither changes the default run."""
     rng = np.random.default_rng(seed + 1000 * fold_id)
     train_a = fold_a != fold_id
     test_a = fold_a == fold_id
@@ -536,12 +542,17 @@ def _run_one(
     use_real = plus_real
     x_pos_real = x_a[train_a] if use_real else np.zeros((0, x_a.shape[1]), dtype=x_a.dtype)
     ch_pos_real = ch_a[train_a] if use_real else np.zeros(0, dtype=ch_a.dtype)
+    real_idx = np.flatnonzero(train_a) if use_real else np.zeros(0, dtype=np.int64)
     # real_cap: keep only k of the real training positives, so the curve over k
     # measures the few-shot regime the generator exists for. None = all of them,
     # the frozen behaviour. Sampled without replacement, uniformly over windows.
     if real_cap is not None and len(x_pos_real) > int(real_cap):
-        pick = rng.choice(len(x_pos_real), size=int(real_cap), replace=False)
+        if real_strata is None:
+            pick = rng.choice(len(x_pos_real), size=int(real_cap), replace=False)
+        else:
+            pick = _stratified_pick(np.asarray(real_strata)[real_idx], int(real_cap), rng)
         x_pos_real, ch_pos_real = x_pos_real[pick], ch_pos_real[pick]
+        real_idx = real_idx[pick]
 
     x_syn, ch_syn, donor_syn = _synth_for_arm(
         arm,
@@ -776,7 +787,31 @@ def _run_one(
         **flipped,
         **fused,
     }
+    if keep_detail:
+        from anogen.shell.detector import predict_logits
+
+        row["real_idx"] = real_idx.tolist()
+        row["synth_donor"] = (np.asarray(donor_syn).tolist() if arm != "real_only" else [])
+        row["test_idx"] = np.flatnonzero(test_a).tolist()
+        row["test_scores"] = predict_logits(clf, x_te_a, device=device).tolist()
     return row
+
+
+def _stratified_pick(labels: np.ndarray, n: int, rng: np.random.Generator) -> np.ndarray:
+    """``n`` row indices without replacement, spread evenly over the labels.
+
+    Labels are visited in a random order, one draw at a time, skipping a label
+    once its rows are used up; within a label the rows are drawn uniformly.
+    """
+    labels = np.asarray(labels).astype(str)
+    groups = {lab: list(rng.permutation(np.flatnonzero(labels == lab))) for lab in sorted(set(labels.tolist()))}
+    order = [str(lab) for lab in rng.permutation(sorted(groups))]
+    out: list[int] = []
+    while len(out) < n and any(groups.values()):
+        for lab in order:
+            if groups[lab] and len(out) < n:
+                out.append(int(groups[lab].pop()))
+    return np.asarray(out, dtype=np.int64)
 
 
 def _synth_for_arm(
@@ -1077,6 +1112,10 @@ def _write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
                 "train_events",
                 "test_events",
                 "per_kind_recall",
+                "real_idx",
+                "synth_donor",
+                "test_idx",
+                "test_scores",
             }
         }
         for k, v in (r.get("per_kind_recall") or {}).items():

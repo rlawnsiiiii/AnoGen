@@ -83,7 +83,7 @@
 \title{GenFSDiff: Few-Shot Steered Diffusion for Synthetic Satellite Telemetry Anomaly Generation in Support of Satellite Operations}
 \author{Joon Kim\qquad Nils-Holger Kaul\\[0.4em]
 \large DLR Galileo Competence Center}
-\date{Draft, 10 November 2026}
+\date{Draft, 14 November 2026}
 
 \begin{document}
 \maketitle
@@ -109,8 +109,9 @@ anomalies, and many anomaly shapes occur only once. We present GenFSDiff, a
 generator of synthetic telemetry anomalies based on few-shot steered
 diffusion. A diffusion model is trained on nominal and rare nominal windows of
 six ESA-ADB Mission~1 channels (41--46) and never sees an anomaly. Generation
-starts from a moderately noised nominal window, and at every denoising step
-the predicted clean window is steered by two objectives. A shell constraint
+starts from a moderately noised nominal window or from pure Gaussian noise,
+and at every denoising step the predicted clean window is steered by two
+objectives. A shell constraint
 moves the window toward the 99th percentile of a nominal energy, so that it is
 unusual among nominal data by a controlled amount. An anomaly-targeting
 objective, defined for spikes and level shifts, fixes the shape through a
@@ -122,8 +123,11 @@ Under the GenIAS protocol, Anomalous Representation Proximity (ARP) rises from
 the generated spikes and level shifts match the real amplitudes. Added to $k$
 real anomaly windows, the generated windows raise the event recall of a small
 convolutional detector at a 1\% false-alarm rate, with a bootstrap interval
-that excludes zero at $k = 8$, 32 and 64. All results are on the development
-events; a single pre-registered run on the sealed test events is pending.
+that excludes zero at $k = 8$, 32 and 64. Started from pure noise, with no
+parent window, the same sampler reaches ARP 0.54 and EDI 2.2, plants spikes
+at the real height, and raises event recall with an interval above zero at
+$k = 32$. All results are on the development events; a single pre-registered
+run on the sealed test events is pending.
 \fi
 \end{abstract}
 
@@ -132,14 +136,19 @@ Section~\ref{sec:sealed} is a placeholder for a single pre-registered run on
 the sealed test events.}
 
 \smallskip
-\noindent\ednote{The submitted abstract promises two things the body does not
-yet contain: generation from pure noise with ARP and EDI reported
-(Sections~\ref{sec:related}, \ref{sec:limits} and the conclusion call it out
-of scope or future work), and a diversity score that ``nearly doubles''
-(Table~\ref{tab:realism} has EDI 2.33 against 0.72--0.74 for the published
-editors). Either add a from-noise row for the frozen recipe or adjust the
-abstract; \texttt{\textbackslash submittedabstractfalse} prints a version
-that matches the body.}
+\noindent\ednote{Generation from pure noise is now in Section~\ref{sec:noise}.
+Three phrases of the submitted abstract read differently from the body.
+(i)~``Nearly doubles the diversity score'': EDI is 2.33 against 0.72--0.74 for
+the published editors (Table~\ref{tab:realism}), about three times as high.
+(ii)~The anomaly-targeting objective ``pulls the generated time series towards
+\ldots\ a specific, known anomaly example'': this describes the prototype
+baseline; in GenFSDiff the known examples set the amplitude of a contrast
+(Section~\ref{sec:contrast}). (iii)~From noise ``without significantly
+degrading its ARP and EDI scores'': ARP is 0.539 against 0.509 and EDI 2.19
+against 2.40 on a shared partition (Table~\ref{tab:noise}), and the detector
+gain is smaller (Section~\ref{sec:noise-detect}).
+\texttt{\textbackslash submittedabstractfalse} prints a version that matches
+the body.}
 
 \section{Introduction}
 \label{sec:intro}
@@ -155,7 +164,9 @@ nothing to fit.
 
 Nominal operation, in contrast, is abundant. GenFSDiff learns it with a
 diffusion model and asks for anomalies only at sampling time. Generation
-starts from a partly noised nominal window, the \emph{donor}. Once the
+starts from a partly noised nominal window, the \emph{donor}, or from pure
+Gaussian noise when no parent window is wanted (Section~\ref{sec:noise}).
+Once the
 denoiser is trained, a sample can be edited by changing the predicted clean
 window before the chain re-noises
 it~\cite{ho2020ddpm,song2021ddim,meng2022sdedit}. Classifier guidance and its
@@ -203,11 +214,14 @@ The contributions are:
   nominal donors, a noise prediction blended from forward and time-reversed
   passes, edits on the clean-window prediction, one self-recurrence per step,
   and an SDEdit polish for level shifts (Sections~\ref{sec:denoiser}
-  and~\ref{sec:chain}, Algorithm~\ref{alg:chain}).
+  and~\ref{sec:chain}, Algorithm~\ref{alg:chain}). The same chain runs from
+  pure Gaussian noise with two changed lines (Section~\ref{sec:noise}).
 \item \textbf{Evaluation.} An evaluation on ESA-ADB Mission~1 that pairs
   feature-space realism, direct morphology measurements and detector utility
-  at matched real-data budgets, with intervals from a bootstrap over events
-  (Sections~\ref{sec:eval} and~\ref{sec:results}).
+  at matched real-data budgets, drawn uniformly or stratified by kind, with
+  intervals from a bootstrap over events (Sections~\ref{sec:eval}
+  and~\ref{sec:results}, Appendices~\ref{app:gallery}
+  and~\ref{app:detect}).
 \end{itemize}
 
 On the development events, the generated spikes match the real height and
@@ -217,8 +231,10 @@ above zero at $k = 8$, 32 and 64; at the full budget the gain is unresolved.
 Two prototype baselines, which pull each window toward the embedding of a real
 anomaly, score higher on feature-space realism or gain more at the smallest
 budgets, with spikes at half the real height and positions copied from the
-labelled windows. We report both sides of that trade. The recipe in this paper
-is frozen; changes to the backbone are future work.
+labelled windows. We report both sides of that trade. Started from pure
+noise, the same recipe plants spikes at the real height, reaches ARP 0.539,
+and helps the detector less: its gain is resolved at $k = 32$ only. The
+recipe in this paper is frozen; changes to the backbone are future work.
 
 \section{Related work}
 \label{sec:related}
@@ -237,9 +253,12 @@ a pulse, a ramp, or a change of scale~\cite{wen2021augmentation,carmona2021ncad}
 CutAddPaste pastes a real patch into another window~\cite{wang2024cutaddpaste}.
 GenIAS trains a variational generator to occupy regions of a feature space
 where real anomalies sit, and defines the realism and diversity scores we
-report~\cite{genias2025}. All three edit an existing window, and so do we.
-Diffusion models that generate or impute whole series from noise
-\cite{tashiro2021csdi,kollovieh2023tsdiff} are outside this comparison.
+report~\cite{genias2025}. All three edit an existing window. GenFSDiff edits
+a donor by default and can also start from pure noise
+(Section~\ref{sec:noise}). Diffusion models that generate or impute whole
+series from noise~\cite{tashiro2021csdi,kollovieh2023tsdiff} are trained to
+reproduce the observed data and have no anomaly target; they are outside this
+comparison.
 
 \paragraph{Guided diffusion.}
 Classifier guidance adds the gradient of a label to the diffusion
@@ -287,14 +306,19 @@ An event shorter than $W$ gives one window centred on its midpoint, and a
 longer event gives up to eight evenly spaced windows inside it. This yields
 112 anomaly windows per channel, 672 in total, and 943 rare nominal windows.
 Table~\ref{tab:kinds} lists the anomaly kinds, and Figure~\ref{fig:kinds}
-shows one real window of each. We call the benchmark's global point anomaly a
-\emph{spike}.
+shows one real window of each. The kinds follow the length and locality
+columns of the ESA-ADB type table. We call the benchmark's global point
+anomaly a \emph{spike}, and we add one rule: a global-subsequence window whose
+first and second halves differ in mean by at least 0.01 in raw units is a
+\emph{level shift}.
 
 \begin{table}[t]
 \centering
 \caption{Anomaly windows on the development split, channels 41--46. Several
 windows belong to one event, so the event count is the relevant sample size
-for every comparison below.}
+for every comparison below. One event, id\_83, has windows of two kinds: 24
+global-subsequence windows and the six level-shift windows. It is counted in
+both rows, so the event column sums to 23.}
 \label{tab:kinds}
 \begin{tabular}{@{}lrrr@{}}
 \toprule
@@ -322,13 +346,10 @@ in its pattern.}
 \label{fig:kinds}
 \end{figure}
 
-\ednote{The event column of Table~\ref{tab:kinds} sums to 23, the total says
-22. If one event carries two kinds, say so in the caption.}
-
 The imbalance matters. A method that only ever produced a plausible global
 subsequence would already match 636 of the 672 windows and 17 of the 22
-events. The level shift is a single event, so anything we report about level
-shifts is a statement about that event.
+events. The level shift is a single event, id\_83, so anything we report about
+level shifts is a statement about that event.
 
 \paragraph{Nominal windows and donors.}
 Nominal windows are drawn at random starts in everyday operation, 4{,}096 per
@@ -353,7 +374,7 @@ for the level shift, discussed in Section~\ref{sec:contrast}.
 GenFSDiff has three parts (Figure~\ref{fig:flow}). A diffusion model is
 trained on nominal windows only (Section~\ref{sec:denoiser}). Generation runs
 it from partly noised donors, as a guided chain (Section~\ref{sec:chain},
-Algorithm~\ref{alg:chain}). At every step of the chain the predicted clean
+Algorithm~\ref{alg:chain}), or from pure noise (Section~\ref{sec:noise}). At every step of the chain the predicted clean
 window is edited by a shell term on every window (Section~\ref{sec:shell}) and
 by a contrast term on spikes and level shifts (Section~\ref{sec:contrast}).
 The windows that received the shell alone are named after sampling
@@ -405,6 +426,9 @@ standard normal noise at each use.
   {guided chain, 49 steps (Algorithm~\ref{alg:chain})};
 \draw[arr] (den) -- (dn);
 \draw[arr, draw=gfsblue] (tgt.south) -- ++(0,-0.62) -| (ed.north);
+\node[box, dashed] (noi) at (2.05,-4.25)
+  {or from noise:\\$x_{199} \sim \mathcal{N}(0, I)$};
+\draw[arr, dashed] (noi.east) -| (4.85,-3.0);
 % ------------------------------------------------------------ gallery
 \node[rowlab] at (0,-5.1) {GALLERY, PER CHANNEL};
 \node[cob] (spk) at (2.3,-6.75)
@@ -424,7 +448,9 @@ scaled by the min-max map $m$, noised to $t_{0} = 40$ and denoised by a guided
 chain: at each step the predicted clean window $\xhat$ is edited by the shell
 term (blue, every window) and the contrast term (red, spikes and level
 shifts), and the step is repeated once after re-noising. The map is applied
-once, at the start, and inverted once, at the end.}
+once, at the start, and inverted once, at the end. Started from noise
+(dashed), the chain begins at $t = 199$ from standard normal noise and runs
+the same edits (Section~\ref{sec:noise}).}
 \label{fig:flow}
 \end{figure}
 
@@ -455,6 +481,8 @@ Level shift & split uniform on bins 32--91; reversed with probability $1/2$;
   polish from $t = 70$, ten steps & \ref{sec:contrast} \\
 Gallery & per channel: 64 spikes, 64 level shifts, 128 pool windows
   & \ref{sec:pool} \\
+From noise & start $x_{199} \sim \mathcal{N}(0, I)$; 50 DDIM steps from
+  $t = 199$; every other constant unchanged & \ref{sec:noise} \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -688,11 +716,11 @@ $Q$ one time in a hundred, so the level set $h = Q$, the \emph{shell}, marks
 the outer edge of ordinary operation. The references and the 256 windows are
 drawn independently from the 1{,}536 donors, with a fixed seed, when sampling
 starts. The encoder checkpoint stores weights only; $\tau$ and $Q$ are
-computed at that point.
-\ednote{In~\eqref{eq:tau} $\tau$ is a distance, but in~\eqref{eq:h} it divides
-a squared distance, so the kernel width is not invariant to a rescaling of the
-embedding. A reviewer may ask; one sentence saying that this is the frozen
-choice would settle it.}
+computed at that point. By~\eqref{eq:tau} $\tau$ has the units of a distance,
+while in~\eqref{eq:h} it divides a squared distance. Multiplying every
+embedding by a constant $a$ therefore multiplies the exponent by $a$, and a
+larger embedding scale concentrates the weights on fewer references. This
+pairing is part of the frozen recipe, and every result below uses it.
 
 \paragraph{Step.}
 The shell loss is $(h - Q)^{2}$, and the edit is its gradient with respect to
@@ -1148,36 +1176,109 @@ white noise scores 0.158. A gallery that stays close to its donors lands near
 \subsection{Detector utility}
 \label{sec:detector}
 
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}[gfs]
+% ------------------------------------------------------------ network
+\node[rowlab] at (0,1.5) {DETECTOR, $31{,}169$ PARAMETERS};
+\node[nomb] (w) at (0.8,0) {window $x$\\$1 \times 512$};
+\node[box] (c1) at (3.1,0) {conv, kernel 7\\stride 2, SiLU\\$32 \times 256$};
+\node[box] (c2) at (5.8,0) {conv, kernel 5\\stride 2, SiLU\\$64 \times 128$};
+\node[box] (c3) at (8.5,0) {conv, kernel 5\\stride 2, SiLU\\$64 \times 64$};
+\node[box] (gp) at (10.95,0) {average over\\64 positions\\$64$};
+\node[box] (ln) at (13.05,0) {linear\\$64 \to 1$};
+\node[cob] (lg) at (14.75,0) {logit\\$s(x)$};
+\draw[arr] (w) -- (c1);
+\draw[arr] (c1) -- (c2);
+\draw[arr] (c2) -- (c3);
+\draw[arr] (c3) -- (gp);
+\draw[arr] (gp) -- (ln);
+\draw[arr] (ln) -- (lg);
+\draw[decorate, decoration={brace, amplitude=3pt}]
+  ($(c1.north west)+(0,0.08)$) -- ($(c3.north east)+(0,0.08)$)
+  node[midway, above=3pt, font=\scriptsize]
+  {one output position sees 31 bins, 15.5 minutes};
+% ------------------------------------------------------------ training and scoring
+\node[rowlab] at (0,-1.3) {ONE RUN};
+\node[cob] (pos) at (1.55,-2.3)
+  {positives: $k$ real\\$+$ $k$ generated};
+\node[nomb] (neg) at (1.55,-3.55)
+  {negatives: 820 donors\\$+$ rare nominal windows};
+\node[box] (fit) at (5.8,-2.9)
+  {binary cross-entropy\\400 Adam steps\\16 $+$ 16 per batch};
+\draw[arr] (pos.east) -- (fit);
+\draw[arr] (neg.east) -- (fit);
+\draw[arr] (fit.north) -- (c2.south);
+\node[nomb] (tn) at (10.0,-2.3)
+  {512 test donors: threshold $\theta$\\at their 0.99 quantile};
+\node[box] (te) at (10.0,-3.55)
+  {windows of the\\held-out events};
+\node[cob] (hit) at (14.25,-2.9)
+  {event found when\\any of its windows\\has $s(x) \ge \theta$};
+\draw[arr] (tn.east) -- (hit);
+\draw[arr] (te.east) -- (hit);
+\draw[arr] (lg.south) -- (lg.south |- hit.north);
+\end{tikzpicture}
+\caption{The detector. Top: the network, with the shape of its output after
+each layer (channels $\times$ positions). Bottom: one run, for one held-out
+fold and seed. The network is trained from scratch on positives and negatives
+of the training folds; at the full budget the positives are every real
+training window plus 256 generated ones. The 512 test donors of the held-out
+fold set the 1\% false-alarm threshold, and an event counts as found when any
+of its windows reaches it. Every run is repeated for three folds and five
+seeds.}
+\label{fig:detector}
+\end{figure}
+
 \paragraph{Detector.}
-The detector is a small convolutional network: the convolution stack $C$ of the
-steering encoder, trained separately here, followed by global average pooling
-and a linear map to one logit, $31{,}169$ parameters in all. Inputs are in
-channel-span units. Training runs for 400 Adam steps at learning rate
-$10^{-3}$ with binary cross-entropy. Each batch holds 16 positives and 16
-negatives drawn uniformly with replacement.
+The detector is a small convolutional network, trained from scratch for every
+fold, seed and set of positives (Figure~\ref{fig:detector}). It has the
+layout of the steering encoder's convolution stack $C$: three stride-2
+convolutions ($1 \to 32$ channels, kernel 7; $32 \to 64$, kernel 5;
+$64 \to 64$, kernel 5), each followed by a SiLU, map a window of 512 bins to a
+$64 \times 64$ feature map. One position of that map sees 31 consecutive
+bins, about 15 minutes. Global average pooling over the 64 positions and a
+linear map return one logit $s(x)$. The three convolutions hold 256,
+$10{,}304$ and $20{,}544$ parameters and the linear map 65, $31{,}169$ in all.
+Because the pooling averages over positions, the score responds to local
+evidence wherever it sits in the window. The network reads the window alone,
+in channel-span units, without the channel index and without augmentation.
+Training runs for 400 Adam steps at learning rate $10^{-3}$ with binary
+cross-entropy. Each batch holds 16 positives and 16 negatives drawn uniformly
+with replacement, and the seed fixes the initial weights, the batch draws and
+the subsample of real windows.
 
 \paragraph{Data.}
-For held-out fold $f \in \{0, 1, 2\}$, the donors whose index modulo~3 equals
-$f$ are test negatives: these 512 windows set the decision threshold, the
-empirical 1\% false-alarm point. The other donors, less a fifth reserved as a
-reference set for rank fusion (Section~\ref{sec:detect}), are training
-negatives, together with the rare nominal windows of the training folds.
-Positives are real anomaly windows of the training folds plus generated
-windows from that fold's gallery. A generated window whose donor is a test
-negative is excluded, so no test negative has an edited copy among the
-positives.
+For held-out fold $f \in \{0, 1, 2\}$, the 512 donors whose index modulo~3
+equals $f$ are test negatives. The other $1{,}024$ donors, less a fifth
+reserved as a reference set for rank fusion (Section~\ref{sec:detect}), give
+820 training negatives, together with the rare nominal windows of the
+training folds (639 for $f = 0$). Positives are real anomaly windows of the
+training folds plus generated windows from that fold's gallery. A generated
+window whose donor is a test negative is excluded, so no test negative has an
+edited copy among the positives.
 
 \paragraph{Scoring.}
-An event of the held-out fold is found when any of its windows scores at or
-above the threshold. Event recall pools the three folds, 22 events, for each
-seed, and we report the median over five seeds. The false-alarm rate on
-rare nominal events is measured on the held-out fold's rare nominal windows.
+The threshold $\theta$ is the empirical 0.99 quantile of the logits of the 512
+test negatives, so about five of them score above it. An event of the
+held-out fold is found when any of its windows scores at or above $\theta$.
+Event recall pools the three folds, 22 events, for each seed, and we report
+the median over five seeds. The false-alarm rate on rare nominal events is the
+share of the held-out fold's rare nominal windows that reach $\theta$. Average
+precision and AUROC rank the held-out anomaly windows against the test
+negatives.
 
 \paragraph{Budgets.}
 At the full budget the detector sees every training-fold anomaly window, 396
 to 546 of them, plus 256 generated windows. At budget $k$ it sees $k$ real
-windows, drawn uniformly once per fold and seed and shared by every method,
-plus $k$ generated windows. Differences between methods are therefore paired.
+windows, drawn once per fold and seed and shared by every method, plus $k$
+generated windows. Differences between methods are therefore paired. The
+real windows are drawn in two ways. The \emph{uniform} draw picks $k$ windows
+without replacement from all training-fold anomaly windows, and since 94.6\%
+of them are global subsequences it seldom includes a spike at small $k$. The
+\emph{stratified} draw cycles through the kinds present in the training folds
+in random order and picks uniformly within each kind, so every kind present
+enters the budget as soon as $k$ reaches the number of kinds.
 
 \paragraph{Intervals.}
 For each method and event, the hit is averaged over seeds. The paired
@@ -1225,6 +1326,8 @@ seeds.
 \end{itemize}
 The sweep in Section~\ref{sec:detect} also includes GenFSDiff with the
 prototype pull added on top, and the no-edit twin of the masked variant.
+Section~\ref{sec:noise} runs GenFSDiff and its twin from pure noise, with the
+same kind allocation and seeds.
 
 \section{Results}
 \label{sec:results}
@@ -1396,27 +1499,38 @@ Table~\ref{tab:full} lists the full-budget detectors. Median event recall is
 (mean 0.655, average precision 0.485, window AUROC 0.617). The paired
 difference is $+0.091$, interval $[-0.045, +0.236]$, so it is unresolved.
 Against GenIAS and the hand-built shapes the paired differences are $+0.118$
-$[-0.036, +0.273]$ and $+0.109$ $[-0.018, +0.245]$. GenIAS, its
-reimplementation and CutAddPaste all reach a median of 0.545, and GenIAS minus
-real data alone is $-0.027$, interval $[-0.055, 0]$. The hand-built shapes
-reach 0.591. GenFSDiff raises the false-alarm rate on rare nominal events from
-0.026 to 0.059, so part of the recall is paid for in alarms on operations that
-are unusual and valid.
+$[-0.036, +0.273]$ and $+0.100$ $[-0.045, +0.245]$. GenIAS, its
+reimplementation and CutAddPaste all reach a median of 0.545, each with a
+paired difference from real data alone of $-0.027$, interval $[-0.055, 0]$.
+The hand-built shapes reach 0.591. GenFSDiff raises the false-alarm rate on
+rare nominal events from 0.026 to 0.059, so part of the recall is paid for in
+alarms on operations that are unusual and valid.
 
 The prototype gallery reaches a full-budget median of 0.727, with a rare
 nominal false-alarm rate of 0.088, and the original-sampler prototype reaches
 0.636. At this budget the ordering follows ARP more closely than spike
 morphology: a window-level network can use a large deviation of any shape. The
-twin reaches 0.500 in a second run of the same protocol, in which real data
-alone again reaches 0.591, so regenerated donors without an edit lower recall
-when they are added as positives.
+twin reaches 0.500, paired difference $-0.045$ $[-0.118, +0.009]$: regenerated
+donors without an edit lower the median recall when they are added as
+positives.
+
+\paragraph{Which events.}
+The full-budget gain comes from spikes. With real data alone the detector
+finds a spike event in 0.47 of the seeds on average, and with GenFSDiff added
+it finds each of the three in all five seeds; id\_109 and id\_114 rise from
+one seed to five (Appendix~\ref{app:detect},
+Figure~\ref{fig:hitmap}). On the 17 global-subsequence events recall stays at
+0.65 to 0.66, because gains and losses cancel: id\_84 rises from no seed to
+three and id\_90 from three to five, while id\_102 falls from four seeds to
+none. Eight events are found by every arm in every seed, and five, four global
+subsequences and one local subsequence, are found by none at the full budget.
 
 \begin{table}[t]
 \centering
 \caption{Full budget: every training-fold anomaly window plus 256 generated
 windows. Median event recall over five seeds, paired difference $\Delta$ from
 real data alone with its 95\% bootstrap interval, and false-alarm rate on rare
-nominal events.}
+nominal windows.}
 \label{tab:full}
 \small
 \begin{tabular}{@{}lrlr@{}}
@@ -1426,23 +1540,21 @@ Positives & Recall & $\Delta$ and interval & Rare nominal alarms \\
 Real anomalies alone & 0.591 & --- & 0.026 \\
 \addlinespace
 $+$ GenFSDiff (ours) & 0.682 & $+0.091$ \ $[-0.045, +0.236]$ & 0.059 \\
-$+$ Prototype & 0.727 & --- & 0.088 \\
-$+$ Prototype, original sampler & 0.636 & --- & --- \\
-$+$ Twin (no edit)$^{\dagger}$ & 0.500 & --- & --- \\
+$+$ GenFSDiff from noise & 0.591 & $+0.009$ \ $[-0.100, +0.118]$ & 0.033 \\
+$+$ Prototype$^{\dagger}$ & 0.727 & $+0.145$ \ $[-0.027, +0.327]$ & 0.088 \\
+$+$ Prototype, original sampler$^{\dagger}$ & 0.636 & $+0.082$ \ $[-0.045, +0.209]$ & 0.051 \\
+$+$ Twin (no edit) & 0.500 & $-0.045$ \ $[-0.118, +0.009]$ & 0.024 \\
+$+$ Twin from noise & 0.500 & $-0.064$ \ $[-0.145, +0.009]$ & 0.023 \\
 \midrule
-$+$ GenIAS, locked & 0.545 & $-0.027$ \ $[-0.055, 0]$ & --- \\
-$+$ GenIAS, reimplemented & 0.545 & --- & --- \\
-$+$ CutAddPaste & 0.545 & --- & --- \\
-$+$ Hand-built shapes & 0.591 & --- & --- \\
+$+$ GenIAS, locked & 0.545 & $-0.027$ \ $[-0.055, 0]$ & 0.027 \\
+$+$ GenIAS, reimplemented & 0.545 & $-0.027$ \ $[-0.055, 0]$ & 0.027 \\
+$+$ CutAddPaste & 0.545 & $-0.027$ \ $[-0.055, 0]$ & 0.027 \\
+$+$ Hand-built shapes & 0.591 & $-0.009$ \ $[-0.055, +0.027]$ & 0.029 \\
 \bottomrule
 \end{tabular}\\[0.3em]
-{\footnotesize $^{\dagger}$Second run of the same protocol, in which real data
-alone again reaches 0.591.}
+{\footnotesize $^{\dagger}$Earlier run of the same protocol and seeds, in
+which real data alone also reaches 0.591.}
 \end{table}
-
-\ednote{Table~\ref{tab:full} is new and only holds the numbers the text
-already had. Fill the empty cells ($\Delta$ and rare nominal alarms for each
-row) if the runs exist.}
 
 \paragraph{Matched budgets.}
 Figure~\ref{fig:sweep} and Table~\ref{tab:sweep} are the comparison the
@@ -1459,6 +1571,41 @@ $k = 32$ only. Adding the prototype pull on top of the contrast gives $+0.182$
 at $k = 32$, and restoring the mask gives $+0.109$. The no-edit twin of the
 masked variant lowers recall: its paired difference is negative at seven of
 the nine budgets, and its interval lies below zero at $k = 2$, 4, 64 and 256.
+
+\paragraph{Baselines at matched budgets.}
+Table~\ref{tab:sweep-all} adds the published editors, the hand-built
+injector, the twin of the final recipe and the from-noise galleries to the
+same sweep. GenIAS, its reimplementation and CutAddPaste have no interval
+above zero at any budget, and at $k = 256$ the interval of each lies below
+zero. The twin lowers
+recall at seven of the nine budgets, with intervals below zero at $k = 1$, 2
+and 256. The hand-built shapes are the strongest baseline: their gain is
+resolved at $k = 8$ and 32 ($+0.118$ and $+0.164$), close to that of GenFSDiff
+($+0.155$ and $+0.200$), and at $k = 2$ and 4 their point estimates are the
+larger ones. Paired directly, GenFSDiff exceeds GenIAS with intervals above
+zero at every budget from $k = 8$ to 256, and exceeds the hand-built shapes
+with an interval above zero at $k = 256$ only
+(Appendix~\ref{app:detect}, Table~\ref{tab:vsbase}). Against the published
+editors and the twin the generated windows carry information a regenerated
+or lightly edited donor lacks. Against a generic step, pulse or ramp the
+evidence on 22 events is a positive point estimate at every budget from
+$k = 8$ on, resolved at $k = 256$.
+
+\paragraph{Stratified budgets.}
+The uniform draw follows the window counts of Table~\ref{tab:kinds}, so at
+$k = 32$ the expected number of spike windows among the real positives is
+below one. Drawn by kind, the same budget always includes spikes, and real
+data alone reaches 0.545 at $k = 32$ against 0.364 with the uniform draw,
+with spike recall 0.93 against 0.40 (Table~\ref{tab:kindrec}). The gain of
+GenFSDiff is then resolved at $k = 16$ and 256 ($+0.173$ and $+0.136$) and is
+$+0.045$ at $k = 32$ (Table~\ref{tab:strat}). From $k = 2$ to 8 every added
+gallery has a positive point estimate, the no-edit twin included ($+0.145$ at
+$k = 4$, interval above zero), so at these budgets a gain reflects extra
+positives of any shape. At $k = 32$ the twin
+and CutAddPaste reach the highest medians, 0.682, through global
+subsequences. The size of the uniform-draw gain therefore depends on the
+generator supplying a kind that the real budget lacks, chiefly spikes.
+
 
 \paragraph{Fusion.}
 Rank-fusing the detector logit with a label-free diffusion reconstruction
@@ -1510,6 +1657,36 @@ end exactly at zero and are left unmarked: Prototype at $k = 8$ and Orig.\ at
 $k = 64$.}
 \end{table}
 
+\begin{table}[t]
+\centering
+\caption{Paired change in event recall from adding $k$ generated windows to
+the same $k$ real windows, uniform draw, for every gallery in the comparison.
+The first row is the median recall of real data alone. The GenFSDiff row
+repeats Table~\ref{tab:sweep}.}
+\label{tab:sweep-all}
+\small
+\setlength{\tabcolsep}{2.4pt}
+\begin{tabular}{@{}lrrrrrrrrr@{}}
+\toprule
+$k$ & 1 & 2 & 4 & 8 & 16 & 32 & 64 & 128 & 256 \\
+\midrule
+Real alone (median) & 0.273 & 0.318 & 0.273 & 0.364 & 0.455 & 0.364 & 0.545 & 0.591 & 0.591 \\
+\midrule
+GenFSDiff & +0.009 & $-$0.009 & +0.027 & +0.155$^{\ast}$ & +0.164 & +0.200$^{\ast}$ & +0.136$^{\ast}$ & +0.118 & +0.109 \\
+GenFSDiff from noise & +0.100 & +0.018 & $-$0.073 & +0.036 & +0.027 & +0.127$^{\ast}$ & +0.009 & $-$0.009 & +0.064 \\
+Twin (no edit) & $-$0.082$^{\circ}$ & $-$0.145$^{\circ}$ & $-$0.045 & $-$0.027 & +0.027 & +0.064 & $-$0.055 & $-$0.064 & $-$0.064$^{\circ}$ \\
+Twin from noise & $-$0.082$^{\circ}$ & $-$0.145$^{\circ}$ & $-$0.118$^{\circ}$ & $-$0.036 & +0.036 & +0.055 & $-$0.036 & $-$0.064 & $-$0.082$^{\circ}$ \\
+\midrule
+GenIAS, locked & $-$0.027 & $-$0.073 & $-$0.055 & $-$0.055 & +0.009 & $-$0.009 & $-$0.045 & $-$0.055$^{\circ}$ & $-$0.064$^{\circ}$ \\
+GenIAS, reimpl. & $-$0.100$^{\circ}$ & $-$0.164$^{\circ}$ & $-$0.073 & $-$0.055 & $-$0.118$^{\circ}$ & 0.000 & $-$0.045 & $-$0.055$^{\circ}$ & $-$0.055$^{\circ}$ \\
+CutAddPaste & $-$0.136$^{\circ}$ & $-$0.055 & $-$0.055 & $-$0.018 & +0.036 & +0.018 & $-$0.045 & $-$0.036 & $-$0.055$^{\circ}$ \\
+Hand-built shapes & $-$0.055 & +0.118 & +0.055 & +0.118$^{\ast}$ & +0.109 & +0.164$^{\ast}$ & +0.027 & +0.009 & $-$0.036 \\
+\bottomrule
+\end{tabular}\\[0.3em]
+{\footnotesize $^{\ast}$95\% bootstrap interval above zero; $^{\circ}$below
+zero. Intervals that end exactly at zero are left unmarked.}
+\end{table}
+
 \subsection{Held-out test}
 \label{sec:sealed}
 
@@ -1517,6 +1694,206 @@ The 91 test events have not been used. The pre-registered test report is one
 run of GenFSDiff, with the frozen $\phivec$ and the same detector, at the full
 budget and at $k = 32$, with no retuning after the numbers are seen. Until
 that run, every claim above is a claim about the 22 development events.
+
+\section{Generation from pure noise}
+\label{sec:noise}
+
+Every window so far is an edit of a donor. The denoiser itself needs none:
+run from the end of the forward process, it samples nominal telemetry of the
+requested channel from standard normal noise. This section runs the frozen
+recipe from that start, so that a generated anomaly has no nominal parent.
+The from-noise galleries are scored in the same runs as the donor galleries,
+whose rows reproduce Tables~\ref{tab:realism} to~\ref{tab:sweep} exactly,
+apart from EDI, whose partition now includes the new galleries.
+
+\subsection{Sampling from noise}
+\label{sec:noise-method}
+
+Two lines of Algorithm~\ref{alg:chain} change. The start~\eqref{eq:t0}
+becomes
+\begin{equation}
+\label{eq:xT}
+x_{T-1} = \xi, \qquad \xi \sim \mathcal{N}(0, I), \qquad T - 1 = 199,
+\end{equation}
+in channel-span units. This is the forward marginal~\eqref{eq:forward} at
+$t = 199$ with the signal term left out. There $\sqrt{\abar_{199}} = 0.36$
+and $\sqrt{1 - \abar_{199}} = 0.93$, so the omitted term
+$\sqrt{\abar_{199}}\,x_{0}$ would still carry about a third of a clean window.
+We keep this standard start of DDIM sampling~\cite{song2021ddim};
+Appendix~\ref{app:noise} replaces $\xi$ by noise matched to the marginal of
+each channel and obtains the same windows. The grid of the chain becomes
+\begin{equation}
+\label{eq:gridT}
+t_{n} = \bigl\lfloor 199\,(1 - n/49) \bigr\rfloor,
+\qquad n = 0, \ldots, 49,
+\end{equation}
+fifty distinct indices about four apart. Every one of the 49 steps therefore
+runs the self-recurrence, and the chain makes $2 \cdot 49 + 1 = 99$ network
+evaluations, against 90 from a donor. The weights~\eqref{eq:omega} are
+normalized over the new grid: $\omega_{t}$ falls from 2.67 at $t = 199$
+through 0.31 at $t = 40$ to 0.010 at $t = 0$, so the shell edit acts mostly
+while the window is being formed.
+
+Everything else is unchanged: the contrast projection at weight one, the last
+edit at a quarter, the polish of level shifts from $t = 70$, the gallery
+layout and the naming of the subsequence pool. So are the seeds. Row $i$ of
+the from-noise gallery receives the kind, weight vector and target $\delta$
+of row $i$ of the donor gallery, and the headroom rule that may flip the sign
+of $\delta$ (Section~\ref{sec:contrast}) still reads donor $i$. The pool is
+named against the donor bins of the same channel, as before. These two rules
+read the donors' range; the chain itself starts from noise and sees no donor
+window. In the detector a from-noise window keeps the donor index of its row,
+so the exclusion of Section~\ref{sec:detector} removes the same rows as for
+the donor gallery. A RePaint mask needs a donor to hold the bins outside it,
+so the masked variant has no from-noise counterpart.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\textwidth]{noise_gallery.pdf}
+\caption{Real windows (red), GenFSDiff from a donor (blue) and GenFSDiff from
+pure noise (purple), one kind per row, random draws from the three fold
+galleries in channel-span units. The subsequence rows show pool windows that
+received the global or local name. Dotted lines mark 0 and 1.}
+\label{fig:noise-gallery}
+\end{figure}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\textwidth]{noise_chain.pdf}
+\caption{The edited clean prediction $\xtil$ of~\eqref{eq:ddim} along the
+chain, for one spike, one level-shift and one global-subsequence request of
+the fold-0 gallery, started from noise (purple, $t = 199$ to 16) and from the
+donor of the same row (blue, $t = 40$ to 2); the right column is the finished
+window. Both chains of a pair share the kind, weight vector and $\delta$.
+The contrast projection meets its target at every step, so the spike and the
+step are present from the first step, while the background is still being
+formed. The vertical range of each row is fit to its last three panels.}
+\label{fig:noise-chain}
+\end{figure}
+
+\subsection{What the windows look like}
+\label{sec:noise-morph}
+
+Figure~\ref{fig:noise-gallery} shows the from-noise windows next to real and
+donor-start ones, Figure~\ref{fig:noise-chain} follows the two chains for the
+same request, and Table~\ref{tab:noise-morph} measures them with the
+definitions of Section~\ref{sec:morph}. Spikes keep the real height, 0.836
+against 0.831, and occupy one bin in every draw. The two defects of the
+donor chain are absent: no spike draw is a noise burst, and deep dips fall
+from 14.8\% of draws to 0.0\%. The background is smoother than the data
+instead, at 0.61 times the real texture around the spike, against 0.83 from
+donors. Level shifts are as rough as the real event (0.98 times), and their
+median step amplitude, scanned as for the real windows, is 0.95 against 0.81
+for the real event. Positions follow the sampled weight vectors, as from
+donors. Relative to its own twin, the from-noise chain changes 31\% of all
+bins by more than 0.05 channel spans and 18\% of the bins of a spike window.
+
+\begin{table}[t]
+\centering
+\caption{Morphology from both starts, development galleries pooled over
+folds, channel-span units, measured as in Table~\ref{tab:morph}. The extent
+rows compare each gallery with its own twin, the same chain with every edit
+off.}
+\label{tab:noise-morph}
+\small
+\begin{tabular}{@{}lrrr@{}}
+\toprule
+ & Real & Donor start & From noise \\
+\midrule
+\multicolumn{4}{@{}l}{\emph{Spikes}} \\
+\quad Height & 0.831 & 0.838 & 0.836 \\
+\quad Single-bin spikes & 100\% & 99\% & 100\% \\
+\quad Position, 10th--90th pct. & 0.50--0.50 & 0.18--0.82 & 0.18--0.82 \\
+\quad Noise bursts & 0\% & 3.0\% & 0\% \\
+\quad Deep dips ($\ge 3$) & 0\% & 14.8\% & 0.0\% \\
+\quad Baseline texture & 1 & 0.83$\times$ & 0.61$\times$ \\
+\addlinespace
+\multicolumn{4}{@{}l}{\emph{Level shifts}} \\
+\quad Step amplitude, median & 0.81 & 0.85 & 0.95 \\
+\quad Roughness & 1 & 1.21$\times$ & 0.98$\times$ \\
+\quad Shift at the head & 100\% & 50\% & 50\% \\
+\addlinespace
+\multicolumn{4}{@{}l}{\emph{Extent of the edit}} \\
+\quad Bins changed by more than 0.05 & --- & 42\% & 31\% \\
+\quad Bins changed, spike windows & --- & 29\% & 18\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Feature-space realism}
+\label{sec:noise-realism}
+
+Table~\ref{tab:noise} applies the protocol of Section~\ref{sec:realism-metrics}.
+From noise, GenFSDiff reaches ARP 0.539, against 0.509 from donors. Its twin
+scores 0.315: the unguided backbone started from noise lands at the donor
+anchor, 0.320, as a nominal sampler should. Paired with its own twin the gain
+is $+0.224$ $[+0.039, +0.375]$, from fold-wise gains of $+0.085$, $+0.051$ and
+$+0.537$, which standardizing $\phivec$ shrinks to $+0.016$, $+0.005$ and
+$+0.317$. Paired with the donor-start gallery the difference is $+0.030$
+$[-0.060, +0.089]$, from fold-wise differences of $-0.059$, $-0.001$ and
+$+0.149$, so the two starts are unresolved on ARP and fold~2 sets the sign.
+Coverage is 3.5\% against 3.8\%. On a partition fit to both sets of
+galleries, EDI is 2.19 against 2.40, and the pairwise distance is 11.0 against
+10.5. The logistic two-sample test separates the from-noise gallery from the
+real anomalies less well than the donor gallery, at a balanced accuracy of
+0.604 against 0.645, and ROCKET separates both about equally, 0.885 and
+0.880.
+
+\begin{table}[t]
+\centering
+\caption{Realism from both starts, development folds, protocol of
+Table~\ref{tab:realism}. EDI uses one partition per fold, fit to every gallery
+of Table~\ref{tab:realism} together with the from-noise galleries of this
+section and Appendix~\ref{app:noise}. The added galleries move the EDI values
+of Table~\ref{tab:realism} by up to 0.11, so the EDI values here are
+comparable with each other only. C2ST is the median balanced accuracy of the
+logistic two-sample test on raw windows.}
+\label{tab:noise}
+\small
+\begin{tabular}{@{}lrrrrrr@{}}
+\toprule
+Gallery & ARP & Cov. & EDI & Pairwise & C2ST & ROCKET AUC \\
+\midrule
+Real anomalies & --- & --- & 1.09 & --- & --- & --- \\
+\addlinespace
+GenFSDiff, donor start & 0.509 & 0.038 & 2.40 & 10.53 & 0.645 & 0.880 \\
+GenFSDiff, from noise & 0.539 & 0.035 & 2.19 & 11.02 & 0.604 & 0.885 \\
+Twin, donor start & 0.318 & 0.081 & 1.08 & 1.71 & 0.517 & 0.905 \\
+Twin, from noise & 0.315 & 0.078 & 1.09 & 1.67 & 0.529 & 0.916 \\
+\addlinespace
+Nominal donor & 0.320 & 0.354 & 0.74 & 1.11 & --- & --- \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Event recall}
+\label{sec:noise-detect}
+
+From noise the windows help the detector less. At the full budget recall is
+0.591, a paired difference from real data alone of $+0.009$
+$[-0.100, +0.118]$, with a rare nominal alarm rate of 0.033 against 0.059
+from donors (Table~\ref{tab:full}). Paired directly, the donor gallery exceeds
+the from-noise gallery by $+0.082$ $[+0.009, +0.173]$. In the uniform sweep
+the from-noise gain is resolved at $k = 32$ only, $+0.127$
+$[+0.027, +0.236]$ (Table~\ref{tab:sweep-all}), and the donor gallery exceeds
+it with intervals above zero at every budget from $k = 4$ to 128
+(Table~\ref{tab:vsbase}). The spike events carry most of the difference: at
+the full budget the detector trained with the from-noise windows finds id\_114
+in two seeds of five, against five with the donor windows, and the gains on
+the global subsequences id\_84 and id\_90 disappear
+(Figure~\ref{fig:hitmap}). In the stratified sweep the from-noise gallery
+gains at $k = 1$ to 4, $+0.118$ to $+0.136$ with intervals above zero, and
+adds little from $k = 16$ on (Table~\ref{tab:strat}). The from-noise twin
+lowers recall like the donor twin.
+
+One reading, which we have not tested, is that the from-noise windows carry
+the requested anomaly on a background drawn by the denoiser and smoother than
+the data, while the donor windows carry it on real nominal backgrounds of the
+kind the test negatives show. A detector trained against real donors can then
+separate a from-noise window by its background as well as by its anomaly. The
+from-noise sampler suits a request for anomaly shapes without any parent
+window; where nominal windows are at hand, the donor start gives the larger
+detector gain.
 
 \section{Use in operations}
 \label{sec:ops}
@@ -1528,12 +1905,22 @@ Generation is therefore possible on a channel with a handful of confirmed
 anomalies, which is the situation of the six channels used here: 22 anomalous
 events in seven years. The request is made per kind. From a single observed
 level shift, the generator produces level shifts of that amplitude at other
-positions and on other nominal backgrounds.
+positions and on other nominal backgrounds. When a request should trace back
+to no recorded window, the chain runs from pure noise
+(Section~\ref{sec:noise}). The denoiser is still trained on the mission's
+nominal telemetry, so the data requirement stays the same; the windows keep
+the requested spike and level-shift amplitudes, and their detector gain is
+smaller than from donors.
 
 The detector results say when the generated windows pay off. With tens of real
 anomaly windows, adding as many generated ones raises event recall by 0.14 to
 0.20 at a 1\% false-alarm rate (Table~\ref{tab:sweep}); once every development
-anomaly is available the gain is unresolved. They also name the price. At the
+anomaly is available the gain is unresolved. The gain is largest when the
+real windows lack a kind the generator supplies, chiefly spikes: with the
+real windows drawn by kind it is $+0.045$ at $k = 32$ (Table~\ref{tab:strat}).
+A hand-built injector of steps, pulses and ramps comes close up to $k = 32$
+(Table~\ref{tab:sweep-all}) and makes a cheap first baseline for a new
+mission. The results also name the price. At the
 full budget the alarm rate on rare nominal operations rises from 0.026 to
 0.059, and these are alarms an operator would have to dismiss. Two
 measurements are still open: the sealed test run (Section~\ref{sec:sealed}), and bin-level localization,
@@ -1553,7 +1940,9 @@ the shell energy ranks labelled anomalies against nominal windows at an AUROC
 of about 0.54, so $Q$ means unusual among nominal windows and carries no
 information about labelled subsequences. Those two kinds are 648 of the 672
 real windows. A budget sweep that draws real windows uniformly is mostly a
-sweep over subsequences; a sweep stratified by kind is future work.
+sweep over subsequences. The stratified sweep gives every kind a share of the
+budget, and there the gain of GenFSDiff is resolved at $k = 16$ and 256 only
+(Table~\ref{tab:strat}).
 
 \paragraph{Labels inside the encoder.}
 The steering encoder is the fold-0 checkpoint on every fold, and its
@@ -1581,13 +1970,23 @@ the masked variant is the only recipe that emits a bin-level label.
 Beating GenIAS, CutAddPaste and the hand-built shapes is a weak claim on these
 donors: their ARP equals the donor's to within 0.03, and the reimplemented
 GenIAS stays within an RMSE of $2.3 \cdot 10^{-3}$ of its donor. The
-comparisons that carry weight are the twin, the two prototype galleries, and
-real data alone.
+comparisons that carry weight are the twin, the two prototype galleries, the
+hand-built shapes at matched budgets, and real data alone. Against the
+hand-built shapes, GenFSDiff is resolved at $k = 256$ only
+(Table~\ref{tab:vsbase}).
+
+\paragraph{From noise.}
+The from-noise windows sit on a background smoother than the data (0.61
+times the real texture), and their detector gain is resolved at one budget.
+The from-noise gallery also reads its donor rows twice, for the sign of
+$\delta$ and for the naming band of the pool; a fully donor-free gallery would
+take both from channel statistics.
 
 \paragraph{Model scope.}
 The denoiser is causal apart from~\eqref{eq:flip}, the schedule is linear and
-ends at $\abar_{199} = 0.13$, and every sample starts from a donor at
-$t_{0} = 40$. Other channels and other missions are untouched. A different
+ends at $\abar_{199} = 0.13$, and samples start from a donor at $t_{0} = 40$
+or, in Section~\ref{sec:noise}, from noise at $t = 199$. Other channels and
+other missions are untouched. A different
 backbone or schedule would leave the subsequence target and the 22-event
 intervals as they are.
 
@@ -1604,12 +2003,357 @@ pulls toward real anomaly embeddings lead on feature-space realism, on
 full-budget recall and at the smallest budgets, with spikes at half the real
 height and positions copied from the labelled windows. GenFSDiff plants the
 requested shape at a sampled position, and about one spike draw in seven still
-carries a run of deep baseline dips. We stop at this recipe. Subsequence
-targets, a bin-level detector, a kind-stratified budget and one pre-registered
-run on the sealed test are the open measurements. A bidirectional backbone, a
-different noise schedule and sampling from pure noise are future work.
+carries a run of deep baseline dips. Started from pure noise, the same recipe
+keeps the requested spike and level-shift amplitudes, loses the dips, and
+reaches the ARP of the donor start with a somewhat lower EDI; its windows help
+the detector at $k = 32$ only. With real windows drawn by kind, much of the
+small-budget gain is shared by any added positives. We stop at this recipe.
+Subsequence targets, a bin-level detector and one pre-registered run on the
+sealed test are the open measurements. A bidirectional backbone and a
+different noise schedule are future work.
 
 \bibliographystyle{plain}
 \bibliography{refs}
+
+\clearpage
+\appendix
+
+\section{Generation from noise: matched start and per-fold results}
+\label{app:noise}
+
+\paragraph{Matched start.}
+The start~\eqref{eq:xT} leaves out the signal term of the forward marginal at
+$t = 199$. A start that keeps it replaces the unknown clean window by the bin
+distribution of its channel. With $\mu_{c}$ and $s_{c}$ the mean and standard
+deviation of all donor bins of channel $c$ in channel-span units,
+\begin{equation}
+\label{eq:matched}
+x_{199}
+  = \sqrt{\abar_{199}}\,\mu_{c}
+  + \sqrt{1 - \abar_{199} + \abar_{199}\,s_{c}^{2}}\;\xi,
+\end{equation}
+which is the forward marginal of a clean window whose bins are independent
+with that mean and variance. On channels 41--46, $\mu_{c}$ lies between 0.08
+and 0.12 and $s_{c}$ between 0.03 and 0.06, so~\eqref{eq:matched} shifts the
+pure-noise start by at most 0.04 and scales it by 0.93. The chain, the seeds
+and the requests are those of Section~\ref{sec:noise-method}.
+
+\paragraph{Results.}
+The matched start returns nearly the same windows. Bin by bin they differ
+from the pure-noise windows by $9 \cdot 10^{-4}$ channel spans on average,
+against 0.044 between the donor and pure-noise starts, and the morphology of
+Table~\ref{tab:noise-morph} is unchanged in every row. ARP is 0.540, coverage
+3.4\%, EDI 2.19 on the partition of Table~\ref{tab:noise}, pairwise distance
+11.02, C2ST 0.610 and ROCKET AUC 0.885; its own twin scores ARP 0.315, and the
+fold-wise gains over that twin are $+0.085$, $+0.051$ and $+0.538$. The
+detector gives the same event hits as the pure-noise gallery in 275 of the 285
+runs, and in every full-budget run; the sweeps are in
+Tables~\ref{tab:strat} and~\ref{tab:medians}. Figure~\ref{fig:cmp-random}
+shows windows of both.
+
+\paragraph{Per fold.}
+ARP per held-out fold is 0.532, 0.414 and 0.581 from donors and 0.474, 0.414
+and 0.730 from noise. The gain over the twin and the difference between the
+two starts both sit mostly in fold~2, which has 7 events and 126 windows, the
+smallest of the three folds.
+
+\section{Generated windows next to real ones and the published generators}
+\label{app:gallery}
+
+Figures~\ref{fig:cmp-random} to~\ref{fig:cmp-nearest} put every gallery of the
+comparison side by side, in three ways. Figure~\ref{fig:cmp-random} draws
+eight donor indices at random and shows what each gallery holds there.
+Figure~\ref{fig:cmp-same-donor} takes two donors of each requested kind and
+shows the donor and every edit of it. Figure~\ref{fig:cmp-nearest} starts
+from real anomalies and shows the window of each gallery that is nearest in
+$\phivec$, the quantity behind ARP.
+
+Three patterns recur. First, the published editors and the twin stay at
+their donor: the locked GenIAS, its reimplementation and CutAddPaste change
+the donor's texture slightly, and the hand-built injector moves the whole
+window or adds a broad step in some draws. GenFSDiff from either start adds
+a narrow spike or a sharp step where the request asks for one. Second, for a
+real spike or a spike-like global subsequence the nearest window of every
+published editor and of the twin lies at a $\phivec$ distance of 17 to 21,
+against 0.10 to 0.33 for GenFSDiff from either start: no window of those
+galleries comes close to a real spike in $\phivec$. For the level shift the
+nearest windows are at 0.26 to 0.27 for GenFSDiff and 1.1 to 2.6 for the
+others. Third, for the periodic global and local subsequences the order
+turns: the editors and the twin, which keep the donor's periodic pattern, are
+often as close as or closer than GenFSDiff. Two donor-start pool windows on
+channel~42 carry deep downward dips like those of Section~\ref{sec:morph};
+the from-noise windows of the same rows are smooth.
+
+\begin{figure}[p]
+\centering
+\includegraphics[width=\textwidth]{cmp_random.pdf}
+\caption{Eight windows of every gallery, fold~0, channel-span units. Within a
+column every generated row uses the same donor index, so a column shows what
+each generator makes of one donor (from noise: of the same request); the
+bottom row is the donor itself. The real row holds two windows of each kind:
+spike, level shift, global subsequence, local subsequence. Panels share the
+range $-0.6$ to $1.6$ unless a window leaves it; dotted lines mark 0 and 1.}
+\label{fig:cmp-random}
+\end{figure}
+
+\begin{figure}[p]
+\centering
+\includegraphics[width=\textwidth]{cmp_same_donor.pdf}
+\caption{Two donors per requested kind (rows) and what each editor makes of
+them, fold-0 galleries, channel-span units. The row label is the kind that
+GenFSDiff was asked for on that donor and the donor's channel; the published
+editors receive the same donor without a kind. The right column is
+GenFSDiff from noise for the same request. Each row shares one vertical
+range.}
+\label{fig:cmp-same-donor}
+\end{figure}
+
+\begin{figure}[p]
+\centering
+\includegraphics[width=\textwidth]{cmp_nearest.pdf}
+\caption{Real anomaly windows (left, two events per kind where the kind has
+two) and the window of each gallery nearest to them in $\phivec$, with that
+distance at the lower right. Windows are z-scored, as $\phivec$ sees them.
+For GenFSDiff and the twin the neighbour comes from the gallery of the real
+window's held-out fold, as in ARP.}
+\label{fig:cmp-nearest}
+\end{figure}
+
+\clearpage
+\section{Detector: events, budgets and training windows}
+\label{app:detect}
+
+All detector results of this appendix come from one run of the protocol of
+Section~\ref{sec:detector}, $2{,}850$ detectors in all, in which every event
+hit, every held-out window score and the drawn real windows were stored.
+Real data alone and GenFSDiff reproduce Tables~\ref{tab:full}
+and~\ref{tab:sweep} exactly.
+
+\paragraph{The held-out events.}
+Figure~\ref{fig:events} shows each of the 22 development events through the
+window that the full-budget detector trained on real data alone scores
+highest. Three groups stand out. The spikes and three global subsequences,
+id\_90, id\_93 and id\_107, show a single narrow excursion in that window; the
+benchmark types the latter three as subsequences. Two events, id\_83 and
+id\_185, are found by every arm in every seed at the full budget, and their
+highest-scoring windows are constant, far below the channel's training
+range. Of the five events no arm finds at the full budget,
+four are global subsequences whose windows follow the periodic nominal
+pattern of the channel, and one, id\_85, is a local subsequence; id\_85 is
+found by no arm at any budget in either sweep.
+
+\paragraph{Hits by budget.}
+Figures~\ref{fig:hitmap} and~\ref{fig:hitmap-strat} give, for every event and
+budget, the share of seeds in which it is found. In the uniform sweep the gain
+of GenFSDiff sits on two groups of events. The spikes id\_109 and id\_114 and
+the spike-like id\_90, id\_93 and id\_107 are found in at most three seeds of
+five with real data alone up to $k = 16$; with GenFSDiff they are found in
+three to five seeds at every budget from $k = 32$ on. The second group is
+id\_84 and id\_193, a global and a local subsequence of fold~0, which
+GenFSDiff finds in up to four seeds at most budgets and real data alone in at
+most two. Against these stands id\_102, a global subsequence of fold~0, which
+real data alone finds in up to five seeds, and in four or five from
+$k = 128$ on, and which GenFSDiff finds in none from $k = 2$ on. The from-noise gallery finds
+the first group less often and loses the second from $k = 128$ on. With the
+stratified draw, real data alone already finds the spike events at
+$k = 32$ in four or five seeds, and the rows of the three panels become more
+alike.
+
+\paragraph{Training windows.}
+Figure~\ref{fig:kwindows} shows the positives of one detector of the sweep.
+The uniform draw of eight real windows holds eight global subsequences, and
+the generated windows add the spikes and level shifts that it lacks. The
+stratified draw cycles through the three kinds present in the training folds
+of fold~0.
+
+\paragraph{Tables.}
+Table~\ref{tab:medians} lists the median recall of every arm at every
+budget, Table~\ref{tab:strat} the paired changes for the stratified draw,
+Table~\ref{tab:vsbase} GenFSDiff paired against every other gallery, and
+Table~\ref{tab:kindrec} event recall by kind.
+
+\begin{figure}[p]
+\centering
+\includegraphics[width=\textwidth]{det_events.pdf}
+\caption{The 22 held-out development events, ordered by fold and kind. Each
+panel shows the window of the event that the full-budget detector trained on
+real data alone scores highest, on average over seeds, in channel-span units
+and coloured by kind; the corner label gives the kind and the number of
+windows of the event over the six channels. Below each panel: in how many of
+five seeds the event is found at the full budget with real data alone, with
+GenFSDiff added, and with GenFSDiff from noise added. The windows of id\_83
+and id\_185 are constant, at $-3.90$ and $-3.91$ channel spans.}
+\label{fig:events}
+\end{figure}
+
+\begin{figure}[p]
+\centering
+\includegraphics[width=\textwidth]{det_hitmap.pdf}
+\caption{Share of five seeds in which each held-out event is found, by
+budget $k$ with the uniform draw and at the full budget (``all''), for real
+data alone, with GenFSDiff and with GenFSDiff from noise. Horizontal lines
+separate the folds; label colours mark the kind, and id\_83 carries both the
+level-shift and the global-subsequence label.}
+\label{fig:hitmap}
+\end{figure}
+
+\begin{figure}[p]
+\centering
+\includegraphics[width=\textwidth]{det_hitmap_strat.pdf}
+\caption{As Figure~\ref{fig:hitmap}, with the $k$ real windows drawn
+stratified by kind. The full-budget column is the same in both figures.}
+\label{fig:hitmap-strat}
+\end{figure}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\textwidth]{det_kwindows.pdf}
+\caption{The training positives of one detector of the sweep: held-out
+fold~0, seed~0, $k = 8$, channel-span units. Top: the eight real windows of
+the uniform draw, all global subsequences (green). Middle rows: the eight
+generated windows that GenFSDiff and GenFSDiff from noise add; both rows hold
+the same eight requests. Bottom: the eight real windows of the stratified
+draw, which cycles through spikes (red), global subsequences (green) and local
+subsequences (yellow), the kinds present in folds~1 and~2.}
+\label{fig:kwindows}
+\end{figure}
+
+\begin{table}[t]
+\centering
+\caption{Median event recall over five seeds at budget $k$, for both draws of
+the real windows. Every arm adds $k$ generated windows to the same $k$ real
+ones.}
+\label{tab:medians}
+\footnotesize
+\setlength{\tabcolsep}{3.4pt}
+\begin{tabular}{@{}lrrrrrrrrr@{}}
+\toprule
+$k$ & 1 & 2 & 4 & 8 & 16 & 32 & 64 & 128 & 256 \\
+\midrule
+\multicolumn{10}{@{}l}{\emph{Uniform draw}} \\
+Real alone & 0.273 & 0.318 & 0.273 & 0.364 & 0.455 & 0.364 & 0.545 & 0.591 & 0.591 \\
+GenFSDiff & 0.318 & 0.273 & 0.364 & 0.545 & 0.591 & 0.636 & 0.636 & 0.727 & 0.682 \\
+GenFSDiff from noise & 0.364 & 0.318 & 0.273 & 0.409 & 0.500 & 0.545 & 0.591 & 0.545 & 0.636 \\
+GenFSDiff, matched noise & 0.409 & 0.318 & 0.318 & 0.455 & 0.500 & 0.545 & 0.591 & 0.545 & 0.636 \\
+Twin (no edit) & 0.273 & 0.091 & 0.273 & 0.364 & 0.455 & 0.500 & 0.500 & 0.455 & 0.500 \\
+Twin from noise & 0.091 & 0.182 & 0.227 & 0.364 & 0.409 & 0.455 & 0.455 & 0.455 & 0.455 \\
+GenIAS, locked & 0.318 & 0.273 & 0.227 & 0.364 & 0.455 & 0.409 & 0.500 & 0.455 & 0.500 \\
+GenIAS, reimpl. & 0.182 & 0.091 & 0.273 & 0.318 & 0.273 & 0.409 & 0.500 & 0.455 & 0.500 \\
+CutAddPaste & 0.136 & 0.227 & 0.273 & 0.364 & 0.500 & 0.455 & 0.500 & 0.455 & 0.500 \\
+Hand-built shapes & 0.227 & 0.455 & 0.409 & 0.500 & 0.545 & 0.591 & 0.545 & 0.591 & 0.545 \\
+\addlinespace
+\multicolumn{10}{@{}l}{\emph{Stratified draw}} \\
+Real alone & 0.318 & 0.318 & 0.318 & 0.409 & 0.455 & 0.545 & 0.636 & 0.636 & 0.591 \\
+GenFSDiff & 0.364 & 0.364 & 0.455 & 0.409 & 0.682 & 0.591 & 0.682 & 0.682 & 0.727 \\
+GenFSDiff from noise & 0.364 & 0.409 & 0.455 & 0.500 & 0.455 & 0.591 & 0.636 & 0.636 & 0.591 \\
+GenFSDiff, matched noise & 0.364 & 0.409 & 0.500 & 0.455 & 0.455 & 0.591 & 0.636 & 0.636 & 0.591 \\
+Twin (no edit) & 0.227 & 0.364 & 0.409 & 0.545 & 0.409 & 0.682 & 0.636 & 0.591 & 0.500 \\
+Twin from noise & 0.227 & 0.364 & 0.455 & 0.545 & 0.591 & 0.636 & 0.591 & 0.591 & 0.500 \\
+GenIAS, locked & 0.182 & 0.364 & 0.455 & 0.455 & 0.455 & 0.591 & 0.636 & 0.591 & 0.545 \\
+GenIAS, reimpl. & 0.273 & 0.409 & 0.409 & 0.455 & 0.409 & 0.591 & 0.636 & 0.591 & 0.500 \\
+CutAddPaste & 0.227 & 0.364 & 0.455 & 0.455 & 0.455 & 0.682 & 0.682 & 0.591 & 0.545 \\
+Hand-built shapes & 0.227 & 0.318 & 0.409 & 0.500 & 0.545 & 0.636 & 0.591 & 0.591 & 0.591 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[t]
+\centering
+\caption{Paired change in event recall from adding $k$ generated windows,
+with the $k$ real windows drawn stratified by kind; the counterpart of
+Table~\ref{tab:sweep-all}. The first row is the median recall of real data
+alone with this draw.}
+\label{tab:strat}
+\footnotesize
+\setlength{\tabcolsep}{3.4pt}
+\begin{tabular}{@{}lrrrrrrrrr@{}}
+\toprule
+$k$ & 1 & 2 & 4 & 8 & 16 & 32 & 64 & 128 & 256 \\
+\midrule
+Real alone (median) & 0.318 & 0.318 & 0.318 & 0.409 & 0.455 & 0.545 & 0.636 & 0.636 & 0.591 \\
+\midrule
+GenFSDiff & +0.073 & +0.082 & +0.109 & +0.073 & +0.173$^{\ast}$ & +0.045 & +0.018 & +0.055 & +0.136$^{\ast}$ \\
+GenFSDiff from noise & +0.118$^{\ast}$ & +0.118$^{\ast}$ & +0.136$^{\ast}$ & +0.073 & +0.027 & +0.027 & $-$0.036 & +0.009 & +0.018 \\
+GenFSDiff, matched noise & +0.118$^{\ast}$ & +0.109$^{\ast}$ & +0.145$^{\ast}$ & +0.064 & +0.027 & +0.027 & $-$0.036 & +0.009 & +0.018 \\
+Twin (no edit) & $-$0.100 & +0.073$^{\ast}$ & +0.145$^{\ast}$ & +0.118$^{\ast}$ & +0.018 & +0.118 & $-$0.036 & $-$0.018 & $-$0.045 \\
+Twin from noise & $-$0.109$^{\circ}$ & +0.045 & +0.118 & +0.100$^{\ast}$ & +0.136$^{\ast}$ & +0.091 & $-$0.064 & $-$0.045 & $-$0.055 \\
+\midrule
+GenIAS, locked & $-$0.073 & +0.091$^{\ast}$ & +0.100 & +0.045 & 0.000 & +0.064 & 0.000 & $-$0.018 & $-$0.027 \\
+GenIAS, reimpl. & $-$0.064 & +0.082$^{\ast}$ & +0.064 & +0.036 & $-$0.064 & +0.055 & 0.000 & $-$0.027 & $-$0.045 \\
+CutAddPaste & $-$0.073 & +0.091$^{\ast}$ & +0.127 & +0.064 & 0.000 & +0.118$^{\ast}$ & +0.009 & 0.000 & $-$0.036 \\
+Hand-built shapes & $-$0.064 & +0.082 & +0.145$^{\ast}$ & +0.027 & +0.027 & +0.100 & $-$0.036 & $-$0.045 & +0.018 \\
+\bottomrule
+\end{tabular}\\[0.3em]
+{\footnotesize $^{\ast}$95\% bootstrap interval above zero; $^{\circ}$below
+zero. Intervals that end exactly at zero are left unmarked.}
+\end{table}
+
+\begin{table}[t]
+\centering
+\caption{GenFSDiff paired directly against every other gallery: the change in
+event recall from replacing the other gallery's $k$ windows by those of
+GenFSDiff, with the same $k$ real windows, bootstrapped over 22 events. The
+last column is the full budget, which does not depend on the draw. The bottom
+block pairs GenFSDiff from noise with three galleries, uniform draw.}
+\label{tab:vsbase}
+\footnotesize
+\setlength{\tabcolsep}{2.1pt}
+\begin{tabular}{@{}lrrrrrrrrrr@{}}
+\toprule
+$k$ & 1 & 2 & 4 & 8 & 16 & 32 & 64 & 128 & 256 & all \\
+\midrule
+\multicolumn{11}{@{}l}{\emph{GenFSDiff minus \ldots, uniform draw}} \\
+Twin (no edit) & +0.091$^{\ast}$ & +0.136$^{\ast}$ & +0.073 & +0.182$^{\ast}$ & +0.136 & +0.136 & +0.191$^{\ast}$ & +0.182 & +0.173 & +0.136 \\
+GenFSDiff from noise & $-$0.091 & $-$0.027 & +0.100$^{\ast}$ & +0.118$^{\ast}$ & +0.136$^{\ast}$ & +0.073$^{\ast}$ & +0.127$^{\ast}$ & +0.127$^{\ast}$ & +0.045 & +0.082$^{\ast}$ \\
+GenIAS, locked & +0.036 & +0.064 & +0.082 & +0.209$^{\ast}$ & +0.155$^{\ast}$ & +0.209$^{\ast}$ & +0.182$^{\ast}$ & +0.173$^{\ast}$ & +0.173$^{\ast}$ & +0.118 \\
+GenIAS, reimpl. & +0.109$^{\ast}$ & +0.155$^{\ast}$ & +0.100 & +0.209$^{\ast}$ & +0.282$^{\ast}$ & +0.200$^{\ast}$ & +0.182$^{\ast}$ & +0.173$^{\ast}$ & +0.164 & +0.118 \\
+CutAddPaste & +0.145$^{\ast}$ & +0.045 & +0.082 & +0.173$^{\ast}$ & +0.127 & +0.182$^{\ast}$ & +0.182$^{\ast}$ & +0.155 & +0.164 & +0.118 \\
+Hand-built shapes & +0.064 & $-$0.127 & $-$0.027 & +0.036 & +0.055 & +0.036 & +0.109 & +0.109 & +0.145$^{\ast}$ & +0.100 \\
+\addlinespace
+\multicolumn{11}{@{}l}{\emph{GenFSDiff minus \ldots, stratified draw}} \\
+Twin (no edit) & +0.173$^{\ast}$ & +0.009 & $-$0.036 & $-$0.045 & +0.155$^{\ast}$ & $-$0.073 & +0.055 & +0.073 & +0.182$^{\ast}$ & \\
+GenFSDiff from noise & $-$0.045 & $-$0.036 & $-$0.027 & 0.000 & +0.145$^{\ast}$ & +0.018 & +0.055 & +0.045 & +0.118$^{\ast}$ & \\
+GenIAS, locked & +0.145$^{\ast}$ & $-$0.009 & +0.009 & +0.027 & +0.173$^{\ast}$ & $-$0.018 & +0.018 & +0.073 & +0.164$^{\ast}$ & \\
+GenIAS, reimpl. & +0.136$^{\ast}$ & 0.000 & +0.045 & +0.036 & +0.236$^{\ast}$ & $-$0.009 & +0.018 & +0.082 & +0.182$^{\ast}$ & \\
+CutAddPaste & +0.145$^{\ast}$ & $-$0.009 & $-$0.018 & +0.009 & +0.173$^{\ast}$ & $-$0.073 & +0.009 & +0.055 & +0.173$^{\ast}$ & \\
+Hand-built shapes & +0.136$^{\ast}$ & 0.000 & $-$0.036 & +0.045 & +0.145$^{\ast}$ & $-$0.055 & +0.055 & +0.100 & +0.118$^{\ast}$ & \\
+\addlinespace
+\multicolumn{11}{@{}l}{\emph{GenFSDiff from noise minus \ldots, uniform draw}} \\
+Twin from noise & +0.182$^{\ast}$ & +0.164$^{\ast}$ & +0.045 & +0.073 & $-$0.009 & +0.073 & +0.045 & +0.055 & +0.145 & +0.073 \\
+GenIAS, locked & +0.127$^{\ast}$ & +0.091 & $-$0.018 & +0.091$^{\ast}$ & +0.018 & +0.136$^{\ast}$ & +0.055 & +0.045 & +0.127 & +0.036 \\
+Hand-built shapes & +0.155$^{\ast}$ & $-$0.100 & $-$0.127$^{\circ}$ & $-$0.082 & $-$0.082$^{\circ}$ & $-$0.036 & $-$0.018 & $-$0.018 & +0.100 & +0.018 \\
+\bottomrule
+\end{tabular}\\[0.3em]
+{\footnotesize $^{\ast}$95\% bootstrap interval above zero; $^{\circ}$below
+zero. Intervals that end exactly at zero are left unmarked.}
+\end{table}
+
+\begin{table}[t]
+\centering
+\caption{Event recall by kind: the share of events of each kind found,
+averaged over seeds, at the full budget and at $k = 32$ with both draws. The
+three spike events, 17 global-subsequence events and two local-subsequence
+events are held out across the three folds. The level-shift event id\_83 is
+found in every run at these budgets and is left out.}
+\label{tab:kindrec}
+\footnotesize
+\setlength{\tabcolsep}{3.6pt}
+\begin{tabular}{@{}lrrrrrrrrr@{}}
+\toprule
+ & \multicolumn{3}{c}{Full budget} & \multicolumn{3}{c}{Uniform, $k = 32$}
+ & \multicolumn{3}{c}{Stratified, $k = 32$} \\
+\cmidrule(lr){2-4}\cmidrule(lr){5-7}\cmidrule(lr){8-10}
+ & Spike & Global & Local & Spike & Global & Local & Spike & Global & Local \\
+\midrule
+Real alone & 0.47 & 0.65 & 0.00 & 0.40 & 0.46 & 0.10 & 0.93 & 0.54 & 0.00 \\
+$+$ GenFSDiff & 1.00 & 0.66 & 0.10 & 0.93 & 0.60 & 0.30 & 1.00 & 0.58 & 0.10 \\
+$+$ GenFSDiff from noise & 0.80 & 0.60 & 0.00 & 0.73 & 0.55 & 0.20 & 0.93 & 0.56 & 0.10 \\
+$+$ Twin (no edit) & 0.40 & 0.60 & 0.00 & 0.33 & 0.56 & 0.00 & 0.93 & 0.69 & 0.00 \\
+$+$ GenIAS, locked & 0.40 & 0.62 & 0.00 & 0.33 & 0.47 & 0.00 & 0.87 & 0.64 & 0.00 \\
+$+$ CutAddPaste & 0.40 & 0.62 & 0.00 & 0.33 & 0.51 & 0.00 & 0.93 & 0.69 & 0.00 \\
+$+$ Hand-built shapes & 0.53 & 0.62 & 0.00 & 0.60 & 0.65 & 0.00 & 1.00 & 0.66 & 0.00 \\
+\bottomrule
+\end{tabular}
+\end{table}
 
 \end{document}
